@@ -1,3 +1,14 @@
+import {
+  ArrowLeft,
+  Check,
+  ClipboardList,
+  Pencil,
+  Plus,
+  Trash2,
+  Users,
+  UserRound,
+  X,
+} from 'lucide-react'
 import { useCallback, useEffect, useState, type SubmitEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
@@ -23,34 +34,78 @@ import {
   type Filtertag,
   type Mini,
 } from '../api/minis'
+import { AppShell } from '../components/layout/AppShell'
+import { Alert } from '../components/ui/Alert'
+import { Badge } from '../components/ui/Badge'
+import { Button } from '../components/ui/Button'
+import { Card, CardHeader } from '../components/ui/Card'
+import { EmptyState } from '../components/ui/EmptyState'
+import { CheckboxChip, Input, Label, Select } from '../components/ui/FormField'
+import { IconButton } from '../components/ui/IconButton'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
 }
 
+function filtertagLabel(tag: Filtertag): string {
+  return { grundschueler: 'Grundschüler', schueler: 'Schüler', arbeiter: 'Arbeiter' }[tag]
+}
+
+function FiltertagChips({
+  ausgewaehlt,
+  onChange,
+  idPrefix,
+}: {
+  ausgewaehlt: Filtertag[]
+  onChange: (tags: Filtertag[]) => void
+  idPrefix: string
+}) {
+  function toggle(tag: Filtertag) {
+    onChange(
+      ausgewaehlt.includes(tag) ? ausgewaehlt.filter((t) => t !== tag) : [...ausgewaehlt, tag],
+    )
+  }
+
+  return (
+    <div>
+      <Label>Filtertags</Label>
+      <div className="flex flex-wrap gap-2">
+        {FILTERTAGS.map((tag) => (
+          <CheckboxChip
+            key={tag}
+            id={`${idPrefix}-${tag}`}
+            checked={ausgewaehlt.includes(tag)}
+            onChange={() => toggle(tag)}
+          >
+            {filtertagLabel(tag)}
+          </CheckboxChip>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Row({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 last:border-b-0">
+      {children}
+    </div>
+  )
+}
+
 function GruppenSection({
   pfarreiId,
-  onGruppenChange,
+  gruppen,
+  reload,
 }: {
   pfarreiId: number
-  onGruppenChange: (gruppen: Gruppe[]) => void
+  gruppen: Gruppe[]
+  reload: () => void
 }) {
-  const [gruppen, setGruppen] = useState<Gruppe[]>([])
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [editId, setEditId] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
-
-  const reload = useCallback(() => {
-    gruppenListe(pfarreiId).then((geladen) => {
-      setGruppen(geladen)
-      onGruppenChange(geladen)
-    })
-  }, [pfarreiId, onGruppenChange])
-
-  useEffect(() => {
-    reload()
-  }, [reload])
 
   async function handleCreate(event: SubmitEvent) {
     event.preventDefault()
@@ -77,7 +132,8 @@ function GruppenSection({
     }
   }
 
-  async function handleDelete(gruppeId: number) {
+  async function handleDelete(gruppeId: number, gruppeName: string) {
+    if (!confirm(`Gruppe "${gruppeName}" wirklich löschen?`)) return
     setError(null)
     try {
       await gruppeLoeschen(pfarreiId, gruppeId)
@@ -88,91 +144,82 @@ function GruppenSection({
   }
 
   return (
-    <section>
-      <h2>Gruppen</h2>
-      {error && <p role="alert">{error}</p>}
-      <ul>
-        {gruppen.map((gruppe) => (
-          <li key={gruppe.id}>
-            {editId === gruppe.id ? (
-              <form onSubmit={handleUpdate}>
-                <label>
-                  Gruppenname bearbeiten
-                  <input
+    <Card className="animate-rise">
+      <CardHeader
+        title="Gruppen"
+        description="Altersstufen oder Untergruppen der Ministranten, z. B. „neu“, „normal“, „Obermini“."
+      />
+      {error && (
+        <div className="px-5 pt-4">
+          <Alert>{error}</Alert>
+        </div>
+      )}
+      {gruppen.length === 0 ? (
+        <EmptyState icon={Users} title="Noch keine Gruppen angelegt" />
+      ) : (
+        <div>
+          {gruppen.map((gruppe) =>
+            editId === gruppe.id ? (
+              <Row key={gruppe.id}>
+                <form onSubmit={handleUpdate} className="flex flex-1 items-center gap-2">
+                  <Input
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
                     required
+                    autoFocus
+                    className="h-9"
                   />
-                </label>
-                <button type="submit">Speichern</button>
-                <button type="button" onClick={() => setEditId(null)}>
-                  Abbrechen
-                </button>
-              </form>
+                  <IconButton label="Speichern" type="submit">
+                    <Check className="h-4 w-4" />
+                  </IconButton>
+                  <IconButton label="Abbrechen" type="button" onClick={() => setEditId(null)}>
+                    <X className="h-4 w-4" />
+                  </IconButton>
+                </form>
+              </Row>
             ) : (
-              <>
-                <span>{gruppe.name}</span>
-                <button
-                  onClick={() => {
-                    setEditId(gruppe.id)
-                    setEditName(gruppe.name)
-                  }}
-                >
-                  Bearbeiten
-                </button>
-                <button onClick={() => handleDelete(gruppe.id)}>Löschen</button>
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
-      <form onSubmit={handleCreate}>
-        <label>
-          Neue Gruppe
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <button type="submit">Gruppe anlegen</button>
-      </form>
-    </section>
-  )
-}
-
-function filtertagLabel(tag: Filtertag): string {
-  return { grundschueler: 'Grundschüler', schueler: 'Schüler', arbeiter: 'Arbeiter' }[tag]
-}
-
-function FiltertagCheckboxen({
-  ausgewaehlt,
-  onChange,
-  idPrefix,
-}: {
-  ausgewaehlt: Filtertag[]
-  onChange: (tags: Filtertag[]) => void
-  idPrefix: string
-}) {
-  function toggle(tag: Filtertag) {
-    if (ausgewaehlt.includes(tag)) {
-      onChange(ausgewaehlt.filter((t) => t !== tag))
-    } else {
-      onChange([...ausgewaehlt, tag])
-    }
-  }
-
-  return (
-    <fieldset>
-      <legend>Filtertags</legend>
-      {FILTERTAGS.map((tag) => (
-        <label key={tag} htmlFor={`${idPrefix}-${tag}`}>
-          <input
-            id={`${idPrefix}-${tag}`}
-            type="checkbox"
-            checked={ausgewaehlt.includes(tag)}
-            onChange={() => toggle(tag)}
+              <Row key={gruppe.id}>
+                <span className="text-sm font-medium text-ink">{gruppe.name}</span>
+                <div className="flex items-center gap-1">
+                  <IconButton
+                    label="Bearbeiten"
+                    onClick={() => {
+                      setEditId(gruppe.id)
+                      setEditName(gruppe.name)
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </IconButton>
+                  <IconButton
+                    label="Löschen"
+                    tone="danger"
+                    onClick={() => handleDelete(gruppe.id, gruppe.name)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </IconButton>
+                </div>
+              </Row>
+            ),
+          )}
+        </div>
+      )}
+      <form onSubmit={handleCreate} className="flex items-end gap-2 border-t border-line p-5">
+        <div className="flex-1">
+          <Label htmlFor="gruppe-neu">Neue Gruppe</Label>
+          <Input
+            id="gruppe-neu"
+            placeholder="z. B. Obermini"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
           />
-          {filtertagLabel(tag)}
-        </label>
-      ))}
-    </fieldset>
+        </div>
+        <Button type="submit">
+          <Plus className="h-4 w-4" />
+          Anlegen
+        </Button>
+      </form>
+    </Card>
   )
 }
 
@@ -211,7 +258,8 @@ function MinisSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen: Grup
     }
   }
 
-  async function handleDelete(miniId: number) {
+  async function handleDelete(miniId: number, miniName: string) {
+    if (!confirm(`Mini "${miniName}" wirklich löschen?`)) return
     setError(null)
     try {
       await miniLoeschen(pfarreiId, miniId)
@@ -226,49 +274,78 @@ function MinisSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen: Grup
   }
 
   return (
-    <section>
-      <h2>Minis</h2>
-      {error && <p role="alert">{error}</p>}
-      <ul>
-        {minis.map((mini) => (
-          <li key={mini.id}>
-            <span>
-              {mini.name} ({gruppenName(mini.gruppe_id)})
-              {mini.filtertags.length > 0 && ` – ${mini.filtertags.map(filtertagLabel).join(', ')}`}
-            </span>
-            <button onClick={() => handleDelete(mini.id)}>Löschen</button>
-          </li>
-        ))}
-      </ul>
-      <form onSubmit={handleCreate}>
-        <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label>
-          Gruppe
-          <select
-            value={gruppeId}
-            onChange={(e) => setGruppeId(Number(e.target.value))}
-            required
-          >
-            {gruppen.map((gruppe) => (
-              <option key={gruppe.id} value={gruppe.id}>
-                {gruppe.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <FiltertagCheckboxen
-          ausgewaehlt={filtertags}
-          onChange={setFiltertags}
-          idPrefix="mini-neu"
+    <Card className="animate-rise">
+      <CardHeader title="Minis" description="Die Ministranten, die im Dienstplan eingeteilt werden." />
+      {error && (
+        <div className="px-5 pt-4">
+          <Alert>{error}</Alert>
+        </div>
+      )}
+      {minis.length === 0 ? (
+        <EmptyState
+          icon={UserRound}
+          title="Noch keine Minis angelegt"
+          description={gruppen.length === 0 ? 'Lege zuerst eine Gruppe an.' : undefined}
         />
-        <button type="submit" disabled={gruppen.length === 0}>
+      ) : (
+        <div>
+          {minis.map((mini) => (
+            <Row key={mini.id}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-ink">{mini.name}</span>
+                <Badge tone="pine">{gruppenName(mini.gruppe_id)}</Badge>
+                {mini.filtertags.map((tag) => (
+                  <Badge key={tag} tone="gold">
+                    {filtertagLabel(tag)}
+                  </Badge>
+                ))}
+              </div>
+              <IconButton
+                label="Löschen"
+                tone="danger"
+                onClick={() => handleDelete(mini.id, mini.name)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </IconButton>
+            </Row>
+          ))}
+        </div>
+      )}
+      <form onSubmit={handleCreate} className="flex flex-col gap-4 border-t border-line p-5">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="mini-neu-name">Name</Label>
+            <Input
+              id="mini-neu-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="mini-neu-gruppe">Gruppe</Label>
+            <Select
+              id="mini-neu-gruppe"
+              value={gruppeId}
+              onChange={(e) => setGruppeId(Number(e.target.value))}
+              required
+              disabled={gruppen.length === 0}
+            >
+              {gruppen.map((gruppe) => (
+                <option key={gruppe.id} value={gruppe.id}>
+                  {gruppe.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+        <FiltertagChips ausgewaehlt={filtertags} onChange={setFiltertags} idPrefix="mini-neu" />
+        <Button type="submit" disabled={gruppen.length === 0} className="self-start">
+          <Plus className="h-4 w-4" />
           Mini anlegen
-        </button>
+        </Button>
       </form>
-    </section>
+    </Card>
   )
 }
 
@@ -290,9 +367,7 @@ function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen
 
   function toggleGruppe(gruppeId: number) {
     setErlaubteGruppenIds((aktuell) =>
-      aktuell.includes(gruppeId)
-        ? aktuell.filter((id) => id !== gruppeId)
-        : [...aktuell, gruppeId],
+      aktuell.includes(gruppeId) ? aktuell.filter((id) => id !== gruppeId) : [...aktuell, gruppeId],
     )
   }
 
@@ -317,7 +392,8 @@ function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen
     }
   }
 
-  async function handleDelete(dienstTypId: number) {
+  async function handleDelete(dienstTypId: number, dienstTypName: string) {
+    if (!confirm(`Dienst-Typ "${dienstTypName}" wirklich löschen?`)) return
     setError(null)
     try {
       await dienstTypLoeschen(pfarreiId, dienstTypId)
@@ -328,76 +404,159 @@ function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen
   }
 
   return (
-    <section>
-      <h2>Dienst-Typen</h2>
-      {error && <p role="alert">{error}</p>}
-      <ul>
-        {dienstTypen.map((dienstTyp) => (
-          <li key={dienstTyp.id}>
-            <span>
-              {dienstTyp.name} ({dienstTyp.standard_anzahl}
-              {dienstTyp.erlaubte_gruppen.length > 0 &&
-                `, nur ${dienstTyp.erlaubte_gruppen.map((g) => g.name).join(', ')}`}
-              {dienstTyp.erforderliche_filtertags.length > 0 &&
-                `, mind. ${dienstTyp.erforderliche_filtertags.map(filtertagLabel).join(', ')}`}
-              )
-            </span>
-            <button onClick={() => handleDelete(dienstTyp.id)}>Löschen</button>
-          </li>
-        ))}
-      </ul>
-      <form onSubmit={handleCreate}>
-        <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label>
-          Standard-Anzahl
-          <input
-            type="number"
-            min={1}
-            value={standardAnzahl}
-            onChange={(e) => setStandardAnzahl(Number(e.target.value))}
-            required
-          />
-        </label>
-        <fieldset>
-          <legend>Erlaubte Gruppen (leer = alle)</legend>
-          {gruppen.map((gruppe) => (
-            <label key={gruppe.id} htmlFor={`dienst-typ-gruppe-${gruppe.id}`}>
-              <input
+    <Card className="animate-rise">
+      <CardHeader
+        title="Dienst-Typen"
+        description="Arten von Diensten (z. B. Messdienst, Prozession) mit Standard-Besetzung."
+      />
+      {error && (
+        <div className="px-5 pt-4">
+          <Alert>{error}</Alert>
+        </div>
+      )}
+      {dienstTypen.length === 0 ? (
+        <EmptyState icon={ClipboardList} title="Noch keine Dienst-Typen angelegt" />
+      ) : (
+        <div>
+          {dienstTypen.map((dienstTyp) => (
+            <Row key={dienstTyp.id}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-ink">{dienstTyp.name}</span>
+                <Badge tone="neutral">{dienstTyp.standard_anzahl}× besetzt</Badge>
+                {dienstTyp.erlaubte_gruppen.map((g) => (
+                  <Badge key={g.id} tone="pine">
+                    {g.name}
+                  </Badge>
+                ))}
+                {dienstTyp.erforderliche_filtertags.map((tag) => (
+                  <Badge key={tag} tone="gold">
+                    {filtertagLabel(tag)}
+                  </Badge>
+                ))}
+              </div>
+              <IconButton
+                label="Löschen"
+                tone="danger"
+                onClick={() => handleDelete(dienstTyp.id, dienstTyp.name)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </IconButton>
+            </Row>
+          ))}
+        </div>
+      )}
+      <form onSubmit={handleCreate} className="flex flex-col gap-4 border-t border-line p-5">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="dienst-typ-neu-name">Name</Label>
+            <Input
+              id="dienst-typ-neu-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="dienst-typ-neu-anzahl">Standard-Anzahl</Label>
+            <Input
+              id="dienst-typ-neu-anzahl"
+              type="number"
+              min={1}
+              value={standardAnzahl}
+              onChange={(e) => setStandardAnzahl(Number(e.target.value))}
+              required
+            />
+          </div>
+        </div>
+        <div>
+          <Label hint="leer = alle Gruppen">Erlaubte Gruppen</Label>
+          <div className="flex flex-wrap gap-2">
+            {gruppen.map((gruppe) => (
+              <CheckboxChip
+                key={gruppe.id}
                 id={`dienst-typ-gruppe-${gruppe.id}`}
-                type="checkbox"
                 checked={erlaubteGruppenIds.includes(gruppe.id)}
                 onChange={() => toggleGruppe(gruppe.id)}
-              />
-              {gruppe.name}
-            </label>
-          ))}
-        </fieldset>
-        <FiltertagCheckboxen
+              >
+                {gruppe.name}
+              </CheckboxChip>
+            ))}
+          </div>
+        </div>
+        <FiltertagChips
           ausgewaehlt={erforderlicheTags}
           onChange={setErforderlicheTags}
           idPrefix="dienst-typ-neu"
         />
-        <button type="submit">Dienst-Typ anlegen</button>
+        <Button type="submit" className="self-start">
+          <Plus className="h-4 w-4" />
+          Dienst-Typ anlegen
+        </Button>
       </form>
-    </section>
+    </Card>
   )
 }
+
+const TABS = [
+  { key: 'gruppen', label: 'Gruppen', icon: Users },
+  { key: 'minis', label: 'Minis', icon: UserRound },
+  { key: 'dienst-typen', label: 'Dienst-Typen', icon: ClipboardList },
+] as const
+
+type TabKey = (typeof TABS)[number]['key']
 
 export function StammdatenPage() {
   const { pfarreiId } = useParams<{ pfarreiId: string }>()
   const id = Number(pfarreiId)
   const [gruppen, setGruppen] = useState<Gruppe[]>([])
+  const [tab, setTab] = useState<TabKey>('gruppen')
+
+  const reloadGruppen = useCallback(() => {
+    gruppenListe(id).then(setGruppen)
+  }, [id])
+
+  useEffect(() => {
+    reloadGruppen()
+  }, [reloadGruppen])
 
   return (
-    <main>
-      <Link to="/">Zurück zur Übersicht</Link>
-      <h1>Stammdaten</h1>
-      <GruppenSection pfarreiId={id} onGruppenChange={setGruppen} />
-      <MinisSection pfarreiId={id} gruppen={gruppen} />
-      <DienstTypenSection pfarreiId={id} gruppen={gruppen} />
-    </main>
+    <AppShell>
+      <Link
+        to="/"
+        className="inline-flex items-center gap-1.5 text-sm text-ink-soft transition-colors hover:text-pine-dark"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Zurück zur Übersicht
+      </Link>
+      <h1 className="mt-3 font-display text-3xl font-semibold text-ink">Stammdaten</h1>
+      <p className="mt-1 text-ink-soft">
+        Gruppen, Minis und Dienst-Typen dieser Pfarrei verwalten.
+      </p>
+
+      <div className="mt-6 flex gap-1 border-b border-line">
+        {TABS.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`flex cursor-pointer items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+              tab === key
+                ? 'border-pine text-pine-dark'
+                : 'border-transparent text-ink-soft hover:text-ink'
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-6">
+        {tab === 'gruppen' && (
+          <GruppenSection pfarreiId={id} gruppen={gruppen} reload={reloadGruppen} />
+        )}
+        {tab === 'minis' && <MinisSection pfarreiId={id} gruppen={gruppen} />}
+        {tab === 'dienst-typen' && <DienstTypenSection pfarreiId={id} gruppen={gruppen} />}
+      </div>
+    </AppShell>
   )
 }
