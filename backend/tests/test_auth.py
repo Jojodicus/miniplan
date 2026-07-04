@@ -95,7 +95,9 @@ def test_security_header_werden_gesetzt(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
-    assert response.headers["content-security-policy"] == "default-src 'self'"
+    assert (
+        response.headers["content-security-policy"] == "default-src 'self'; frame-src 'self' blob:"
+    )
 
 
 def test_health_endpoint(client: TestClient) -> None:

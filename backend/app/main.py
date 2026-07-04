@@ -26,7 +26,7 @@ async def security_headers(request: Request, call_next) -> Response:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "same-origin"
-    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; frame-src 'self' blob:"
     if settings.cookie_secure:
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     return response

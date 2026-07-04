@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, Plus, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useState, type SubmitEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type SubmitEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import type { GruppenAnforderung } from '../api/dienstTypen'
@@ -14,7 +14,13 @@ import {
 } from '../api/gottesdienste'
 import { gruppenListe, type Gruppe } from '../api/gruppen'
 import { FILTERTAGS, minisListe, type Filtertag, type Mini } from '../api/minis'
-import { miniplanAktualisieren, miniplanDetail, type Miniplan } from '../api/miniplaene'
+import {
+  miniplanAktualisieren,
+  miniplanDetail,
+  miniplanVorschau,
+  miniplanZuVorschauEingabe,
+  type Miniplan,
+} from '../api/miniplaene'
 import { AppShell } from '../components/layout/AppShell'
 import { Alert } from '../components/ui/Alert'
 import { Button } from '../components/ui/Button'
@@ -592,6 +598,74 @@ function FreitextSection({
   )
 }
 
+function VorschauPanel({ pfarreiId, miniplan }: { pfarreiId: number; miniplan: Miniplan }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [fehler, setFehler] = useState<string[] | null>(null)
+  const [ladend, setLadend] = useState(false)
+  const blobUrlRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    let abgebrochen = false
+    setLadend(true)
+    const timer = setTimeout(() => {
+      miniplanVorschau(pfarreiId, miniplan.id, miniplanZuVorschauEingabe(miniplan)).then(
+        (ergebnis) => {
+          if (abgebrochen) return
+          if (ergebnis.ok) {
+            if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
+            blobUrlRef.current = ergebnis.blobUrl
+            setBlobUrl(ergebnis.blobUrl)
+            setFehler(null)
+          } else {
+            setFehler(ergebnis.fehler)
+          }
+          setLadend(false)
+        },
+      )
+    }, 500)
+    return () => {
+      abgebrochen = true
+      clearTimeout(timer)
+    }
+  }, [pfarreiId, miniplan])
+
+  useEffect(
+    () => () => {
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
+    },
+    [],
+  )
+
+  return (
+    <Card className="animate-rise">
+      <CardHeader
+        title="PDF-Vorschau"
+        description="Wird bei jeder gespeicherten Änderung automatisch aktualisiert."
+      />
+      <div className="flex flex-col gap-3 p-5">
+        {fehler && (
+          <Alert>
+            <div className="flex flex-col gap-1">
+              <span className="font-medium">Fehler beim Rendern der Vorschau:</span>
+              {fehler.map((eintrag, index) => (
+                <span key={index}>{eintrag}</span>
+              ))}
+            </div>
+          </Alert>
+        )}
+        {ladend && <p className="text-sm text-ink-soft">Vorschau wird aktualisiert…</p>}
+        {blobUrl && (
+          <iframe
+            title="Miniplan-PDF-Vorschau"
+            src={blobUrl}
+            className="h-[600px] w-full rounded-lg border border-line"
+          />
+        )}
+      </div>
+    </Card>
+  )
+}
+
 export function MiniplanEditorPage() {
   const { pfarreiId, miniplanId } = useParams<{ pfarreiId: string; miniplanId: string }>()
   const id = Number(pfarreiId)
@@ -638,6 +712,8 @@ export function MiniplanEditorPage() {
       </h1>
 
       <div className="mt-6 flex flex-col gap-6">
+        <VorschauPanel pfarreiId={id} miniplan={miniplan} />
+
         {miniplan.gottesdienste.map((gottesdienst) => (
           <GottesdienstKarte
             key={gottesdienst.id}

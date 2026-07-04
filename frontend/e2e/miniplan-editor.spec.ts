@@ -67,6 +67,10 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await page.getByRole('button', { name: 'Speichern' }).first().click()
   await expect(page.getByLabel('Name des Dienstes')).toHaveValue('Alle Ministranten')
 
+  const vorschauIframe = page.locator('iframe[title="Miniplan-PDF-Vorschau"]')
+  await expect(vorschauIframe).toHaveAttribute('src', /^blob:/, { timeout: 10_000 })
+  const ersteVorschauSrc = await vorschauIframe.getAttribute('src')
+
   await page.reload()
   await expect(page.getByText('MP-Weihrauch', { exact: true }).first()).toBeVisible()
   await expect(page.getByLabel('Name des Dienstes')).toHaveValue('Alle Ministranten')
@@ -77,6 +81,10 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await page.getByLabel('Veranstaltungen').fill('Pfarrfest am 20.07.')
   await page.getByLabel('Ankündigungen').fill('Bitte pünktlich erscheinen')
   await page.getByRole('button', { name: 'Speichern' }).last().click()
+
+  await expect
+    .poll(async () => vorschauIframe.getAttribute('src'), { timeout: 10_000 })
+    .not.toBe(ersteVorschauSrc)
 
   await page.reload()
   await expect(page.getByLabel('Veranstaltungen')).toHaveValue('Pfarrfest am 20.07.')

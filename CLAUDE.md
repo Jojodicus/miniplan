@@ -30,6 +30,8 @@ backend/
                   get_pfarrei)
     rate_limit.py In-Memory-Rate-Limit pro Client-IP für den Login-Endpoint (gilt nur pro
                   Prozess, siehe Deployment-Hinweis dort)
+    services/     Business-Logik jenseits reiner CRUD-Operationen (Feiertags-/Ferien-Sync,
+                  Verfügbarkeitsprüfung, Typst-PDF-Rendering)
     cli.py        Kommandozeilen-Nutzer-/Pfarrei-Erstellung
     main.py       FastAPI-App, Security-Header-Middleware, `/api/health`, Router-Registrierung,
                   Static-File-Ausliefertung inkl. SPA-Fallback (client-seitige Routen wie /login
@@ -89,6 +91,28 @@ Gottesdienste werden mit ihrem vollständigen Dienstbedarf als verschachtelte Li
 aktualisiert (`PUT /gottesdienste/{id}` ersetzt die komplette Dienstbedarf-Liste, analog zum
 bestehenden Muster für `DienstTyp.gruppen_anforderungen`); es gibt keine separaten
 CRUD-Endpunkte für einzelne Dienstbedarf-Einträge.
+
+## Typst-Rendering & Live-Vorschau
+
+`app/services/typst_render.py` baut aus dem aktuellen (noch nicht zwingend gespeicherten)
+Planstand ein Typst-Dokument als String und kompiliert es per `typst compile` (Subprocess) zu
+PDF-Bytes. Sämtliche dynamischen Werte (Namen, Freitexte, ...) werden ausschließlich als
+escapte Typst-String-Literale (`#"..."`) eingefügt statt als Markup verkettet – dadurch ist
+eine Typst-Code-Injection über z.B. Mini- oder Gottesdienstnamen ausgeschlossen. Schlägt die
+Kompilierung fehl, wirft der Service `TypstCompileError` mit einer strukturierten Liste der
+`error:`-Zeilen aus der Typst-Fehlerausgabe.
+
+`POST /api/pfarreien/{pfarrei_id}/miniplaene/{miniplan_id}/vorschau` (Rolle wie die übrigen
+Miniplan-Endpunkte) nimmt den kompletten Planstand entgegen (Schema
+`schemas/miniplan_vorschau.py`, bereits mit aufgelösten Namen statt IDs, da das Frontend diese
+aus den bereits geladenen Stammdaten kennt) und liefert bei Erfolg die PDF-Bytes
+(`application/pdf`), bei einem Compile-Fehler `422` mit `{"detail": {"fehler": [...]}}`.
+
+Frontend: `MiniplanEditorPage` rendert eine `VorschauPanel`-Komponente, die bei jeder Änderung
+des geladenen `Miniplan`-Zustands debounced (500ms) `miniplanVorschau` aufruft und das
+resultierende PDF per Object-URL in einem `<iframe>` anzeigt; Compile-Fehler werden als Liste
+in einem `Alert` dargestellt. Da der Editor Änderungen erst nach Klick auf "Speichern"
+persistiert, aktualisiert sich die Vorschau entsprechend nach jedem Speichern-Vorgang.
 
 ## Befehle
 

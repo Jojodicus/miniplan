@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -8,6 +8,8 @@ from app.models.miniplan import Miniplan
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.schemas.miniplan import MiniplanCreate, MiniplanOut, MiniplanUpdate
+from app.schemas.miniplan_vorschau import MiniplanVorschauIn
+from app.services.typst_render import TypstCompileError, render_miniplan_pdf
 
 router = APIRouter(prefix="/api/pfarreien/{pfarrei_id}/miniplaene", tags=["miniplaene"])
 require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER)
@@ -89,6 +91,26 @@ def bearbeiten(
     db.commit()
     db.refresh(miniplan)
     return miniplan
+
+
+@router.post("/{miniplan_id}/vorschau")
+def vorschau(
+    pfarrei_id: int,
+    miniplan_id: int,
+    daten: MiniplanVorschauIn,
+    db: Session = Depends(get_db),
+    pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Response:
+    _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    try:
+        pdf_bytes = render_miniplan_pdf(pfarrei.name, daten)
+    except TypstCompileError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"fehler": exc.errors},
+        ) from exc
+    return Response(content=pdf_bytes, media_type="application/pdf")
 
 
 @router.delete("/{miniplan_id}", status_code=status.HTTP_204_NO_CONTENT)
