@@ -1,6 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.filtertag import Filtertag
 from app.schemas.gruppe import GruppeOut
 
 
@@ -12,8 +11,9 @@ class GruppenAnforderung(BaseModel):
 class DienstTypCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     standard_anzahl: int = Field(ge=1)
-    erforderliche_filtertags: list[Filtertag] = []
+    erforderliche_filtertags: list[str] = []
     gruppen_anforderungen: list[GruppenAnforderung] = []
+    zeige_label: bool = False
 
     @model_validator(mode="after")
     def _mindestanzahl_nicht_ueber_standard_anzahl(self) -> "DienstTypCreate":
@@ -43,5 +43,6 @@ class DienstTypOut(BaseModel):
     pfarrei_id: int
     name: str
     standard_anzahl: int
-    erforderliche_filtertags: list[Filtertag]
+    erforderliche_filtertags: list[str]
     gruppen_anforderungen: list[GruppenAnforderungOut]
+    zeige_label: bool

@@ -21,6 +21,7 @@ class Dienstbedarf(Base):
     name: Mapped[str | None] = mapped_column(String(255), default=None)
     anzahl: Mapped[int] = mapped_column(Integer)
     erforderliche_filtertags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    zeige_label: Mapped[bool] = mapped_column(Boolean, default=True)
 
     gottesdienst: Mapped["Gottesdienst"] = relationship(back_populates="dienstbedarf")
     dienst_typ: Mapped["DienstTyp | None"] = relationship()

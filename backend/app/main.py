@@ -9,6 +9,7 @@ from app.api import (
     dienst_typen,
     feiertage,
     filtertag_blocker,
+    filtertags,
     gottesdienste,
     gruppen,
     minis,
@@ -37,6 +38,7 @@ app.include_router(pfarreien.router)
 app.include_router(gruppen.router)
 app.include_router(minis.router)
 app.include_router(dienst_typen.router)
+app.include_router(filtertags.router)
 app.include_router(filtertag_blocker.router)
 app.include_router(feiertage.router)
 app.include_router(miniplaene.router)

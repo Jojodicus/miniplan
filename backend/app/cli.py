@@ -7,6 +7,7 @@ from app.database import SessionLocal
 from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.security import hash_password
+from app.services.stammdaten_seed import seed_default_stammdaten
 
 
 def create_user(email: str, password: str, role: str, pfarrei: str | None) -> None:
@@ -56,13 +57,16 @@ def create_pfarrei(name: str) -> None:
         if db.query(Pfarrei).filter(Pfarrei.name == name).first() is not None:
             print(f"Fehler: Pfarrei '{name}' existiert bereits.", file=sys.stderr)
             raise SystemExit(1)
-        db.add(Pfarrei(name=name))
+        pfarrei = Pfarrei(name=name)
+        db.add(pfarrei)
         try:
             db.commit()
         except IntegrityError:
             db.rollback()
             print(f"Fehler: Pfarrei '{name}' existiert bereits.", file=sys.stderr)
             raise SystemExit(1) from None
+        db.refresh(pfarrei)
+        seed_default_stammdaten(db, pfarrei)
         print(f"Pfarrei '{name}' angelegt.")
     finally:
         db.close()

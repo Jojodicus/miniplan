@@ -8,6 +8,7 @@ from app.models.mini import Mini
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.schemas.mini import MiniCreate, MiniOut, MiniUpdate
+from app.services.filtertag_validation import unbekannte_filtertag_keys
 
 router = APIRouter(prefix="/api/pfarreien/{pfarrei_id}/minis", tags=["minis"])
 require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER)
@@ -32,6 +33,15 @@ def _gruppe_pruefen(pfarrei_id: int, gruppe_id: int, db: Session) -> None:
         )
 
 
+def _filtertags_pruefen(pfarrei_id: int, filtertags: list[str], db: Session) -> None:
+    unbekannt = unbekannte_filtertag_keys(pfarrei_id, set(filtertags), db)
+    if unbekannt:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unbekannte Filtertags: {', '.join(sorted(unbekannt))}",
+        )
+
+
 @router.get("", response_model=list[MiniOut])
 def liste(
     pfarrei_id: int,
@@ -51,11 +61,12 @@ def erstellen(
     _=Depends(require_verantwortlich),
 ) -> Mini:
     _gruppe_pruefen(pfarrei_id, daten.gruppe_id, db)
+    _filtertags_pruefen(pfarrei_id, daten.filtertags, db)
     mini = Mini(
         pfarrei_id=pfarrei_id,
         gruppe_id=daten.gruppe_id,
         name=daten.name,
-        filtertags=[tag.value for tag in daten.filtertags],
+        filtertags=daten.filtertags,
     )
     db.add(mini)
     db.commit()
@@ -74,9 +85,10 @@ def bearbeiten(
 ) -> Mini:
     mini = _get_mini_or_404(pfarrei_id, mini_id, db)
     _gruppe_pruefen(pfarrei_id, daten.gruppe_id, db)
+    _filtertags_pruefen(pfarrei_id, daten.filtertags, db)
     mini.name = daten.name
     mini.gruppe_id = daten.gruppe_id
-    mini.filtertags = [tag.value for tag in daten.filtertags]
+    mini.filtertags = daten.filtertags
     db.commit()
     db.refresh(mini)
     return mini

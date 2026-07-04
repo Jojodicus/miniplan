@@ -8,7 +8,11 @@ from app.schemas.miniplan_vorschau import (
     VorschauGottesdienst,
     VorschauGruppenAnforderung,
 )
-from app.services.typst_render import TypstCompileError, render_miniplan_pdf
+from app.services.typst_render import (
+    TypstCompileError,
+    _dienstbedarf_bezeichnung,
+    render_miniplan_pdf,
+)
 
 
 def _plan(**overrides) -> MiniplanVorschauIn:
@@ -64,6 +68,53 @@ def test_render_mit_sonderzeichen_wird_sicher_escaped() -> None:
     )
     pdf = render_miniplan_pdf("St. Beispiel", plan)
     assert pdf.startswith(b"%PDF")
+
+
+def test_render_mit_zeige_label_false_und_notiz_liefert_pdf() -> None:
+    plan = _plan(
+        gottesdienste=[
+            VorschauGottesdienst(
+                datum=date(2026, 7, 5),
+                uhrzeit=time(10, 0),
+                name="Sonntagsmesse",
+                notiz="Bitte Kerzen mitbringen",
+                dienstbedarf=[
+                    VorschauDienstbedarf(name="Sonntagsmesse", anzahl=4, zeige_label=False)
+                ],
+            )
+        ],
+    )
+    pdf = render_miniplan_pdf("St. Beispiel", plan)
+    assert pdf.startswith(b"%PDF")
+
+
+def test_dienstbedarf_bezeichnung_mit_zeige_label_false_und_ohne_einschraenkungen_kein_platzhalter() -> None:
+    # Item 8: darf keinen "None"/Platzhalter-Artefakt erzeugen, sondern zeigt einen neutralen
+    # Trennwert an, wenn weder das Label noch Einschränkungen angezeigt werden sollen.
+    bedarf = VorschauDienstbedarf(name="Sonntagsmesse", anzahl=4, zeige_label=False)
+    assert _dienstbedarf_bezeichnung(bedarf, {}) == "—"
+
+
+def test_dienstbedarf_bezeichnung_mit_zeige_label_false_zeigt_nur_einschraenkungen() -> None:
+    bedarf = VorschauDienstbedarf(
+        name="Sonntagsmesse",
+        anzahl=4,
+        zeige_label=False,
+        erforderliche_filtertags=["arbeiter"],
+        gruppen_anforderungen=[VorschauGruppenAnforderung(gruppe_name="Obermini", mindest_anzahl=1)],
+    )
+    bezeichnung = _dienstbedarf_bezeichnung(bedarf, {"arbeiter": "Arbeiter"})
+    assert "Sonntagsmesse" not in bezeichnung
+    assert "Arbeiter" in bezeichnung
+    assert "Obermini" in bezeichnung
+
+
+def test_dienstbedarf_bezeichnung_verwendet_filtertag_label_lookup() -> None:
+    bedarf = VorschauDienstbedarf(
+        name="Weihrauch", anzahl=2, erforderliche_filtertags=["arbeiter"]
+    )
+    bezeichnung = _dienstbedarf_bezeichnung(bedarf, {"arbeiter": "Arbeiter"})
+    assert bezeichnung == "Weihrauch (Arbeiter)"
 
 
 def test_render_fehlerhaftes_template_wirft_strukturierten_fehler(monkeypatch) -> None:

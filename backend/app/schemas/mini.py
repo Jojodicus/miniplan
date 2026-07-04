@@ -1,12 +1,10 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.filtertag import Filtertag
-
 
 class MiniCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     gruppe_id: int
-    filtertags: list[Filtertag] = []
+    filtertags: list[str] = []
 
 
 class MiniUpdate(MiniCreate):
@@ -20,4 +18,4 @@ class MiniOut(BaseModel):
     pfarrei_id: int
     gruppe_id: int
     name: str
-    filtertags: list[Filtertag]
+    filtertags: list[str]

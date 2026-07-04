@@ -1,8 +1,9 @@
 import { api } from './client'
 
-export type Filtertag = 'grundschueler' | 'schueler' | 'arbeiter'
-
-export const FILTERTAGS: Filtertag[] = ['grundschueler', 'schueler', 'arbeiter']
+// Filtertag-Keys sind seit der Umstellung auf pro-Pfarrei konfigurierbare Filtertags
+// (siehe `./filtertags.ts`) keine feste Union mehr, sondern beliebige, per Pfarrei angelegte
+// Strings.
+export type Filtertag = string
 
 export interface Mini {
   id: number

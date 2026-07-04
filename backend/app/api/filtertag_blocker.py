@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
+from app.models.filtertag import Filtertag
 from app.models.filtertag_blocker import FiltertagBlocker
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
@@ -29,6 +30,20 @@ def _get_blocker_or_404(pfarrei_id: int, blocker_id: int, db: Session) -> Filter
     return blocker
 
 
+def _filtertag_pruefen(pfarrei_id: int, filtertag_id: int, db: Session) -> None:
+    gehoert_zur_pfarrei = (
+        db.query(Filtertag)
+        .filter(Filtertag.id == filtertag_id, Filtertag.pfarrei_id == pfarrei_id)
+        .first()
+        is not None
+    )
+    if not gehoert_zur_pfarrei:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Filtertag gehört nicht zu dieser Pfarrei",
+        )
+
+
 @router.get("", response_model=list[FiltertagBlockerOut])
 def liste(
     pfarrei_id: int,
@@ -39,7 +54,9 @@ def liste(
     return (
         db.query(FiltertagBlocker)
         .filter(FiltertagBlocker.pfarrei_id == pfarrei_id)
-        .order_by(FiltertagBlocker.filtertag, FiltertagBlocker.wochentag, FiltertagBlocker.start_zeit)
+        .order_by(
+            FiltertagBlocker.filtertag_id, FiltertagBlocker.wochentag, FiltertagBlocker.start_zeit
+        )
         .all()
     )
 
@@ -52,6 +69,7 @@ def erstellen(
     _pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
 ) -> FiltertagBlocker:
+    _filtertag_pruefen(pfarrei_id, daten.filtertag_id, db)
     blocker = FiltertagBlocker(pfarrei_id=pfarrei_id, **daten.model_dump())
     db.add(blocker)
     db.commit()
@@ -69,6 +87,7 @@ def bearbeiten(
     _=Depends(require_verantwortlich),
 ) -> FiltertagBlocker:
     blocker = _get_blocker_or_404(pfarrei_id, blocker_id, db)
+    _filtertag_pruefen(pfarrei_id, daten.filtertag_id, db)
     for feld, wert in daten.model_dump().items():
         setattr(blocker, feld, wert)
     db.commit()

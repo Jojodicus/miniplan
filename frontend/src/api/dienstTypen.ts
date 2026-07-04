@@ -19,6 +19,7 @@ export interface DienstTyp {
   standard_anzahl: number
   erforderliche_filtertags: Filtertag[]
   gruppen_anforderungen: GruppenAnforderungOut[]
+  zeige_label: boolean
 }
 
 export interface DienstTypEingabe {
@@ -26,6 +27,7 @@ export interface DienstTypEingabe {
   standard_anzahl: number
   erforderliche_filtertags: Filtertag[]
   gruppen_anforderungen: GruppenAnforderung[]
+  zeige_label: boolean
 }
 
 export function dienstTypenListe(pfarreiId: number): Promise<DienstTyp[]> {

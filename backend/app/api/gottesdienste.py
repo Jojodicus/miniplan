@@ -17,6 +17,7 @@ from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.schemas.dienstbedarf import DienstbedarfIn
 from app.schemas.gottesdienst import GottesdienstIn, GottesdienstOut
+from app.services.filtertag_validation import unbekannte_filtertag_keys
 
 router = APIRouter(
     prefix="/api/pfarreien/{pfarrei_id}/miniplaene/{miniplan_id}/gottesdienste",
@@ -93,6 +94,14 @@ def _dienstbedarf_bauen(
             detail="Ein oder mehrere Minis gehören nicht zu dieser Pfarrei",
         )
 
+    alle_filtertags = {tag for e in eintraege for tag in e.erforderliche_filtertags}
+    unbekannt = unbekannte_filtertag_keys(pfarrei_id, alle_filtertags, db)
+    if unbekannt:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unbekannte Filtertags: {', '.join(sorted(unbekannt))}",
+        )
+
     dienstbedarf_liste = []
     for eintrag in eintraege:
         dienstbedarf_liste.append(
@@ -100,7 +109,8 @@ def _dienstbedarf_bauen(
                 dienst_typ_id=eintrag.dienst_typ_id,
                 name=eintrag.name,
                 anzahl=eintrag.anzahl,
-                erforderliche_filtertags=[tag.value for tag in eintrag.erforderliche_filtertags],
+                erforderliche_filtertags=eintrag.erforderliche_filtertags,
+                zeige_label=eintrag.zeige_label,
                 gruppen_anforderungen=[
                     DienstbedarfGruppenAnforderung(
                         gruppe_id=a.gruppe_id,
@@ -133,6 +143,7 @@ def erstellen(
         datum=daten.datum,
         uhrzeit=daten.uhrzeit,
         name=daten.name,
+        notiz=daten.notiz,
         dienstbedarf=_dienstbedarf_bauen(pfarrei_id, daten.dienstbedarf, db),
     )
     db.add(gottesdienst)
@@ -156,6 +167,7 @@ def bearbeiten(
     gottesdienst.datum = daten.datum
     gottesdienst.uhrzeit = daten.uhrzeit
     gottesdienst.name = daten.name
+    gottesdienst.notiz = daten.notiz
     gottesdienst.dienstbedarf = _dienstbedarf_bauen(pfarrei_id, daten.dienstbedarf, db)
     db.commit()
     db.refresh(gottesdienst)

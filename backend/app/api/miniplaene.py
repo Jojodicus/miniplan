@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
+from app.models.filtertag import Filtertag
 from app.models.miniplan import Miniplan
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
@@ -103,8 +104,12 @@ def vorschau(
     _=Depends(require_verantwortlich),
 ) -> Response:
     _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    filtertag_labels = {
+        f.key: f.label
+        for f in db.query(Filtertag).filter(Filtertag.pfarrei_id == pfarrei_id).all()
+    }
     try:
-        pdf_bytes = render_miniplan_pdf(pfarrei.name, daten)
+        pdf_bytes = render_miniplan_pdf(pfarrei.name, daten, filtertag_labels)
     except TypstCompileError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

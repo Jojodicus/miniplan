@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import type { GruppenAnforderung } from '../api/dienstTypen'
 import { dienstTypenListe, type DienstTyp } from '../api/dienstTypen'
+import { filtertagsListe, type Filtertag as FiltertagDef } from '../api/filtertags'
 import {
   gottesdienstBearbeiten,
   gottesdienstErstellen,
@@ -13,7 +14,7 @@ import {
   type Gottesdienst,
 } from '../api/gottesdienste'
 import { gruppenListe, type Gruppe } from '../api/gruppen'
-import { FILTERTAGS, minisListe, type Filtertag, type Mini } from '../api/minis'
+import { minisListe, type Filtertag, type Mini } from '../api/minis'
 import {
   miniplanAktualisieren,
   miniplanDetail,
@@ -32,10 +33,6 @@ function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
 }
 
-function filtertagLabel(tag: Filtertag): string {
-  return { grundschueler: 'Grundschüler', schueler: 'Schüler', arbeiter: 'Arbeiter' }[tag]
-}
-
 let naechsterSchluessel = 0
 function neuerSchluessel(): string {
   naechsterSchluessel += 1
@@ -51,6 +48,7 @@ interface WorkingBedarf {
   erforderliche_filtertags: Filtertag[]
   gruppen_anforderungen: GruppenAnforderung[]
   mini_ids: number[]
+  zeige_label: boolean
 }
 
 function bedarfAusOut(bedarf: Dienstbedarf): WorkingBedarf {
@@ -66,6 +64,7 @@ function bedarfAusOut(bedarf: Dienstbedarf): WorkingBedarf {
       mindest_anzahl: a.mindest_anzahl,
     })),
     mini_ids: bedarf.zugewiesene_minis.map((m) => m.id),
+    zeige_label: bedarf.zeige_label,
   }
 }
 
@@ -82,6 +81,7 @@ function bedarfAusDienstTyp(dienstTyp: DienstTyp): WorkingBedarf {
       mindest_anzahl: a.mindest_anzahl,
     })),
     mini_ids: [],
+    zeige_label: dienstTyp.zeige_label,
   }
 }
 
@@ -95,6 +95,7 @@ function bedarfFreitext(): WorkingBedarf {
     erforderliche_filtertags: [],
     gruppen_anforderungen: [],
     mini_ids: [],
+    zeige_label: true,
   }
 }
 
@@ -106,6 +107,7 @@ function zuEingabe(bedarf: WorkingBedarf): DienstbedarfEingabe {
     erforderliche_filtertags: bedarf.erforderliche_filtertags,
     gruppen_anforderungen: bedarf.gruppen_anforderungen,
     mini_ids: bedarf.mini_ids,
+    zeige_label: bedarf.zeige_label,
   }
 }
 
@@ -113,6 +115,7 @@ function DienstbedarfZeile({
   bedarf,
   gruppen,
   minis,
+  filtertags,
   zeigeFehler,
   onChange,
   onRemove,
@@ -120,6 +123,7 @@ function DienstbedarfZeile({
   bedarf: WorkingBedarf
   gruppen: Gruppe[]
   minis: Mini[]
+  filtertags: FiltertagDef[]
   zeigeFehler: boolean
   onChange: (patch: Partial<WorkingBedarf>) => void
   onRemove: () => void
@@ -203,17 +207,25 @@ function DienstbedarfZeile({
         />
       </div>
 
+      <CheckboxChip
+        id={`${bedarf.schluessel}-zeige-label`}
+        checked={bedarf.zeige_label}
+        onChange={() => onChange({ zeige_label: !bedarf.zeige_label })}
+      >
+        Auf dem Plan anzeigen
+      </CheckboxChip>
+
       <div>
-        <Label>Filtertags</Label>
+        <Label>Verfügbarkeits-Status</Label>
         <div className="flex flex-wrap gap-2">
-          {FILTERTAGS.map((tag) => (
+          {filtertags.map((filtertag) => (
             <CheckboxChip
-              key={tag}
-              id={`${bedarf.schluessel}-${tag}`}
-              checked={bedarf.erforderliche_filtertags.includes(tag)}
-              onChange={() => toggleFiltertag(tag)}
+              key={filtertag.key}
+              id={`${bedarf.schluessel}-${filtertag.key}`}
+              checked={bedarf.erforderliche_filtertags.includes(filtertag.key)}
+              onChange={() => toggleFiltertag(filtertag.key)}
             >
-              {filtertagLabel(tag)}
+              {filtertag.label}
             </CheckboxChip>
           ))}
         </div>
@@ -294,6 +306,7 @@ function GottesdienstKarte({
   gruppen,
   minis,
   dienstTypen,
+  filtertags,
   onReload,
 }: {
   gottesdienst: Gottesdienst
@@ -302,11 +315,13 @@ function GottesdienstKarte({
   gruppen: Gruppe[]
   minis: Mini[]
   dienstTypen: DienstTyp[]
+  filtertags: FiltertagDef[]
   onReload: () => void
 }) {
   const [datum, setDatum] = useState(gottesdienst.datum)
   const [uhrzeit, setUhrzeit] = useState(gottesdienst.uhrzeit.slice(0, 5))
   const [name, setName] = useState(gottesdienst.name)
+  const [notiz, setNotiz] = useState(gottesdienst.notiz ?? '')
   const [bedarfListe, setBedarfListe] = useState<WorkingBedarf[]>(
     gottesdienst.dienstbedarf.map(bedarfAusOut),
   )
@@ -348,6 +363,7 @@ function GottesdienstKarte({
         datum,
         uhrzeit,
         name,
+        notiz: notiz.trim() ? notiz : null,
         dienstbedarf: bedarfListe.map(zuEingabe),
       })
       onReload()
@@ -405,6 +421,20 @@ function GottesdienstKarte({
           </div>
         </div>
 
+        <div>
+          <Label htmlFor={`gottesdienst-${gottesdienst.id}-notiz`} hint="optional">
+            Notiz
+          </Label>
+          <textarea
+            id={`gottesdienst-${gottesdienst.id}-notiz`}
+            value={notiz}
+            onChange={(e) => setNotiz(e.target.value)}
+            rows={2}
+            placeholder="z. B. Bitte Kerzen mitbringen"
+            className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15"
+          />
+        </div>
+
         <div className="flex flex-col gap-3">
           {bedarfListe.map((bedarf) => (
             <DienstbedarfZeile
@@ -412,6 +442,7 @@ function GottesdienstKarte({
               bedarf={bedarf}
               gruppen={gruppen}
               minis={minis}
+              filtertags={filtertags}
               zeigeFehler={versucht}
               onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
               onRemove={() => removeBedarf(bedarf.schluessel)}
@@ -476,6 +507,7 @@ function NeuerGottesdienstForm({
   const [datum, setDatum] = useState('')
   const [uhrzeit, setUhrzeit] = useState('')
   const [name, setName] = useState('')
+  const [notiz, setNotiz] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [versucht, setVersucht] = useState(false)
 
@@ -491,11 +523,13 @@ function NeuerGottesdienstForm({
         datum,
         uhrzeit,
         name,
+        notiz: notiz.trim() ? notiz : null,
         dienstbedarf: [],
       })
       setDatum('')
       setUhrzeit('')
       setName('')
+      setNotiz('')
       onCreated()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Anlegen des Gottesdienstes'))
@@ -513,44 +547,59 @@ function NeuerGottesdienstForm({
       <form
         onSubmit={handleCreate}
         aria-label="Gottesdienst anlegen"
-        className="grid gap-4 p-5 sm:grid-cols-4"
+        className="flex flex-col gap-4 p-5"
       >
-        <div>
-          <Label htmlFor="neuer-gottesdienst-datum">Datum</Label>
-          <Input
-            id="neuer-gottesdienst-datum"
-            type="date"
-            value={datum}
-            onChange={(e) => setDatum(e.target.value)}
-            required
-            error={versucht && !datum ? 'Datum wird benötigt' : undefined}
-          />
+        <div className="grid gap-4 sm:grid-cols-4">
+          <div>
+            <Label htmlFor="neuer-gottesdienst-datum">Datum</Label>
+            <Input
+              id="neuer-gottesdienst-datum"
+              type="date"
+              value={datum}
+              onChange={(e) => setDatum(e.target.value)}
+              required
+              error={versucht && !datum ? 'Datum wird benötigt' : undefined}
+            />
+          </div>
+          <div>
+            <Label htmlFor="neuer-gottesdienst-uhrzeit">Uhrzeit</Label>
+            <Input
+              id="neuer-gottesdienst-uhrzeit"
+              type="time"
+              value={uhrzeit}
+              onChange={(e) => setUhrzeit(e.target.value)}
+              required
+              error={versucht && !uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
+            />
+          </div>
+          <div>
+            <Label htmlFor="neuer-gottesdienst-name">Name</Label>
+            <Input
+              id="neuer-gottesdienst-name"
+              placeholder="z. B. Sonntagsmesse"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </div>
+          <Button type="submit" className="self-end">
+            <Plus className="h-4 w-4" />
+            Gottesdienst anlegen
+          </Button>
         </div>
         <div>
-          <Label htmlFor="neuer-gottesdienst-uhrzeit">Uhrzeit</Label>
-          <Input
-            id="neuer-gottesdienst-uhrzeit"
-            type="time"
-            value={uhrzeit}
-            onChange={(e) => setUhrzeit(e.target.value)}
-            required
-            error={versucht && !uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
+          <Label htmlFor="neuer-gottesdienst-notiz" hint="optional">
+            Notiz
+          </Label>
+          <textarea
+            id="neuer-gottesdienst-notiz"
+            value={notiz}
+            onChange={(e) => setNotiz(e.target.value)}
+            rows={2}
+            placeholder="z. B. Bitte Kerzen mitbringen"
+            className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15"
           />
         </div>
-        <div>
-          <Label htmlFor="neuer-gottesdienst-name">Name</Label>
-          <Input
-            id="neuer-gottesdienst-name"
-            placeholder="z. B. Sonntagsmesse"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-        </div>
-        <Button type="submit" className="self-end">
-          <Plus className="h-4 w-4" />
-          Gottesdienst anlegen
-        </Button>
       </form>
     </Card>
   )
@@ -700,6 +749,7 @@ export function MiniplanEditorPage() {
   const [gruppen, setGruppen] = useState<Gruppe[]>([])
   const [minis, setMinis] = useState<Mini[]>([])
   const [dienstTypen, setDienstTypen] = useState<DienstTyp[]>([])
+  const [filtertags, setFiltertags] = useState<FiltertagDef[]>([])
 
   const reload = useCallback(() => {
     miniplanDetail(id, planId).then(setMiniplan)
@@ -713,6 +763,7 @@ export function MiniplanEditorPage() {
     gruppenListe(id).then(setGruppen)
     minisListe(id).then(setMinis)
     dienstTypenListe(id).then(setDienstTypen)
+    filtertagsListe(id).then(setFiltertags)
   }, [id])
 
   if (!miniplan) {
@@ -748,6 +799,7 @@ export function MiniplanEditorPage() {
             gruppen={gruppen}
             minis={minis}
             dienstTypen={dienstTypen}
+            filtertags={filtertags}
             onReload={reload}
           />
         ))}

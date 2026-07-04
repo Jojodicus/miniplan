@@ -15,6 +15,7 @@ export interface Dienstbedarf {
   erforderliche_filtertags: Filtertag[]
   gruppen_anforderungen: GruppenAnforderungOut[]
   zugewiesene_minis: Mini[]
+  zeige_label: boolean
 }
 
 export interface DienstbedarfEingabe {
@@ -24,6 +25,7 @@ export interface DienstbedarfEingabe {
   erforderliche_filtertags: Filtertag[]
   gruppen_anforderungen: GruppenAnforderung[]
   mini_ids: number[]
+  zeige_label: boolean
 }
 
 export interface Gottesdienst {
@@ -32,6 +34,7 @@ export interface Gottesdienst {
   datum: string
   uhrzeit: string
   name: string
+  notiz: string | null
   dienstbedarf: Dienstbedarf[]
 }
 
@@ -39,6 +42,7 @@ export interface GottesdienstEingabe {
   datum: string
   uhrzeit: string
   name: string
+  notiz: string | null
   dienstbedarf: DienstbedarfEingabe[]
 }
 

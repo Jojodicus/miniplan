@@ -60,12 +60,14 @@ export interface VorschauDienstbedarf {
   erforderliche_filtertags: Filtertag[]
   gruppen_anforderungen: VorschauGruppenAnforderung[]
   zugewiesene_minis: string[]
+  zeige_label: boolean
 }
 
 export interface VorschauGottesdienst {
   datum: string
   uhrzeit: string
   name: string
+  notiz: string | null
   dienstbedarf: VorschauDienstbedarf[]
 }
 
@@ -89,6 +91,7 @@ export function miniplanZuVorschauEingabe(miniplan: Miniplan): MiniplanVorschauE
       datum: gd.datum,
       uhrzeit: gd.uhrzeit,
       name: gd.name,
+      notiz: gd.notiz,
       dienstbedarf: gd.dienstbedarf.map((bedarf) => ({
         name: bedarf.dienst_typ?.name ?? bedarf.name ?? '',
         anzahl: bedarf.anzahl,
@@ -98,6 +101,7 @@ export function miniplanZuVorschauEingabe(miniplan: Miniplan): MiniplanVorschauE
           mindest_anzahl: a.mindest_anzahl,
         })),
         zugewiesene_minis: bedarf.zugewiesene_minis.map((m) => m.name),
+        zeige_label: bedarf.zeige_label,
       })),
     })),
   }

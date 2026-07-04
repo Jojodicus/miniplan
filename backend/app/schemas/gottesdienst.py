@@ -9,6 +9,7 @@ class GottesdienstIn(BaseModel):
     datum: date
     uhrzeit: time
     name: str = Field(min_length=1, max_length=255)
+    notiz: str | None = None
     dienstbedarf: list[DienstbedarfIn] = []
 
 
@@ -20,4 +21,5 @@ class GottesdienstOut(BaseModel):
     datum: date
     uhrzeit: time
     name: str
+    notiz: str | None
     dienstbedarf: list[DienstbedarfOut]

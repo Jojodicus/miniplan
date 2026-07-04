@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.models.nutzer import Nutzer
 from app.models.pfarrei import Pfarrei
-from app.services.feiertage import berechne_feiertage
+from app.services.feiertage import berechne_feiertage, default_arbeiter_frei
 from tests.conftest import auth_headers
 
 
@@ -14,6 +14,12 @@ def test_berechne_feiertage_enthaelt_fronleichnam_in_bayern() -> None:
     assert "fronleichnam" in keys
     fronleichnam = next(f for f in feiertage if f["key"] == "fronleichnam")
     assert fronleichnam["datum"] == date(2026, 6, 4)
+
+
+def test_default_arbeiter_frei_ist_true_fuer_gesetzliche_feiertage() -> None:
+    # Alle von `holidays` gelieferten Feiertage sind gesetzliche, arbeitsfreie Feiertage.
+    assert default_arbeiter_frei("fronleichnam") is True
+    assert default_arbeiter_frei("neujahr") is True
 
 
 def test_feiertage_liste_verwendet_defaults_ohne_einstellung(
@@ -26,7 +32,7 @@ def test_feiertage_liste_verwendet_defaults_ohne_einstellung(
     assert response.status_code == 200
     fronleichnam = next(f for f in response.json() if f["key"] == "fronleichnam")
     assert fronleichnam["schulfrei"] is True
-    assert fronleichnam["arbeiter_frei"] is False
+    assert fronleichnam["arbeiter_frei"] is True
 
 
 def test_feiertag_einstellung_setzen_und_abrufen(

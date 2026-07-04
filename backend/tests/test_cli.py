@@ -2,6 +2,9 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app import cli
+from app.models.dienst_typ import DienstTyp
+from app.models.filtertag import Filtertag
+from app.models.gruppe import Gruppe
 from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.security import verify_password
@@ -18,6 +21,27 @@ def test_create_pfarrei(db_session: Session) -> None:
 
     pfarrei = db_session.query(Pfarrei).filter(Pfarrei.name == "St. Beispiel").first()
     assert pfarrei is not None
+
+
+def test_create_pfarrei_seedet_default_stammdaten(db_session: Session) -> None:
+    cli.create_pfarrei("St. Beispiel")
+    pfarrei = db_session.query(Pfarrei).filter(Pfarrei.name == "St. Beispiel").first()
+    assert pfarrei is not None
+
+    filtertag_keys = {
+        f.key for f in db_session.query(Filtertag).filter(Filtertag.pfarrei_id == pfarrei.id)
+    }
+    assert filtertag_keys == {"grundschueler", "schueler", "arbeiter"}
+
+    gruppen_namen = {
+        g.name for g in db_session.query(Gruppe).filter(Gruppe.pfarrei_id == pfarrei.id)
+    }
+    assert gruppen_namen == {"Neu", "Normal", "Obermini"}
+
+    dienst_typ_namen = {
+        dt.name for dt in db_session.query(DienstTyp).filter(DienstTyp.pfarrei_id == pfarrei.id)
+    }
+    assert dienst_typ_namen == {"Sonntagsmesse", "Weihrauch", "Wochentagsmesse"}
 
 
 def test_create_pfarrei_doppelt_schlaegt_fehl(db_session: Session) -> None:

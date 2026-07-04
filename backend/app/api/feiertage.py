@@ -9,7 +9,7 @@ from app.models.feiertag_einstellung import FeiertagEinstellung
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.schemas.feiertag import FeiertagEinstellungUpdate, FeiertagOut
-from app.services.feiertage import berechne_feiertage
+from app.services.feiertage import berechne_feiertage, default_arbeiter_frei
 
 router = APIRouter(prefix="/api/pfarreien/{pfarrei_id}/feiertage", tags=["feiertage"])
 require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER)
@@ -40,7 +40,7 @@ def liste(
             schulfrei=einstellungen[f["key"]].schulfrei if f["key"] in einstellungen else True,
             arbeiter_frei=einstellungen[f["key"]].arbeiter_frei
             if f["key"] in einstellungen
-            else False,
+            else default_arbeiter_frei(f["key"]),
         )
         for f in berechnete
     ]

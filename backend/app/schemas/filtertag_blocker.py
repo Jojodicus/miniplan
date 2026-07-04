@@ -2,11 +2,9 @@ from datetime import time
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.filtertag import Filtertag
-
 
 class FiltertagBlockerCreate(BaseModel):
-    filtertag: Filtertag
+    filtertag_id: int
     wochentag: int = Field(ge=0, le=6)
     start_zeit: time
     end_zeit: time
@@ -27,7 +25,7 @@ class FiltertagBlockerOut(BaseModel):
 
     id: int
     pfarrei_id: int
-    filtertag: Filtertag
+    filtertag_id: int
     wochentag: int
     start_zeit: time
     end_zeit: time

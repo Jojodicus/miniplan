@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -18,6 +18,7 @@ class DienstTyp(Base):
     name: Mapped[str] = mapped_column(String(255))
     standard_anzahl: Mapped[int] = mapped_column(Integer, default=1)
     erforderliche_filtertags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    zeige_label: Mapped[bool] = mapped_column(Boolean, default=False)
 
     gruppen_anforderungen: Mapped[list["DienstTypGruppenAnforderung"]] = relationship(
         back_populates="dienst_typ", cascade="all, delete-orphan"

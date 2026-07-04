@@ -49,6 +49,7 @@ def test_gottesdienst_anlegen_mit_dienstbedarf_aus_dienst_typ(
     pfarrei: Pfarrei,
     gruppe: Gruppe,
     db_session,
+    filtertags: dict,
 ) -> None:
     miniplan = _miniplan(db_session, pfarrei)
     dienst_typ = _dienst_typ(db_session, pfarrei, gruppe)
@@ -61,6 +62,7 @@ def test_gottesdienst_anlegen_mit_dienstbedarf_aus_dienst_typ(
             "datum": "2026-07-05",
             "uhrzeit": "10:00:00",
             "name": "Sonntagsmesse",
+            "notiz": "Bitte pünktlich da sein",
             "dienstbedarf": [
                 {
                     "dienst_typ_id": dienst_typ.id,
@@ -68,6 +70,7 @@ def test_gottesdienst_anlegen_mit_dienstbedarf_aus_dienst_typ(
                     "erforderliche_filtertags": ["arbeiter"],
                     "gruppen_anforderungen": [{"gruppe_id": gruppe.id, "mindest_anzahl": 1}],
                     "mini_ids": [mini.id],
+                    "zeige_label": True,
                 }
             ],
         },
@@ -76,13 +79,38 @@ def test_gottesdienst_anlegen_mit_dienstbedarf_aus_dienst_typ(
     assert response.status_code == 201
     body = response.json()
     assert body["name"] == "Sonntagsmesse"
+    assert body["notiz"] == "Bitte pünktlich da sein"
     bedarf = body["dienstbedarf"][0]
     assert bedarf["dienst_typ"]["id"] == dienst_typ.id
     assert bedarf["dienst_typ"]["name"] == "Weihrauch"
     assert bedarf["anzahl"] == 2
     assert bedarf["erforderliche_filtertags"] == ["arbeiter"]
+    assert bedarf["zeige_label"] is True
     assert [a["gruppe"]["id"] for a in bedarf["gruppen_anforderungen"]] == [gruppe.id]
     assert [m["id"] for m in bedarf["zugewiesene_minis"]] == [mini.id]
+
+
+def test_gottesdienst_anlegen_mit_unbekanntem_filtertag_abgelehnt(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    db_session,
+) -> None:
+    miniplan = _miniplan(db_session, pfarrei)
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/gottesdienste",
+        json={
+            "datum": "2026-07-05",
+            "uhrzeit": "10:00:00",
+            "name": "Sonntagsmesse",
+            "dienstbedarf": [
+                {"name": "Kreuz", "anzahl": 1, "erforderliche_filtertags": ["arbeiter"]}
+            ],
+        },
+        headers=headers,
+    )
+    assert response.status_code == 400
 
 
 def test_gottesdienst_anlegen_mit_freiem_text_dienst(
@@ -234,6 +262,41 @@ def test_dienstbedarf_mit_fremdem_mini_abgelehnt(
         headers=headers,
     )
     assert response.status_code == 400
+
+
+def test_gottesdienst_notiz_ist_optional_und_rundtrip_faehig(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, db_session
+) -> None:
+    miniplan = _miniplan(db_session, pfarrei)
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+
+    ohne_notiz = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/gottesdienste",
+        json={"datum": "2026-07-05", "uhrzeit": "10:00:00", "name": "Sonntagsmesse"},
+        headers=headers,
+    )
+    assert ohne_notiz.status_code == 201
+    assert ohne_notiz.json()["notiz"] is None
+
+    erstellt = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/gottesdienste",
+        json={
+            "datum": "2026-07-06",
+            "uhrzeit": "10:00:00",
+            "name": "Werktagsmesse",
+            "notiz": "Bitte den Ministrantenraum aufschließen",
+        },
+        headers=headers,
+    ).json()
+    assert erstellt["notiz"] == "Bitte den Ministrantenraum aufschließen"
+
+    aktualisiert = client.put(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/gottesdienste/{erstellt['id']}",
+        json={"datum": "2026-07-06", "uhrzeit": "10:00:00", "name": "Werktagsmesse"},
+        headers=headers,
+    )
+    assert aktualisiert.status_code == 200
+    assert aktualisiert.json()["notiz"] is None
 
 
 def test_gottesdienst_bearbeiten_ersetzt_dienstbedarf(

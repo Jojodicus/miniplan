@@ -1,17 +1,16 @@
-import type { Filtertag } from './minis'
 import { api } from './client'
 
 export interface FiltertagBlocker {
   id: number
   pfarrei_id: number
-  filtertag: Filtertag
+  filtertag_id: number
   wochentag: number
   start_zeit: string
   end_zeit: string
 }
 
 export interface FiltertagBlockerEingabe {
-  filtertag: Filtertag
+  filtertag_id: number
   wochentag: number
   start_zeit: string
   end_zeit: string

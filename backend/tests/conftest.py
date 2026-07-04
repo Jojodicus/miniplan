@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.main import app
+from app.models.filtertag import Filtertag
 from app.models.gruppe import Gruppe
 from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
 from app.models.pfarrei import Pfarrei
@@ -120,6 +121,28 @@ def gruppe(db_session: Session, pfarrei: Pfarrei) -> Gruppe:
     db_session.commit()
     db_session.refresh(obj)
     return obj
+
+
+@pytest.fixture
+def filtertags(db_session: Session, pfarrei: Pfarrei) -> dict[str, Filtertag]:
+    """Legt die drei Standard-Filtertags für `pfarrei` an (wie `seed_default_stammdaten`), damit
+    Tests, die z.B. "arbeiter" als Filtertag-Key verwenden, gegen eine gültige Referenz validieren."""
+    definitionen = [
+        ("grundschueler", "Grundschüler", True),
+        ("schueler", "Schüler", True),
+        ("arbeiter", "Arbeiter", False),
+    ]
+    ergebnis: dict[str, Filtertag] = {}
+    for key, label, ist_schueler_artig in definitionen:
+        obj = Filtertag(
+            pfarrei_id=pfarrei.id, key=key, label=label, ist_schueler_artig=ist_schueler_artig
+        )
+        db_session.add(obj)
+        ergebnis[key] = obj
+    db_session.commit()
+    for obj in ergebnis.values():
+        db_session.refresh(obj)
+    return ergebnis
 
 
 def auth_headers(client: TestClient, email: str, password: str) -> dict[str, str]:

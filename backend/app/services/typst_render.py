@@ -3,7 +3,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from app.models.filtertag import Filtertag
 from app.schemas.miniplan_vorschau import MiniplanVorschauIn, VorschauDienstbedarf
 
 _MONATSNAMEN = [
@@ -20,12 +19,6 @@ _MONATSNAMEN = [
     "November",
     "Dezember",
 ]
-
-_FILTERTAG_LABELS = {
-    Filtertag.GRUNDSCHUELER: "Grundschüler",
-    Filtertag.SCHUELER: "Schüler",
-    Filtertag.ARBEITER: "Arbeiter",
-}
 
 _ERROR_ZEILE = re.compile(r"^error: (.+)$", re.MULTILINE)
 
@@ -51,18 +44,26 @@ def _text_zeilen(text: str) -> str:
     return "".join(teile)
 
 
-def _dienstbedarf_bezeichnung(bedarf: VorschauDienstbedarf) -> str:
+def _dienstbedarf_bezeichnung(
+    bedarf: VorschauDienstbedarf, filtertag_labels: dict[str, str]
+) -> str:
     einschraenkungen = [
-        _FILTERTAG_LABELS[tag] for tag in bedarf.erforderliche_filtertags
+        filtertag_labels.get(tag, tag) for tag in bedarf.erforderliche_filtertags
     ] + [
         f"mind. {a.mindest_anzahl}× {a.gruppe_name}" for a in bedarf.gruppen_anforderungen
     ]
+    if bedarf.zeige_label:
+        if einschraenkungen:
+            return f"{bedarf.name} ({', '.join(einschraenkungen)})"
+        return bedarf.name
     if einschraenkungen:
-        return f"{bedarf.name} ({', '.join(einschraenkungen)})"
-    return bedarf.name
+        return ", ".join(einschraenkungen)
+    return "—"
 
 
-def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
+def _build_source(
+    pfarrei_name: str, plan: MiniplanVorschauIn, filtertag_labels: dict[str, str]
+) -> str:
     zeilen: list[str] = []
     zeilen.append('#set page(paper: "a4", margin: 2cm)')
     zeilen.append('#set text(size: 10pt, lang: "de")')
@@ -81,6 +82,10 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
         gd_titel = f"{gd.datum.strftime('%d.%m.%Y')} {gd.uhrzeit.strftime('%H:%M')} Uhr – {gd.name}"
         zeilen.append("#block(above: 1em, below: 1em)[")
         zeilen.append(f'  #text(size: 12pt, weight: "bold")[#{_typst_str(gd_titel)}]')
+        if gd.notiz:
+            zeilen.append(
+                '  #text(style: "italic", size: 9pt)[' + _text_zeilen(gd.notiz) + "]"
+            )
         if gd.dienstbedarf:
             zeilen.append("  #table(")
             zeilen.append("    columns: (1fr, auto, 2fr),")
@@ -90,7 +95,7 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
             )
             for bedarf in gd.dienstbedarf:
                 minis_text = ", ".join(bedarf.zugewiesene_minis) if bedarf.zugewiesene_minis else "—"
-                bezeichnung = _dienstbedarf_bezeichnung(bedarf)
+                bezeichnung = _dienstbedarf_bezeichnung(bedarf, filtertag_labels)
                 zeilen.append(
                     f"    [#{_typst_str(bezeichnung)}], [#{_typst_str(str(bedarf.anzahl))}], "
                     f"[#{_typst_str(minis_text)}],"
@@ -120,8 +125,12 @@ def _parse_fehler(stderr: str) -> list[str]:
     return [stderr.strip() or "Unbekannter Typst-Fehler"]
 
 
-def render_miniplan_pdf(pfarrei_name: str, plan: MiniplanVorschauIn) -> bytes:
-    quelltext = _build_source(pfarrei_name, plan)
+def render_miniplan_pdf(
+    pfarrei_name: str,
+    plan: MiniplanVorschauIn,
+    filtertag_labels: dict[str, str] | None = None,
+) -> bytes:
+    quelltext = _build_source(pfarrei_name, plan, filtertag_labels or {})
     with tempfile.TemporaryDirectory() as tmp_dir:
         quelldatei = Path(tmp_dir) / "miniplan.typ"
         quelldatei.write_text(quelltext, encoding="utf-8")

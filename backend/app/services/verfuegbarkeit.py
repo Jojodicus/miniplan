@@ -7,9 +7,7 @@ from app.models.ferienzeitraum import Ferienzeitraum
 from app.models.filtertag import Filtertag
 from app.models.filtertag_blocker import FiltertagBlocker
 from app.models.pfarrei import Pfarrei
-from app.services.feiertage import berechne_feiertage
-
-SCHUELER_FILTERTAGS = {Filtertag.SCHUELER, Filtertag.GRUNDSCHUELER}
+from app.services.feiertage import berechne_feiertage, default_arbeiter_frei
 
 
 def _in_ferien(db: Session, pfarrei_id: int, datum: date) -> bool:
@@ -40,20 +38,23 @@ def _feiertag_einstellung(db: Session, pfarrei: Pfarrei, datum: date) -> Feierta
     )
     if einstellung is not None:
         return einstellung
-    return FeiertagEinstellung(schulfrei=True, arbeiter_frei=False)
+    return FeiertagEinstellung(schulfrei=True, arbeiter_frei=default_arbeiter_frei(treffer["key"]))
 
 
-def ist_blockiert(db: Session, pfarrei_id: int, filtertag: Filtertag, datum: date, zeit: time) -> bool:
-    if filtertag in SCHUELER_FILTERTAGS and _in_ferien(db, pfarrei_id, datum):
+def ist_blockiert(db: Session, pfarrei_id: int, filtertag_id: int, datum: date, zeit: time) -> bool:
+    filtertag = db.get(Filtertag, filtertag_id)
+    ist_schueler_artig = filtertag is not None and filtertag.ist_schueler_artig
+
+    if ist_schueler_artig and _in_ferien(db, pfarrei_id, datum):
         return False
 
     pfarrei = db.get(Pfarrei, pfarrei_id)
     if pfarrei is not None:
         feiertag_einstellung = _feiertag_einstellung(db, pfarrei, datum)
         if feiertag_einstellung is not None:
-            if filtertag in SCHUELER_FILTERTAGS and feiertag_einstellung.schulfrei:
+            if ist_schueler_artig and feiertag_einstellung.schulfrei:
                 return False
-            if filtertag == Filtertag.ARBEITER and feiertag_einstellung.arbeiter_frei:
+            if not ist_schueler_artig and feiertag_einstellung.arbeiter_frei:
                 return False
 
     wochentag = datum.weekday()
@@ -61,7 +62,7 @@ def ist_blockiert(db: Session, pfarrei_id: int, filtertag: Filtertag, datum: dat
         db.query(FiltertagBlocker)
         .filter(
             FiltertagBlocker.pfarrei_id == pfarrei_id,
-            FiltertagBlocker.filtertag == filtertag,
+            FiltertagBlocker.filtertag_id == filtertag_id,
             FiltertagBlocker.wochentag == wochentag,
             FiltertagBlocker.start_zeit <= zeit,
             FiltertagBlocker.end_zeit >= zeit,

@@ -7,7 +7,11 @@ from tests.conftest import auth_headers
 
 
 def test_mini_anlegen_und_auflisten(
-    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    gruppe: Gruppe,
+    filtertags: dict,
 ) -> None:
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     response = client.post(
@@ -46,8 +50,24 @@ def test_mini_anlegen_mit_fremder_gruppe_abgelehnt(
     assert response.status_code == 400
 
 
-def test_mini_bearbeiten(
+def test_mini_anlegen_mit_unbekanntem_filtertag_abgelehnt(
     client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe
+) -> None:
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/minis",
+        json={"name": "Max Muster", "gruppe_id": gruppe.id, "filtertags": ["schueler"]},
+        headers=headers,
+    )
+    assert response.status_code == 400
+
+
+def test_mini_bearbeiten(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    gruppe: Gruppe,
+    filtertags: dict,
 ) -> None:
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     erstellt = client.post(
