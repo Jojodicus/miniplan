@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import auth, pfarreien
+from app.api import auth, dienst_typen, gruppen, minis, pfarreien
 from app.config import settings
 
 app = FastAPI(title="Miniplan")
@@ -24,6 +24,9 @@ async def security_headers(request: Request, call_next) -> Response:
 
 app.include_router(auth.router)
 app.include_router(pfarreien.router)
+app.include_router(gruppen.router)
+app.include_router(minis.router)
+app.include_router(dienst_typen.router)
 
 
 @app.get("/api/health", include_in_schema=False)

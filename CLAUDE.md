@@ -17,7 +17,7 @@ und Token-basiertem Self-Service für Ministranten.
 ```
 backend/
   app/
-    api/          FastAPI-Router (auth, pfarreien, ...)
+    api/          FastAPI-Router (auth, pfarreien, gruppen, minis, dienst_typen, ...)
     models/       SQLAlchemy-Modelle
     schemas/      Pydantic-Schemas für Request/Response
     config.py     Settings (aus Umgebungsvariablen mit Präfix MINIPLAN_); generiert und persistiert
@@ -25,7 +25,8 @@ backend/
                   MINIPLAN_SECRET_KEY gesetzt ist
     database.py   Engine/Session/Base, get_db-Dependency
     security.py   Passwort-Hashing (bcrypt), JWT-Erstellung/-Validierung
-    deps.py       Auth-Dependencies (get_current_user, require_admin, RequirePfarreiRolle)
+    deps.py       Auth-Dependencies (get_current_user, require_admin, RequirePfarreiRolle,
+                  get_pfarrei)
     rate_limit.py In-Memory-Rate-Limit pro Client-IP für den Login-Endpoint (gilt nur pro
                   Prozess, siehe Deployment-Hinweis dort)
     cli.py        Kommandozeilen-Nutzer-/Pfarrei-Erstellung
@@ -40,7 +41,7 @@ frontend/
     api/          Fetch-basierter API-Client
     auth/         AuthContext (Login-Status; Token liegt in einem httpOnly-Cookie, das das
                   Backend beim Login setzt – kein clientseitiger Zugriff auf den Token)
-    pages/        Seiten-Komponenten (Login, Dashboard, ...)
+    pages/        Seiten-Komponenten (Login, Dashboard, Stammdaten, ...)
   e2e/            Playwright-Tests; global-setup.ts/global-teardown.ts bauen/starten bzw. stoppen
                   den echten Docker-Container (docker-compose.e2e.yml) automatisch
 Dockerfile              Multi-Stage-Build: Frontend-Build -> Backend-Image (inkl. Typst-Binary),
@@ -50,17 +51,26 @@ docker-compose.e2e.yml  isolierte Variante für Playwright-E2E-Tests (eigener Po
                         statt Volume, seedet Testdaten beim Start noch vor dem Öffnen des Ports)
 ```
 
-## Datenmodell (Auth-Kern)
+## Datenmodell
 
 - **Pfarrei**: Name
 - **Nutzer**: E-Mail, Passwort-Hash, `ist_admin` (globale Admin-Rolle)
 - **NutzerPfarreiRolle**: verknüpft Nutzer + Pfarrei mit einer pfarrei-bezogenen Rolle
   (`pfarrei_verantwortlicher`, `betrachter`); ein Nutzer kann in mehreren Pfarreien unterschiedliche
   Rollen haben. Admins sind global und benötigen keinen Eintrag hier.
+- **Gruppe**: pro Pfarrei, Name (z.B. "neu", "normal", "Obermini")
+- **Mini**: gehört zu einer Pfarrei + einer Gruppe, Name, Basis-Filtertags (`Filtertag`-Enum:
+  `grundschueler`, `schueler`, `arbeiter`, als JSON-Liste gespeichert)
+- **DienstTyp**: pro Pfarrei, Name, Standard-Anzahl, erforderliche Filtertags (JSON-Liste),
+  erlaubte Gruppen (m:n-Beziehung zu `Gruppe`; leer = alle Gruppen erlaubt)
 
-Rollen-Autorisierung: `app/deps.py` stellt `require_admin` (nur globale Admins) und
+Rollen-Autorisierung: `app/deps.py` stellt `require_admin` (nur globale Admins),
 `RequirePfarreiRolle(*rollen)` (Admins oder Nutzer mit passender Rolle in der per Pfad-Parameter
-`pfarrei_id` übergebenen Pfarrei) als FastAPI-Dependencies bereit.
+`pfarrei_id` übergebenen Pfarrei) sowie `get_pfarrei` (lädt die Pfarrei zum Pfad-Parameter
+`pfarrei_id` oder liefert 404) als FastAPI-Dependencies bereit. Die Stammdaten-Endpunkte
+(`/api/pfarreien/{pfarrei_id}/gruppen`, `/minis`, `/dienst-typen`) erfordern
+`pfarrei_verantwortlicher` (oder globalen Admin) der jeweiligen Pfarrei. `GET /api/pfarreien/mine`
+liefert die Pfarreien des eingeloggten Nutzers (Admins: alle) für die Übersichtsseite.
 
 ## Befehle
 

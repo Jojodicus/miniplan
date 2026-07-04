@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.nutzer import Nutzer, PfarreiRolle
+from app.models.pfarrei import Pfarrei
 from app.security import ACCESS_TOKEN_COOKIE_NAME, decode_access_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login", auto_error=False)
@@ -60,3 +61,10 @@ class RequirePfarreiRolle:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Keine Berechtigung für diese Pfarrei",
         )
+
+
+def get_pfarrei(pfarrei_id: int, db: Session = Depends(get_db)) -> Pfarrei:
+    pfarrei = db.get(Pfarrei, pfarrei_id)
+    if pfarrei is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pfarrei nicht gefunden")
+    return pfarrei

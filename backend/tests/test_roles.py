@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.models.nutzer import Nutzer
 from app.models.pfarrei import Pfarrei
+from app.security import hash_password
 from tests.conftest import auth_headers
 
 
@@ -67,3 +68,36 @@ def test_pfarrei_detail_nicht_gefunden_als_admin(client: TestClient, admin_user:
     headers = auth_headers(client, "admin@example.com", "geheim123")
     response = client.get("/api/pfarreien/999", headers=headers)
     assert response.status_code == 404
+
+
+def test_meine_pfarreien_als_admin_zeigt_alle(
+    client: TestClient, admin_user: Nutzer, pfarrei: Pfarrei
+) -> None:
+    headers = auth_headers(client, "admin@example.com", "geheim123")
+    response = client.get("/api/pfarreien/mine", headers=headers)
+    assert response.status_code == 200
+    assert [p["name"] for p in response.json()] == ["St. Beispiel"]
+
+
+def test_meine_pfarreien_als_verantwortlicher_zeigt_nur_eigene(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, db_session
+) -> None:
+    andere_pfarrei = Pfarrei(name="Andere Pfarrei")
+    db_session.add(andere_pfarrei)
+    db_session.commit()
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.get("/api/pfarreien/mine", headers=headers)
+    assert response.status_code == 200
+    assert [p["id"] for p in response.json()] == [pfarrei.id]
+
+
+def test_meine_pfarreien_ohne_zuordnung_ist_leer(client: TestClient, db_session) -> None:
+    nutzer = Nutzer(email="ohne@example.com", password_hash=hash_password("geheim123"))
+    db_session.add(nutzer)
+    db_session.commit()
+
+    headers = auth_headers(client, "ohne@example.com", "geheim123")
+    response = client.get("/api/pfarreien/mine", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == []

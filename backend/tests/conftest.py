@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.main import app
+from app.models.gruppe import Gruppe
 from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.rate_limit import _attempts
@@ -110,6 +111,15 @@ def betrachter_user(db_session: Session, pfarrei: Pfarrei) -> Nutzer:
     db_session.commit()
     db_session.refresh(nutzer)
     return nutzer
+
+
+@pytest.fixture
+def gruppe(db_session: Session, pfarrei: Pfarrei) -> Gruppe:
+    obj = Gruppe(pfarrei_id=pfarrei.id, name="Obermini")
+    db_session.add(obj)
+    db_session.commit()
+    db_session.refresh(obj)
+    return obj
 
 
 def auth_headers(client: TestClient, email: str, password: str) -> dict[str, str]:
