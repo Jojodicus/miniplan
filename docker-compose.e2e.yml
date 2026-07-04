@@ -1,0 +1,14 @@
+services:
+  miniplan-e2e:
+    build: .
+    ports:
+      - "8100:8000"
+    tmpfs:
+      - /data
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        alembic upgrade head &&
+        python -m app.cli create-pfarrei --name "St. Beispiel" &&
+        python -m app.cli create-user --email admin@example.com --password geheim123 --role admin &&
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000
