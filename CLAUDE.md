@@ -17,7 +17,8 @@ und Token-basiertem Self-Service für Ministranten.
 ```
 backend/
   app/
-    api/          FastAPI-Router (auth, pfarreien, gruppen, minis, dienst_typen, ...)
+    api/          FastAPI-Router (auth, pfarreien, gruppen, minis, dienst_typen, miniplaene,
+                  gottesdienste, ...)
     models/       SQLAlchemy-Modelle
     schemas/      Pydantic-Schemas für Request/Response
     config.py     Settings (aus Umgebungsvariablen mit Präfix MINIPLAN_); generiert und persistiert
@@ -41,7 +42,7 @@ frontend/
     api/          Fetch-basierter API-Client
     auth/         AuthContext (Login-Status; Token liegt in einem httpOnly-Cookie, das das
                   Backend beim Login setzt – kein clientseitiger Zugriff auf den Token)
-    pages/        Seiten-Komponenten (Login, Dashboard, Stammdaten, ...)
+    pages/        Seiten-Komponenten (Login, Dashboard, Stammdaten, Miniplaene, Miniplan-Editor, ...)
   e2e/            Playwright-Tests; global-setup.ts/global-teardown.ts bauen/starten bzw. stoppen
                   den echten Docker-Container (docker-compose.e2e.yml) automatisch
 Dockerfile              Multi-Stage-Build: Frontend-Build -> Backend-Image (inkl. Typst-Binary),
@@ -63,14 +64,31 @@ docker-compose.e2e.yml  isolierte Variante für Playwright-E2E-Tests (eigener Po
   `grundschueler`, `schueler`, `arbeiter`, als JSON-Liste gespeichert)
 - **DienstTyp**: pro Pfarrei, Name, Standard-Anzahl, erforderliche Filtertags (JSON-Liste),
   erlaubte Gruppen (m:n-Beziehung zu `Gruppe`; leer = alle Gruppen erlaubt)
+- **Miniplan**: pro Pfarrei, Monat/Jahr (eindeutig je Pfarrei), Status (`in_bearbeitung` /
+  `abgeschlossen`), Freitextfelder `veranstaltungen`/`ankuendigungen`; enthält eine Liste von
+  `Gottesdienst`en
+- **Gottesdienst**: gehört zu einem Miniplan, Datum, Uhrzeit, Name; enthält eine Liste von
+  `Dienstbedarf`-Einträgen
+- **Dienstbedarf**: gehört zu einem Gottesdienst, entweder von einem `DienstTyp` abgeleitet
+  (`dienst_typ_id` gesetzt) oder ein freier Text-Dienst (`name` gesetzt) – bei Ableitung werden
+  Anzahl, erforderliche Filtertags und Gruppen-Anforderungen als eigene, unabhängig editierbare
+  Kopie übernommen (keine Live-Verknüpfung zum `DienstTyp`); zusätzlich eine Liste manuell
+  zugewiesener Minis (`manuell_fixiert`, damit ein späterer Zuteilungsalgorithmus diese Zuweisungen
+  nicht überschreibt)
 
 Rollen-Autorisierung: `app/deps.py` stellt `require_admin` (nur globale Admins),
 `RequirePfarreiRolle(*rollen)` (Admins oder Nutzer mit passender Rolle in der per Pfad-Parameter
 `pfarrei_id` übergebenen Pfarrei) sowie `get_pfarrei` (lädt die Pfarrei zum Pfad-Parameter
 `pfarrei_id` oder liefert 404) als FastAPI-Dependencies bereit. Die Stammdaten-Endpunkte
-(`/api/pfarreien/{pfarrei_id}/gruppen`, `/minis`, `/dienst-typen`) erfordern
-`pfarrei_verantwortlicher` (oder globalen Admin) der jeweiligen Pfarrei. `GET /api/pfarreien/mine`
-liefert die Pfarreien des eingeloggten Nutzers (Admins: alle) für die Übersichtsseite.
+(`/api/pfarreien/{pfarrei_id}/gruppen`, `/minis`, `/dienst-typen`) sowie die Miniplan-Endpunkte
+(`/miniplaene`, `/miniplaene/{id}/gottesdienste`) erfordern `pfarrei_verantwortlicher` (oder
+globalen Admin) der jeweiligen Pfarrei. `GET /api/pfarreien/mine` liefert die Pfarreien des
+eingeloggten Nutzers (Admins: alle) für die Übersichtsseite.
+
+Gottesdienste werden mit ihrem vollständigen Dienstbedarf als verschachtelte Liste angelegt/
+aktualisiert (`PUT /gottesdienste/{id}` ersetzt die komplette Dienstbedarf-Liste, analog zum
+bestehenden Muster für `DienstTyp.gruppen_anforderungen`); es gibt keine separaten
+CRUD-Endpunkte für einzelne Dienstbedarf-Einträge.
 
 ## Befehle
 

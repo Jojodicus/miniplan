@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   CalendarDays,
   Check,
+  ChevronRight,
   ClipboardList,
   Clock,
   Landmark,
@@ -948,6 +949,13 @@ export function StammdatenPage() {
       <p className="mt-1 text-ink-soft">
         Gruppen, Minis und Dienst-Typen dieser Pfarrei verwalten.
       </p>
+      <Link
+        to={`/pfarreien/${id}/miniplaene`}
+        className="mt-2 inline-flex items-center gap-1.5 text-sm text-ink-soft transition-colors hover:text-pine-dark"
+      >
+        Zu den Miniplänen
+        <ChevronRight className="h-3.5 w-3.5" />
+      </Link>
 
       <div className="mt-6 flex gap-1 border-b border-line">
         {TABS.map(({ key, label, icon: Icon }) => (

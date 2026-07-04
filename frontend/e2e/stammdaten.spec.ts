@@ -33,6 +33,7 @@ test('Nutzer kann Gruppe, Mini und Dienst-Typ mit Gruppen-Mindestanzahl anlegen'
   await dienstTypForm.getByLabel('Name').fill('Weihrauch')
   await dienstTypForm.getByLabel('Standard-Anzahl').fill('2')
   await dienstTypForm.getByRole('button', { name: 'Zeile hinzufügen' }).click()
+  await dienstTypForm.locator('select').selectOption({ label: 'Obermini' })
   await dienstTypForm.locator('input[type="number"]').nth(1).fill('1')
   await dienstTypForm.getByRole('button', { name: 'Dienst-Typ anlegen' }).click()
   await expect(page.getByText('mind. 1× Obermini')).toBeVisible()

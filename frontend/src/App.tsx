@@ -2,6 +2,8 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth/AuthContext'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
+import { MiniplanEditorPage } from './pages/MiniplanEditorPage'
+import { MiniplaenePage } from './pages/MiniplaenePage'
 import { StammdatenPage } from './pages/StammdatenPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -34,6 +36,22 @@ function App() {
         element={
           <ProtectedRoute>
             <StammdatenPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/pfarreien/:pfarreiId/miniplaene"
+        element={
+          <ProtectedRoute>
+            <MiniplaenePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/pfarreien/:pfarreiId/miniplaene/:miniplanId"
+        element={
+          <ProtectedRoute>
+            <MiniplanEditorPage />
           </ProtectedRoute>
         }
       />
