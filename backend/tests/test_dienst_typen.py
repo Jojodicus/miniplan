@@ -16,7 +16,7 @@ def test_dienst_typ_anlegen_und_auflisten(
             "name": "Weihrauch",
             "standard_anzahl": 2,
             "erforderliche_filtertags": ["arbeiter"],
-            "erlaubte_gruppen_ids": [gruppe.id],
+            "gruppen_anforderungen": [{"gruppe_id": gruppe.id, "mindest_anzahl": 1}],
         },
         headers=headers,
     )
@@ -25,7 +25,8 @@ def test_dienst_typ_anlegen_und_auflisten(
     assert body["name"] == "Weihrauch"
     assert body["standard_anzahl"] == 2
     assert body["erforderliche_filtertags"] == ["arbeiter"]
-    assert [g["id"] for g in body["erlaubte_gruppen"]] == [gruppe.id]
+    assert [a["gruppe"]["id"] for a in body["gruppen_anforderungen"]] == [gruppe.id]
+    assert [a["mindest_anzahl"] for a in body["gruppen_anforderungen"]] == [1]
 
     response = client.get(f"/api/pfarreien/{pfarrei.id}/dienst-typen", headers=headers)
     assert response.status_code == 200
@@ -51,11 +52,28 @@ def test_dienst_typ_anlegen_mit_fremder_gruppe_abgelehnt(
             "name": "Weihrauch",
             "standard_anzahl": 2,
             "erforderliche_filtertags": [],
-            "erlaubte_gruppen_ids": [fremde_gruppe.id],
+            "gruppen_anforderungen": [{"gruppe_id": fremde_gruppe.id, "mindest_anzahl": 1}],
         },
         headers=headers,
     )
     assert response.status_code == 400
+
+
+def test_dienst_typ_anlegen_mindestanzahl_ueber_standard_anzahl_abgelehnt(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe
+) -> None:
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/dienst-typen",
+        json={
+            "name": "Weihrauch",
+            "standard_anzahl": 1,
+            "erforderliche_filtertags": [],
+            "gruppen_anforderungen": [{"gruppe_id": gruppe.id, "mindest_anzahl": 2}],
+        },
+        headers=headers,
+    )
+    assert response.status_code == 422
 
 
 def test_dienst_typ_anlegen_doppelter_name_konflikt(
@@ -66,7 +84,7 @@ def test_dienst_typ_anlegen_doppelter_name_konflikt(
         "name": "Kreuz",
         "standard_anzahl": 1,
         "erforderliche_filtertags": [],
-        "erlaubte_gruppen_ids": [],
+        "gruppen_anforderungen": [],
     }
     client.post(f"/api/pfarreien/{pfarrei.id}/dienst-typen", json=daten, headers=headers)
     response = client.post(
@@ -85,7 +103,7 @@ def test_dienst_typ_bearbeiten(
             "name": "Leuchter",
             "standard_anzahl": 2,
             "erforderliche_filtertags": [],
-            "erlaubte_gruppen_ids": [],
+            "gruppen_anforderungen": [],
         },
         headers=headers,
     ).json()
@@ -96,7 +114,7 @@ def test_dienst_typ_bearbeiten(
             "name": "Leuchter",
             "standard_anzahl": 3,
             "erforderliche_filtertags": ["grundschueler"],
-            "erlaubte_gruppen_ids": [],
+            "gruppen_anforderungen": [],
         },
         headers=headers,
     )
@@ -115,7 +133,7 @@ def test_dienst_typ_loeschen(
             "name": "Buch",
             "standard_anzahl": 1,
             "erforderliche_filtertags": [],
-            "erlaubte_gruppen_ids": [],
+            "gruppen_anforderungen": [],
         },
         headers=headers,
     ).json()

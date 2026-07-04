@@ -1,9 +1,13 @@
 import {
   ArrowLeft,
+  CalendarDays,
   Check,
   ClipboardList,
+  Clock,
+  Landmark,
   Pencil,
   Plus,
+  RefreshCw,
   Trash2,
   Users,
   UserRound,
@@ -18,7 +22,21 @@ import {
   dienstTypenListe,
   type DienstTyp,
   type DienstTypEingabe,
+  type GruppenAnforderung,
 } from '../api/dienstTypen'
+import {
+  feiertagEinstellungSetzen,
+  feiertageListe,
+  type Feiertag,
+} from '../api/feiertage'
+import { ferienAktualisieren, ferienListe, type Ferienzeitraum } from '../api/ferien'
+import {
+  filtertagBlockerErstellen,
+  filtertagBlockerListe,
+  filtertagBlockerLoeschen,
+  type FiltertagBlocker,
+  type FiltertagBlockerEingabe,
+} from '../api/filtertagBlocker'
 import {
   gruppeBearbeiten,
   gruppeErstellen,
@@ -34,6 +52,13 @@ import {
   type Filtertag,
   type Mini,
 } from '../api/minis'
+import {
+  bundeslandSetzen,
+  pfarreiDetail,
+  BUNDESLAENDER,
+  type Bundesland,
+  type Pfarrei as PfarreiInfo,
+} from '../api/pfarreien'
 import { AppShell } from '../components/layout/AppShell'
 import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
@@ -349,12 +374,84 @@ function MinisSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen: Grup
   )
 }
 
+function GruppenAnforderungenEditor({
+  gruppen,
+  anforderungen,
+  onChange,
+  idPrefix,
+}: {
+  gruppen: Gruppe[]
+  anforderungen: GruppenAnforderung[]
+  onChange: (anforderungen: GruppenAnforderung[]) => void
+  idPrefix: string
+}) {
+  function addRow() {
+    const belegteIds = new Set(anforderungen.map((a) => a.gruppe_id))
+    const naechsteGruppe = gruppen.find((g) => !belegteIds.has(g.id))
+    if (!naechsteGruppe) return
+    onChange([...anforderungen, { gruppe_id: naechsteGruppe.id, mindest_anzahl: 1 }])
+  }
+
+  function updateRow(index: number, patch: Partial<GruppenAnforderung>) {
+    onChange(anforderungen.map((a, i) => (i === index ? { ...a, ...patch } : a)))
+  }
+
+  function removeRow(index: number) {
+    onChange(anforderungen.filter((_, i) => i !== index))
+  }
+
+  return (
+    <div>
+      <Label hint="z. B. mind. 1 aus Gruppe Obermini">Gruppen-Mindestanzahl</Label>
+      <div className="flex flex-col gap-2">
+        {anforderungen.map((anforderung, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <Select
+              id={`${idPrefix}-gruppe-${index}`}
+              value={anforderung.gruppe_id}
+              onChange={(e) => updateRow(index, { gruppe_id: Number(e.target.value) })}
+              className="flex-1"
+            >
+              {gruppen.map((gruppe) => (
+                <option key={gruppe.id} value={gruppe.id}>
+                  {gruppe.name}
+                </option>
+              ))}
+            </Select>
+            <Input
+              id={`${idPrefix}-mindestanzahl-${index}`}
+              type="number"
+              min={0}
+              value={anforderung.mindest_anzahl}
+              onChange={(e) => updateRow(index, { mindest_anzahl: Number(e.target.value) })}
+              className="w-24"
+            />
+            <IconButton label="Zeile entfernen" tone="danger" onClick={() => removeRow(index)}>
+              <Trash2 className="h-4 w-4" />
+            </IconButton>
+          </div>
+        ))}
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        className="mt-2 self-start"
+        onClick={addRow}
+        disabled={anforderungen.length >= gruppen.length}
+      >
+        <Plus className="h-4 w-4" />
+        Zeile hinzufügen
+      </Button>
+    </div>
+  )
+}
+
 function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen: Gruppe[] }) {
   const [dienstTypen, setDienstTypen] = useState<DienstTyp[]>([])
   const [name, setName] = useState('')
   const [standardAnzahl, setStandardAnzahl] = useState(1)
   const [erforderlicheTags, setErforderlicheTags] = useState<Filtertag[]>([])
-  const [erlaubteGruppenIds, setErlaubteGruppenIds] = useState<number[]>([])
+  const [gruppenAnforderungen, setGruppenAnforderungen] = useState<GruppenAnforderung[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const reload = useCallback(() => {
@@ -365,12 +462,6 @@ function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen
     reload()
   }, [reload])
 
-  function toggleGruppe(gruppeId: number) {
-    setErlaubteGruppenIds((aktuell) =>
-      aktuell.includes(gruppeId) ? aktuell.filter((id) => id !== gruppeId) : [...aktuell, gruppeId],
-    )
-  }
-
   async function handleCreate(event: SubmitEvent) {
     event.preventDefault()
     setError(null)
@@ -378,14 +469,14 @@ function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen
       name,
       standard_anzahl: standardAnzahl,
       erforderliche_filtertags: erforderlicheTags,
-      erlaubte_gruppen_ids: erlaubteGruppenIds,
+      gruppen_anforderungen: gruppenAnforderungen,
     }
     try {
       await dienstTypErstellen(pfarreiId, daten)
       setName('')
       setStandardAnzahl(1)
       setErforderlicheTags([])
-      setErlaubteGruppenIds([])
+      setGruppenAnforderungen([])
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Anlegen des Dienst-Typs'))
@@ -423,9 +514,9 @@ function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium text-ink">{dienstTyp.name}</span>
                 <Badge tone="neutral">{dienstTyp.standard_anzahl}× besetzt</Badge>
-                {dienstTyp.erlaubte_gruppen.map((g) => (
-                  <Badge key={g.id} tone="pine">
-                    {g.name}
+                {dienstTyp.gruppen_anforderungen.map((a) => (
+                  <Badge key={a.gruppe.id} tone="pine">
+                    mind. {a.mindest_anzahl}× {a.gruppe.name}
                   </Badge>
                 ))}
                 {dienstTyp.erforderliche_filtertags.map((tag) => (
@@ -468,21 +559,12 @@ function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen
             />
           </div>
         </div>
-        <div>
-          <Label hint="leer = alle Gruppen">Erlaubte Gruppen</Label>
-          <div className="flex flex-wrap gap-2">
-            {gruppen.map((gruppe) => (
-              <CheckboxChip
-                key={gruppe.id}
-                id={`dienst-typ-gruppe-${gruppe.id}`}
-                checked={erlaubteGruppenIds.includes(gruppe.id)}
-                onChange={() => toggleGruppe(gruppe.id)}
-              >
-                {gruppe.name}
-              </CheckboxChip>
-            ))}
-          </div>
-        </div>
+        <GruppenAnforderungenEditor
+          gruppen={gruppen}
+          anforderungen={gruppenAnforderungen}
+          onChange={setGruppenAnforderungen}
+          idPrefix="dienst-typ-neu"
+        />
         <FiltertagChips
           ausgewaehlt={erforderlicheTags}
           onChange={setErforderlicheTags}
@@ -497,10 +579,344 @@ function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen
   )
 }
 
+const WOCHENTAGE = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag']
+
+function VerfuegbarkeitSection({ pfarreiId }: { pfarreiId: number }) {
+  const [blocker, setBlocker] = useState<FiltertagBlocker[]>([])
+  const [filtertag, setFiltertag] = useState<Filtertag>('grundschueler')
+  const [wochentag, setWochentag] = useState(0)
+  const [startZeit, setStartZeit] = useState('08:00')
+  const [endZeit, setEndZeit] = useState('13:00')
+  const [error, setError] = useState<string | null>(null)
+
+  const reload = useCallback(() => {
+    filtertagBlockerListe(pfarreiId).then(setBlocker)
+  }, [pfarreiId])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  async function handleCreate(event: SubmitEvent) {
+    event.preventDefault()
+    setError(null)
+    const daten: FiltertagBlockerEingabe = {
+      filtertag,
+      wochentag,
+      start_zeit: `${startZeit}:00`,
+      end_zeit: `${endZeit}:00`,
+    }
+    try {
+      await filtertagBlockerErstellen(pfarreiId, daten)
+      reload()
+    } catch (err) {
+      setError(fehlerText(err, 'Fehler beim Anlegen des Blockers'))
+    }
+  }
+
+  async function handleDelete(blockerId: number) {
+    setError(null)
+    try {
+      await filtertagBlockerLoeschen(pfarreiId, blockerId)
+      reload()
+    } catch (err) {
+      setError(fehlerText(err, 'Fehler beim Löschen des Blockers'))
+    }
+  }
+
+  return (
+    <Card className="animate-rise">
+      <CardHeader
+        title="Verfügbarkeits-Blocker"
+        description="Zeitfenster, in denen Minis mit einem bestimmten Filtertag nicht eingeplant werden dürfen (z. B. Schulzeit)."
+      />
+      {error && (
+        <div className="px-5 pt-4">
+          <Alert>{error}</Alert>
+        </div>
+      )}
+      {blocker.length === 0 ? (
+        <EmptyState icon={Clock} title="Noch keine Verfügbarkeits-Blocker angelegt" />
+      ) : (
+        <div>
+          {FILTERTAGS.map((tag) => {
+            const eintraege = blocker.filter((b) => b.filtertag === tag)
+            if (eintraege.length === 0) return null
+            return (
+              <div key={tag}>
+                <div className="border-b border-line bg-pine-tint/40 px-5 py-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                  {filtertagLabel(tag)}
+                </div>
+                {eintraege.map((b) => (
+                  <Row key={b.id}>
+                    <span className="text-sm text-ink">
+                      {WOCHENTAGE[b.wochentag]}, {b.start_zeit.slice(0, 5)}–{b.end_zeit.slice(0, 5)}{' '}
+                      Uhr
+                    </span>
+                    <IconButton label="Löschen" tone="danger" onClick={() => handleDelete(b.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </IconButton>
+                  </Row>
+                ))}
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <form onSubmit={handleCreate} className="flex flex-col gap-4 border-t border-line p-5">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="blocker-neu-filtertag">Filtertag</Label>
+            <Select
+              id="blocker-neu-filtertag"
+              value={filtertag}
+              onChange={(e) => setFiltertag(e.target.value as Filtertag)}
+            >
+              {FILTERTAGS.map((tag) => (
+                <option key={tag} value={tag}>
+                  {filtertagLabel(tag)}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="blocker-neu-wochentag">Wochentag</Label>
+            <Select
+              id="blocker-neu-wochentag"
+              value={wochentag}
+              onChange={(e) => setWochentag(Number(e.target.value))}
+            >
+              {WOCHENTAGE.map((label, index) => (
+                <option key={label} value={index}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="blocker-neu-start">Startzeit</Label>
+            <Input
+              id="blocker-neu-start"
+              type="time"
+              value={startZeit}
+              onChange={(e) => setStartZeit(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="blocker-neu-ende">Endzeit</Label>
+            <Input
+              id="blocker-neu-ende"
+              type="time"
+              value={endZeit}
+              onChange={(e) => setEndZeit(e.target.value)}
+              required
+            />
+          </div>
+        </div>
+        <Button type="submit" className="self-start">
+          <Plus className="h-4 w-4" />
+          Blocker anlegen
+        </Button>
+      </form>
+    </Card>
+  )
+}
+
+const BUNDESLAND_NAMEN: Record<Bundesland, string> = {
+  BW: 'Baden-Württemberg',
+  BY: 'Bayern',
+  BE: 'Berlin',
+  BB: 'Brandenburg',
+  HB: 'Bremen',
+  HH: 'Hamburg',
+  HE: 'Hessen',
+  MV: 'Mecklenburg-Vorpommern',
+  NI: 'Niedersachsen',
+  NW: 'Nordrhein-Westfalen',
+  RP: 'Rheinland-Pfalz',
+  SL: 'Saarland',
+  SN: 'Sachsen',
+  ST: 'Sachsen-Anhalt',
+  SH: 'Schleswig-Holstein',
+  TH: 'Thüringen',
+}
+
+function formatDatum(iso: string): string {
+  const [jahr, monat, tag] = iso.split('-')
+  return `${tag}.${monat}.${jahr}`
+}
+
+function FerienSection({ pfarreiId }: { pfarreiId: number }) {
+  const [pfarreiInfo, setPfarreiInfo] = useState<PfarreiInfo | null>(null)
+  const [ferien, setFerien] = useState<Ferienzeitraum[]>([])
+  const [aktualisiert, setAktualisiert] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const reload = useCallback(() => {
+    pfarreiDetail(pfarreiId).then(setPfarreiInfo)
+    ferienListe(pfarreiId).then(setFerien)
+  }, [pfarreiId])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  async function handleBundeslandChange(bundesland: Bundesland) {
+    setError(null)
+    try {
+      const aktualisiertePfarrei = await bundeslandSetzen(pfarreiId, bundesland)
+      setPfarreiInfo(aktualisiertePfarrei)
+    } catch (err) {
+      setError(fehlerText(err, 'Fehler beim Ändern des Bundeslands'))
+    }
+  }
+
+  async function handleAktualisieren() {
+    setError(null)
+    setAktualisiert(false)
+    try {
+      const neueFerien = await ferienAktualisieren(pfarreiId)
+      setFerien(neueFerien)
+      setAktualisiert(true)
+    } catch (err) {
+      setError(fehlerText(err, 'Ferienkalender konnte nicht aktualisiert werden'))
+    }
+  }
+
+  return (
+    <Card className="animate-rise">
+      <CardHeader
+        title="Ferien"
+        description="Schulferien des laufenden Schuljahrs, automatisch abgerufen für das gewählte Bundesland."
+      />
+      {error && (
+        <div className="px-5 pt-4">
+          <Alert>{error}</Alert>
+        </div>
+      )}
+      <div className="flex flex-wrap items-end gap-4 border-b border-line p-5">
+        <div>
+          <Label htmlFor="ferien-bundesland">Bundesland</Label>
+          <Select
+            id="ferien-bundesland"
+            value={pfarreiInfo?.bundesland ?? 'BY'}
+            onChange={(e) => handleBundeslandChange(e.target.value as Bundesland)}
+          >
+            {BUNDESLAENDER.map((code) => (
+              <option key={code} value={code}>
+                {BUNDESLAND_NAMEN[code]}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <Button type="button" onClick={handleAktualisieren}>
+          <RefreshCw className="h-4 w-4" />
+          Jetzt aktualisieren
+        </Button>
+        {aktualisiert && <span className="text-sm text-ink-soft">Ferienkalender aktualisiert.</span>}
+      </div>
+      {ferien.length === 0 ? (
+        <EmptyState
+          icon={CalendarDays}
+          title="Noch keine Ferien geladen"
+          description='Auf "Jetzt aktualisieren" klicken, um den Ferienkalender zu laden.'
+        />
+      ) : (
+        <div>
+          {ferien.map((f) => (
+            <Row key={f.id}>
+              <span className="text-sm text-ink">
+                {f.name} ({formatDatum(f.start_datum)}–{formatDatum(f.end_datum)})
+              </span>
+              <Badge tone="neutral">Schuljahr {f.schuljahr}</Badge>
+            </Row>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function FeiertageSection({ pfarreiId }: { pfarreiId: number }) {
+  const [feiertage, setFeiertage] = useState<Feiertag[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const jahr = new Date().getFullYear()
+
+  const reload = useCallback(() => {
+    feiertageListe(pfarreiId, jahr).then(setFeiertage)
+  }, [pfarreiId, jahr])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  async function handleToggle(feiertag: Feiertag, feld: 'schulfrei' | 'arbeiter_frei') {
+    setError(null)
+    const aktualisiert = { ...feiertag, [feld]: !feiertag[feld] }
+    setFeiertage((aktuell) => aktuell.map((f) => (f.key === feiertag.key ? aktualisiert : f)))
+    try {
+      await feiertagEinstellungSetzen(pfarreiId, feiertag.key, {
+        schulfrei: aktualisiert.schulfrei,
+        arbeiter_frei: aktualisiert.arbeiter_frei,
+      })
+    } catch (err) {
+      setError(fehlerText(err, 'Fehler beim Speichern der Feiertags-Einstellung'))
+      reload()
+    }
+  }
+
+  return (
+    <Card className="animate-rise">
+      <CardHeader
+        title="Gesetzliche Feiertage"
+        description={`Feiertage ${jahr}, mit Unterscheidung ob schulfrei und/oder auch für Arbeiter frei.`}
+      />
+      {error && (
+        <div className="px-5 pt-4">
+          <Alert>{error}</Alert>
+        </div>
+      )}
+      {feiertage.length === 0 ? (
+        <EmptyState icon={Landmark} title="Keine Feiertage gefunden" />
+      ) : (
+        <div>
+          {feiertage.map((f) => (
+            <Row key={f.key}>
+              <span className="text-sm text-ink">
+                {f.name} ({formatDatum(f.datum)})
+              </span>
+              <div className="flex items-center gap-2">
+                <CheckboxChip
+                  id={`feiertag-${f.key}-schulfrei`}
+                  checked={f.schulfrei}
+                  onChange={() => handleToggle(f, 'schulfrei')}
+                >
+                  schulfrei
+                </CheckboxChip>
+                <CheckboxChip
+                  id={`feiertag-${f.key}-arbeiterfrei`}
+                  checked={f.arbeiter_frei}
+                  onChange={() => handleToggle(f, 'arbeiter_frei')}
+                >
+                  auch frei für Arbeiter
+                </CheckboxChip>
+              </div>
+            </Row>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 const TABS = [
   { key: 'gruppen', label: 'Gruppen', icon: Users },
   { key: 'minis', label: 'Minis', icon: UserRound },
   { key: 'dienst-typen', label: 'Dienst-Typen', icon: ClipboardList },
+  { key: 'verfuegbarkeit', label: 'Verfügbarkeit', icon: Clock },
+  { key: 'ferien', label: 'Ferien', icon: CalendarDays },
+  { key: 'feiertage', label: 'Feiertage', icon: Landmark },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -556,6 +972,9 @@ export function StammdatenPage() {
         )}
         {tab === 'minis' && <MinisSection pfarreiId={id} gruppen={gruppen} />}
         {tab === 'dienst-typen' && <DienstTypenSection pfarreiId={id} gruppen={gruppen} />}
+        {tab === 'verfuegbarkeit' && <VerfuegbarkeitSection pfarreiId={id} />}
+        {tab === 'ferien' && <FerienSection pfarreiId={id} />}
+        {tab === 'feiertage' && <FeiertageSection pfarreiId={id} />}
       </div>
     </AppShell>
   )

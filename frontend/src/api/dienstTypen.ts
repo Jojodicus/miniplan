@@ -2,20 +2,30 @@ import type { Filtertag } from './minis'
 import { api } from './client'
 import type { Gruppe } from './gruppen'
 
+export interface GruppenAnforderung {
+  gruppe_id: number
+  mindest_anzahl: number
+}
+
+export interface GruppenAnforderungOut {
+  gruppe: Gruppe
+  mindest_anzahl: number
+}
+
 export interface DienstTyp {
   id: number
   pfarrei_id: number
   name: string
   standard_anzahl: number
   erforderliche_filtertags: Filtertag[]
-  erlaubte_gruppen: Gruppe[]
+  gruppen_anforderungen: GruppenAnforderungOut[]
 }
 
 export interface DienstTypEingabe {
   name: string
   standard_anzahl: number
   erforderliche_filtertags: Filtertag[]
-  erlaubte_gruppen_ids: number[]
+  gruppen_anforderungen: GruppenAnforderung[]
 }
 
 export function dienstTypenListe(pfarreiId: number): Promise<DienstTyp[]> {

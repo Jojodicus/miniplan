@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import auth, dienst_typen, gruppen, minis, pfarreien
+from app.api import auth, dienst_typen, feiertage, filtertag_blocker, gruppen, minis, pfarreien
 from app.config import settings
 
 app = FastAPI(title="Miniplan")
@@ -27,6 +27,8 @@ app.include_router(pfarreien.router)
 app.include_router(gruppen.router)
 app.include_router(minis.router)
 app.include_router(dienst_typen.router)
+app.include_router(filtertag_blocker.router)
+app.include_router(feiertage.router)
 
 
 @app.get("/api/health", include_in_schema=False)

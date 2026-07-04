@@ -4,11 +4,16 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
-from app.models.dienst_typ import DienstTyp
+from app.models.dienst_typ import DienstTyp, DienstTypGruppenAnforderung
 from app.models.gruppe import Gruppe
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
-from app.schemas.dienst_typ import DienstTypCreate, DienstTypOut, DienstTypUpdate
+from app.schemas.dienst_typ import (
+    DienstTypCreate,
+    DienstTypOut,
+    DienstTypUpdate,
+    GruppenAnforderung,
+)
 
 router = APIRouter(prefix="/api/pfarreien/{pfarrei_id}/dienst-typen", tags=["dienst-typen"])
 require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER)
@@ -27,9 +32,12 @@ def _get_dienst_typ_or_404(pfarrei_id: int, dienst_typ_id: int, db: Session) -> 
     return dienst_typ
 
 
-def _gruppen_laden(pfarrei_id: int, gruppen_ids: list[int], db: Session) -> list[Gruppe]:
-    if not gruppen_ids:
+def _gruppen_anforderungen_bauen(
+    pfarrei_id: int, anforderungen: list[GruppenAnforderung], db: Session
+) -> list[DienstTypGruppenAnforderung]:
+    if not anforderungen:
         return []
+    gruppen_ids = [a.gruppe_id for a in anforderungen]
     gruppen = (
         db.query(Gruppe)
         .filter(Gruppe.id.in_(gruppen_ids), Gruppe.pfarrei_id == pfarrei_id)
@@ -40,7 +48,13 @@ def _gruppen_laden(pfarrei_id: int, gruppen_ids: list[int], db: Session) -> list
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Eine oder mehrere Gruppen gehören nicht zu dieser Pfarrei",
         )
-    return gruppen
+    gruppen_by_id = {g.id: g for g in gruppen}
+    return [
+        DienstTypGruppenAnforderung(
+            gruppe_id=a.gruppe_id, mindest_anzahl=a.mindest_anzahl, gruppe=gruppen_by_id[a.gruppe_id]
+        )
+        for a in anforderungen
+    ]
 
 
 @router.get("", response_model=list[DienstTypOut])
@@ -66,13 +80,15 @@ def erstellen(
     _pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
 ) -> DienstTyp:
-    gruppen = _gruppen_laden(pfarrei_id, daten.erlaubte_gruppen_ids, db)
+    gruppen_anforderungen = _gruppen_anforderungen_bauen(
+        pfarrei_id, daten.gruppen_anforderungen, db
+    )
     dienst_typ = DienstTyp(
         pfarrei_id=pfarrei_id,
         name=daten.name,
         standard_anzahl=daten.standard_anzahl,
         erforderliche_filtertags=[tag.value for tag in daten.erforderliche_filtertags],
-        erlaubte_gruppen=gruppen,
+        gruppen_anforderungen=gruppen_anforderungen,
     )
     db.add(dienst_typ)
     try:
@@ -97,11 +113,13 @@ def bearbeiten(
     _=Depends(require_verantwortlich),
 ) -> DienstTyp:
     dienst_typ = _get_dienst_typ_or_404(pfarrei_id, dienst_typ_id, db)
-    gruppen = _gruppen_laden(pfarrei_id, daten.erlaubte_gruppen_ids, db)
+    gruppen_anforderungen = _gruppen_anforderungen_bauen(
+        pfarrei_id, daten.gruppen_anforderungen, db
+    )
     dienst_typ.name = daten.name
     dienst_typ.standard_anzahl = daten.standard_anzahl
     dienst_typ.erforderliche_filtertags = [tag.value for tag in daten.erforderliche_filtertags]
-    dienst_typ.erlaubte_gruppen = gruppen
+    dienst_typ.gruppen_anforderungen = gruppen_anforderungen
     try:
         db.commit()
     except IntegrityError:

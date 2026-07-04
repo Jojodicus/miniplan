@@ -2,16 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import RequirePfarreiRolle, get_current_user, require_admin
+from app.deps import RequirePfarreiRolle, get_current_user, get_pfarrei, require_admin
+from app.models.ferienzeitraum import Ferienzeitraum
 from app.models.nutzer import Nutzer, PfarreiRolle
 from app.models.pfarrei import Pfarrei
-from app.schemas.pfarrei import PfarreiOut
+from app.schemas.ferienzeitraum import FerienzeitraumOut
+from app.schemas.pfarrei import PfarreiBundeslandUpdate, PfarreiOut
+from app.services.ferien_sync import FerienSyncFehler, sync_ferien
 
 router = APIRouter(prefix="/api/pfarreien", tags=["pfarreien"])
 
 require_pfarrei_zugriff = RequirePfarreiRolle(
     PfarreiRolle.PFARREI_VERANTWORTLICHER, PfarreiRolle.BETRACHTER
 )
+require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER)
 
 
 @router.get("", response_model=list[PfarreiOut])
@@ -42,3 +46,45 @@ def detail(
     if pfarrei is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pfarrei nicht gefunden")
     return pfarrei
+
+
+@router.put("/{pfarrei_id}/bundesland", response_model=PfarreiOut)
+def bundesland_setzen(
+    pfarrei_id: int,
+    daten: PfarreiBundeslandUpdate,
+    db: Session = Depends(get_db),
+    pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Pfarrei:
+    pfarrei.bundesland = daten.bundesland
+    db.commit()
+    db.refresh(pfarrei)
+    return pfarrei
+
+
+@router.get("/{pfarrei_id}/ferien", response_model=list[FerienzeitraumOut])
+def ferien_liste(
+    pfarrei_id: int,
+    db: Session = Depends(get_db),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> list[Ferienzeitraum]:
+    return (
+        db.query(Ferienzeitraum)
+        .filter(Ferienzeitraum.pfarrei_id == pfarrei_id)
+        .order_by(Ferienzeitraum.start_datum)
+        .all()
+    )
+
+
+@router.post("/{pfarrei_id}/ferien/aktualisieren", response_model=list[FerienzeitraumOut])
+def ferien_aktualisieren(
+    pfarrei_id: int,
+    db: Session = Depends(get_db),
+    pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> list[Ferienzeitraum]:
+    try:
+        return sync_ferien(pfarrei, db)
+    except FerienSyncFehler as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
