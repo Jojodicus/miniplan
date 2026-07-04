@@ -951,7 +951,7 @@ export function StammdatenPage() {
       </p>
       <Link
         to={`/pfarreien/${id}/miniplaene`}
-        className="mt-2 inline-flex items-center gap-1.5 text-sm text-ink-soft transition-colors hover:text-pine-dark"
+        className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-transparent px-3 text-sm font-medium text-ink transition-colors duration-150 hover:border-pine hover:text-pine-dark"
       >
         Zu den Miniplänen
         <ChevronRight className="h-3.5 w-3.5" />

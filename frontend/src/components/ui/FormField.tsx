@@ -27,11 +27,28 @@ export function Label({
   )
 }
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  ({ className = '', ...props }, ref) => (
-    <input ref={ref} className={`${fieldChrome} ${className}`} {...props} />
-  ),
-)
+export const Input = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement> & { error?: string }
+>(({ className = '', error, ...props }, ref) => {
+  const input = (
+    <input
+      ref={ref}
+      aria-invalid={error ? true : undefined}
+      className={`${fieldChrome} ${
+        error ? 'border-wine focus:border-wine focus:ring-wine/15' : ''
+      } ${className}`}
+      {...props}
+    />
+  )
+  if (!error) return input
+  return (
+    <div>
+      {input}
+      <p className="mt-1 text-xs text-wine">{error}</p>
+    </div>
+  )
+})
 Input.displayName = 'Input'
 
 export const Select = forwardRef<

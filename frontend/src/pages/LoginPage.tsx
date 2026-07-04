@@ -1,3 +1,4 @@
+import { Eye, EyeOff } from 'lucide-react'
 import { useState, type SubmitEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
@@ -12,6 +13,7 @@ export function LoginPage() {
   const location = useLocation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -60,14 +62,29 @@ export function LoginPage() {
             </div>
             <div>
               <Label htmlFor="login-password">Passwort</Label>
-              <Input
-                id="login-password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="login-password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Passwort verbergen' : 'Passwort anzeigen'}
+                  className="absolute inset-y-0 right-0 flex w-10 cursor-pointer items-center justify-center text-ink-faint transition-colors hover:text-pine-dark"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
             {error && <Alert>{error}</Alert>}
             <Button type="submit" disabled={isSubmitting} className="mt-1 w-full">

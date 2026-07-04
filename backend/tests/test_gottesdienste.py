@@ -126,6 +126,14 @@ def test_dienstbedarf_erfordert_genau_eine_quelle(
         headers=headers,
     )
     assert response.status_code == 422
+    # Die Fehlermeldung des model_validators muss unverändert als `msg` der
+    # FastAPI-Validierungsfehler-Liste ankommen, damit das Frontend (client.ts)
+    # daraus einen lesbaren Text zusammensetzen kann statt "[object Object]".
+    fehler = response.json()["detail"]
+    assert any(
+        "Entweder dienst_typ_id oder name muss gesetzt sein" in eintrag["msg"]
+        for eintrag in fehler
+    )
 
 
 def test_dienstbedarf_mindestanzahl_ueber_anzahl_abgelehnt(

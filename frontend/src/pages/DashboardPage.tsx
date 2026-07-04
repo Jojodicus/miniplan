@@ -1,4 +1,4 @@
-import { ChevronRight, Church } from 'lucide-react'
+import { CalendarRange, ChevronRight, Church, Settings } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { meinePfarreien, type Pfarrei } from '../api/pfarreien'
@@ -33,11 +33,10 @@ export function DashboardPage() {
 
           <div className="grid gap-3 sm:grid-cols-2">
             {(pfarreien ?? []).map((pfarrei, i) => (
-              <Link
+              <div
                 key={pfarrei.id}
-                to={`/pfarreien/${pfarrei.id}/stammdaten`}
                 style={{ animationDelay: `${i * 40}ms` }}
-                className="group animate-rise flex items-center justify-between gap-3 rounded-xl border border-line bg-white/70 px-5 py-4 shadow-sm shadow-ink/5 transition-all hover:-translate-y-0.5 hover:border-pine/40 hover:shadow-md"
+                className="animate-rise flex flex-col gap-3 rounded-xl border border-line bg-white/70 px-5 py-4 shadow-sm shadow-ink/5 transition-all hover:-translate-y-0.5 hover:border-pine/40 hover:shadow-md"
               >
                 <div className="flex items-center gap-3">
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-pine-tint text-pine-dark">
@@ -45,8 +44,29 @@ export function DashboardPage() {
                   </span>
                   <span className="font-medium text-ink">{pfarrei.name}</span>
                 </div>
-                <ChevronRight className="h-4 w-4 text-ink-faint transition-transform group-hover:translate-x-0.5 group-hover:text-pine-dark" />
-              </Link>
+                <div className="grid grid-cols-2 gap-2">
+                  <Link
+                    to={`/pfarreien/${pfarrei.id}/stammdaten`}
+                    className="group flex items-center justify-between gap-1.5 rounded-md border border-line px-3 py-2 text-sm text-ink transition-colors hover:border-pine hover:text-pine-dark"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Settings className="h-3.5 w-3.5" />
+                      Stammdaten
+                    </span>
+                    <ChevronRight className="h-3.5 w-3.5 text-ink-faint transition-transform group-hover:translate-x-0.5 group-hover:text-pine-dark" />
+                  </Link>
+                  <Link
+                    to={`/pfarreien/${pfarrei.id}/miniplaene`}
+                    className="group flex items-center justify-between gap-1.5 rounded-md border border-line px-3 py-2 text-sm text-ink transition-colors hover:border-pine hover:text-pine-dark"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <CalendarRange className="h-3.5 w-3.5" />
+                      Miniplaene
+                    </span>
+                    <ChevronRight className="h-3.5 w-3.5 text-ink-faint transition-transform group-hover:translate-x-0.5 group-hover:text-pine-dark" />
+                  </Link>
+                </div>
+              </div>
             ))}
           </div>
         </div>

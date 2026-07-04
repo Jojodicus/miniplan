@@ -113,12 +113,14 @@ function DienstbedarfZeile({
   bedarf,
   gruppen,
   minis,
+  zeigeFehler,
   onChange,
   onRemove,
 }: {
   bedarf: WorkingBedarf
   gruppen: Gruppe[]
   minis: Mini[]
+  zeigeFehler: boolean
   onChange: (patch: Partial<WorkingBedarf>) => void
   onRemove: () => void
 }) {
@@ -177,6 +179,11 @@ function DienstbedarfZeile({
             onChange={(e) => onChange({ name: e.target.value })}
             required
             className="max-w-xs"
+            error={
+              zeigeFehler && !(bedarf.name ?? '').trim()
+                ? 'Name darf nicht leer sein'
+                : undefined
+            }
           />
         )}
         <IconButton label="Dienst entfernen" tone="danger" onClick={onRemove}>
@@ -305,6 +312,7 @@ function GottesdienstKarte({
   )
   const [neuerDienstTypId, setNeuerDienstTypId] = useState<number | ''>('')
   const [error, setError] = useState<string | null>(null)
+  const [versucht, setVersucht] = useState(false)
 
   function updateBedarf(schluessel: string, patch: Partial<WorkingBedarf>) {
     setBedarfListe((liste) =>
@@ -327,6 +335,13 @@ function GottesdienstKarte({
   }
 
   async function handleSave() {
+    setVersucht(true)
+    const bedarfOhneName = bedarfListe.some(
+      (b) => b.dienst_typ_id === null && !(b.name ?? '').trim(),
+    )
+    if (!datum || !uhrzeit || bedarfOhneName) {
+      return
+    }
     setError(null)
     try {
       await gottesdienstBearbeiten(pfarreiId, miniplanId, gottesdienst.id, {
@@ -365,6 +380,7 @@ function GottesdienstKarte({
               value={datum}
               onChange={(e) => setDatum(e.target.value)}
               required
+              error={versucht && !datum ? 'Datum wird benötigt' : undefined}
             />
           </div>
           <div>
@@ -375,6 +391,7 @@ function GottesdienstKarte({
               value={uhrzeit}
               onChange={(e) => setUhrzeit(e.target.value)}
               required
+              error={versucht && !uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
             />
           </div>
           <div>
@@ -395,6 +412,7 @@ function GottesdienstKarte({
               bedarf={bedarf}
               gruppen={gruppen}
               minis={minis}
+              zeigeFehler={versucht}
               onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
               onRemove={() => removeBedarf(bedarf.schluessel)}
             />
@@ -459,9 +477,14 @@ function NeuerGottesdienstForm({
   const [uhrzeit, setUhrzeit] = useState('')
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [versucht, setVersucht] = useState(false)
 
   async function handleCreate(event: SubmitEvent) {
     event.preventDefault()
+    setVersucht(true)
+    if (!datum || !uhrzeit) {
+      return
+    }
     setError(null)
     try {
       await gottesdienstErstellen(pfarreiId, miniplanId, {
@@ -500,6 +523,7 @@ function NeuerGottesdienstForm({
             value={datum}
             onChange={(e) => setDatum(e.target.value)}
             required
+            error={versucht && !datum ? 'Datum wird benötigt' : undefined}
           />
         </div>
         <div>
@@ -510,6 +534,7 @@ function NeuerGottesdienstForm({
             value={uhrzeit}
             onChange={(e) => setUhrzeit(e.target.value)}
             required
+            error={versucht && !uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
           />
         </div>
         <div>

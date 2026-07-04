@@ -7,6 +7,24 @@ export class ApiError extends Error {
   }
 }
 
+interface ValidationErrorEintrag {
+  msg?: unknown
+  [key: string]: unknown
+}
+
+function detailZuNachricht(detail: unknown): string {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const nachrichten = (detail as ValidationErrorEintrag[]).map((eintrag) =>
+      eintrag && typeof eintrag === 'object' && 'msg' in eintrag
+        ? String(eintrag.msg)
+        : String(eintrag),
+    )
+    return nachrichten.join('; ') || 'Unbekannter Fehler'
+  }
+  return 'Unbekannter Fehler'
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
   headers.set('Content-Type', 'application/json')
@@ -14,7 +32,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { ...options, headers, credentials: 'same-origin' })
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: response.statusText }))
-    throw new ApiError(response.status, body.detail ?? 'Unbekannter Fehler')
+    throw new ApiError(response.status, detailZuNachricht(body.detail))
   }
   if (response.status === 204) {
     return undefined as T
