@@ -21,6 +21,10 @@ export function login(email: string, password: string): Promise<Token> {
   return api.post<Token>('/api/auth/login', { email, password })
 }
 
+export function logout(): Promise<void> {
+  return api.post<void>('/api/auth/logout')
+}
+
 export function me(): Promise<Nutzer> {
   return api.get<Nutzer>('/api/auth/me')
 }

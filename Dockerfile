@@ -33,7 +33,12 @@ COPY --from=frontend-build /frontend/dist ./static
 ENV MINIPLAN_DATABASE_URL=sqlite:////data/miniplan.db
 ENV MINIPLAN_STATIC_FILES_DIR=/app/static
 ENV MINIPLAN_SECRET_KEY_FILE=/data/secret_key
+
+RUN useradd --create-home --uid 1000 miniplan \
+    && mkdir -p /data \
+    && chown -R miniplan:miniplan /app /data
 VOLUME ["/data"]
+USER miniplan
 
 EXPOSE 8000
 ENTRYPOINT ["./docker-entrypoint.sh"]

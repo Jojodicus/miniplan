@@ -8,7 +8,7 @@ und Token-basiertem Self-Service für Ministranten.
 
 - **Backend:** Python (FastAPI), SQLAlchemy + Alembic, SQLite
 - **Frontend:** React + Vite (TypeScript), react-router-dom, Paketmanager pnpm
-- **Auth:** Username/Passwort + JWT
+- **Auth:** Username/Passwort + JWT (im httpOnly-Cookie, alternativ per `Authorization: Bearer`-Header)
 - **Deployment:** ein Docker-Container (Frontend-Build wird vom Backend als Static Files
   ausgeliefert), Typst-Binary im Image
 
@@ -36,7 +36,8 @@ backend/
 frontend/
   src/
     api/          Fetch-basierter API-Client
-    auth/         AuthContext (Login-Status, Token in localStorage)
+    auth/         AuthContext (Login-Status; Token liegt in einem httpOnly-Cookie, das das
+                  Backend beim Login setzt – kein clientseitiger Zugriff auf den Token)
     pages/        Seiten-Komponenten (Login, Dashboard, ...)
   e2e/            Playwright-Tests; global-setup.ts/global-teardown.ts bauen/starten bzw. stoppen
                   den echten Docker-Container (docker-compose.e2e.yml) automatisch

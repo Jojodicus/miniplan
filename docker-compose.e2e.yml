@@ -4,7 +4,7 @@ services:
     ports:
       - "8100:8000"
     tmpfs:
-      - /data
+      - /data:uid=1000,gid=1000
     entrypoint: ["sh", "-c"]
     command:
       - >

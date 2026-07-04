@@ -1,17 +1,29 @@
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
 
 from app.config import settings
+
+ACCESS_TOKEN_COOKIE_NAME = "miniplan_token"
 
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
+_DUMMY_HASH = bcrypt.hashpw(b"dummy-password", bcrypt.gensalt()).decode("utf-8")
+
+
 def verify_password(plain_password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), password_hash.encode("utf-8"))
+
+
+def verify_password_or_dummy(plain_password: str, password_hash: str | None) -> bool:
+    """Führt immer einen bcrypt-Vergleich durch, auch wenn kein Nutzer existiert, damit die
+    Login-Antwortzeit nicht verrät, ob eine E-Mail-Adresse registriert ist."""
+    return verify_password(plain_password, password_hash or _DUMMY_HASH)
 
 
 def create_access_token(subject: int) -> str:
@@ -23,7 +35,7 @@ def create_access_token(subject: int) -> str:
 def decode_access_token(token: str) -> int | None:
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
-    except JWTError:
+    except InvalidTokenError:
         return None
     subject = payload.get("sub")
     if subject is None:

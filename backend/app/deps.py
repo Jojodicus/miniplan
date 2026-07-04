@@ -1,15 +1,16 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.nutzer import Nutzer, PfarreiRolle
-from app.security import decode_access_token
+from app.security import ACCESS_TOKEN_COOKIE_NAME, decode_access_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login", auto_error=False)
 
 
 def get_current_user(
+    request: Request,
     token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> Nutzer:
@@ -18,6 +19,7 @@ def get_current_user(
         detail="Ungültige oder fehlende Anmeldedaten",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    token = token or request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
     if token is None:
         raise credentials_error
     nutzer_id = decode_access_token(token)

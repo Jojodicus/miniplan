@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
-import { login as loginRequest, me, type Nutzer } from '../api/auth'
+import { login as loginRequest, logout as logoutRequest, me, type Nutzer } from '../api/auth'
 
 interface AuthContextValue {
   user: Nutzer | null
@@ -10,33 +10,24 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
-const TOKEN_KEY = 'miniplan_token'
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Nutzer | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY)
-    if (!token) {
-      setIsLoading(false)
-      return
-    }
     me()
       .then(setUser)
-      .catch(() => localStorage.removeItem(TOKEN_KEY))
+      .catch(() => setUser(null))
       .finally(() => setIsLoading(false))
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
-    const token = await loginRequest(email, password)
-    localStorage.setItem(TOKEN_KEY, token.access_token)
+    await loginRequest(email, password)
     setUser(await me())
   }, [])
 
   const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY)
-    setUser(null)
+    logoutRequest().finally(() => setUser(null))
   }, [])
 
   return (

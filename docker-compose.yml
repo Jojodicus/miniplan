@@ -5,6 +5,7 @@ services:
       - "8000:8000"
     # MINIPLAN_SECRET_KEY wird bei Bedarf hier gesetzt, um den beim ersten Start
     # automatisch generierten und in /data/secret_key abgelegten Schlüssel zu überschreiben.
+    # MINIPLAN_COOKIE_SECURE=true setzen, sobald ein TLS-Reverse-Proxy vor der App steht.
     volumes:
       - miniplan-data:/data
     restart: unless-stopped

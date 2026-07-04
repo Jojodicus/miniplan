@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.models.nutzer import Nutzer
+from app.security import ACCESS_TOKEN_COOKIE_NAME
 
 
 def test_login_erfolgreich(client: TestClient, admin_user: Nutzer) -> None:
@@ -11,6 +12,7 @@ def test_login_erfolgreich(client: TestClient, admin_user: Nutzer) -> None:
     body = response.json()
     assert body["token_type"] == "bearer"
     assert body["access_token"]
+    assert response.cookies[ACCESS_TOKEN_COOKIE_NAME] == body["access_token"]
 
 
 def test_login_falsches_passwort(client: TestClient, admin_user: Nutzer) -> None:
@@ -46,3 +48,21 @@ def test_me_mit_gueltigem_token(client: TestClient, admin_user: Nutzer) -> None:
     assert response.status_code == 200
     assert response.json()["email"] == "admin@example.com"
     assert response.json()["ist_admin"] is True
+
+
+def test_me_mit_cookie_ohne_authorization_header(client: TestClient, admin_user: Nutzer) -> None:
+    client.post("/api/auth/login", json={"email": "admin@example.com", "password": "geheim123"})
+    response = client.get("/api/auth/me")
+    assert response.status_code == 200
+    assert response.json()["email"] == "admin@example.com"
+
+
+def test_logout_entfernt_cookie(client: TestClient, admin_user: Nutzer) -> None:
+    client.post("/api/auth/login", json={"email": "admin@example.com", "password": "geheim123"})
+    assert client.get("/api/auth/me").status_code == 200
+
+    logout_response = client.post("/api/auth/logout")
+    assert logout_response.status_code == 204
+
+    response = client.get("/api/auth/me")
+    assert response.status_code == 401
