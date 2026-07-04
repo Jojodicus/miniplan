@@ -11,6 +11,7 @@ from app.schemas.miniplan_vorschau import (
 from app.services.typst_render import (
     TypstCompileError,
     _dienstbedarf_bezeichnung,
+    markdown_to_typst,
     render_miniplan_pdf,
 )
 
@@ -115,6 +116,46 @@ def test_dienstbedarf_bezeichnung_verwendet_filtertag_label_lookup() -> None:
     )
     bezeichnung = _dienstbedarf_bezeichnung(bedarf, {"arbeiter": "Arbeiter"})
     assert bezeichnung == "Weihrauch (Arbeiter)"
+
+
+def test_markdown_to_typst_fett() -> None:
+    ergebnis = markdown_to_typst("Hallo **fett** Welt")
+    assert ergebnis == '#"Hallo "*#"fett"*#" Welt"'
+
+
+def test_markdown_to_typst_kursiv() -> None:
+    ergebnis = markdown_to_typst("Hallo *kursiv* Welt")
+    assert ergebnis == '#"Hallo "_#"kursiv"_#" Welt"'
+
+
+def test_markdown_to_typst_liste() -> None:
+    ergebnis = markdown_to_typst("- Punkt eins\n- Punkt zwei")
+    assert ergebnis == '- #"Punkt eins"\n- #"Punkt zwei"'
+
+
+def test_markdown_to_typst_einfacher_absatz() -> None:
+    ergebnis = markdown_to_typst("Nur ein normaler Satz ohne Markdown.")
+    assert ergebnis == '#"Nur ein normaler Satz ohne Markdown."'
+
+
+def test_markdown_to_typst_escaped_typst_sonderzeichen() -> None:
+    # Kritisch: literale Typst-Sonderzeichen (#, ", \) im Nutzertext dürfen niemals roh
+    # verkettet werden, sondern müssen als Typst-String-Literal escaped bleiben - sonst
+    # wäre eine Typst-Code-Injection über Freitext möglich (siehe CLAUDE.md).
+    ergebnis = markdown_to_typst('Text mit "Anführung", #include("x") und \\ Backslash')
+    assert ergebnis == '#"Text mit \\"Anführung\\", #include(\\"x\\") und \\\\ Backslash"'
+    # Es darf kein rohes, unescaped "#include(" oder ein einzelnes literales "-Zeichen
+    # außerhalb eines String-Literals im Ergebnis vorkommen.
+    assert "#include(" not in ergebnis.replace('#include(\\"x\\")', "")
+
+
+def test_markdown_to_typst_kombiniert_liste_und_absaetze_liefert_gueltiges_pdf() -> None:
+    plan = _plan(
+        veranstaltungen="**Wichtig:**\n\n- Punkt eins\n- Punkt zwei mit *Betonung*",
+        ankuendigungen='Sonderzeichen: "Test" #eval \\ Ende',
+    )
+    pdf = render_miniplan_pdf("St. Beispiel", plan)
+    assert pdf.startswith(b"%PDF")
 
 
 def test_render_fehlerhaftes_template_wirft_strukturierten_fehler(monkeypatch) -> None:

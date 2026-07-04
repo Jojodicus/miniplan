@@ -81,29 +81,33 @@ export interface MiniplanVorschauEingabe {
 
 export type VorschauErgebnis = { ok: true; blobUrl: string } | { ok: false; fehler: string[] }
 
+export function gottesdienstOutZuVorschau(gd: Gottesdienst): VorschauGottesdienst {
+  return {
+    datum: gd.datum,
+    uhrzeit: gd.uhrzeit,
+    name: gd.name,
+    notiz: gd.notiz,
+    dienstbedarf: gd.dienstbedarf.map((bedarf) => ({
+      name: bedarf.dienst_typ?.name ?? bedarf.name ?? '',
+      anzahl: bedarf.anzahl,
+      erforderliche_filtertags: bedarf.erforderliche_filtertags,
+      gruppen_anforderungen: bedarf.gruppen_anforderungen.map((a) => ({
+        gruppe_name: a.gruppe.name,
+        mindest_anzahl: a.mindest_anzahl,
+      })),
+      zugewiesene_minis: bedarf.zugewiesene_minis.map((m) => m.name),
+      zeige_label: bedarf.zeige_label,
+    })),
+  }
+}
+
 export function miniplanZuVorschauEingabe(miniplan: Miniplan): MiniplanVorschauEingabe {
   return {
     monat: miniplan.monat,
     jahr: miniplan.jahr,
     veranstaltungen: miniplan.veranstaltungen,
     ankuendigungen: miniplan.ankuendigungen,
-    gottesdienste: miniplan.gottesdienste.map((gd) => ({
-      datum: gd.datum,
-      uhrzeit: gd.uhrzeit,
-      name: gd.name,
-      notiz: gd.notiz,
-      dienstbedarf: gd.dienstbedarf.map((bedarf) => ({
-        name: bedarf.dienst_typ?.name ?? bedarf.name ?? '',
-        anzahl: bedarf.anzahl,
-        erforderliche_filtertags: bedarf.erforderliche_filtertags,
-        gruppen_anforderungen: bedarf.gruppen_anforderungen.map((a) => ({
-          gruppe_name: a.gruppe.name,
-          mindest_anzahl: a.mindest_anzahl,
-        })),
-        zugewiesene_minis: bedarf.zugewiesene_minis.map((m) => m.name),
-        zeige_label: bedarf.zeige_label,
-      })),
-    })),
+    gottesdienste: miniplan.gottesdienste.map(gottesdienstOutZuVorschau),
   }
 }
 

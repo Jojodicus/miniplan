@@ -75,7 +75,7 @@ export function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? 'Passwort verbergen' : 'Passwort anzeigen'}
+                  aria-label={showPassword ? 'Eingabe verbergen' : 'Eingabe anzeigen'}
                   className="absolute inset-y-0 right-0 flex w-10 cursor-pointer items-center justify-center text-ink-faint transition-colors hover:text-pine-dark"
                 >
                   {showPassword ? (

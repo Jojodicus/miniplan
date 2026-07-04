@@ -2,6 +2,9 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
+
+import mistune
 
 from app.schemas.miniplan_vorschau import MiniplanVorschauIn, VorschauDienstbedarf
 
@@ -42,6 +45,74 @@ def _text_zeilen(text: str) -> str:
             teile.append("#linebreak()")
         teile.append(f"#{_typst_str(zeile)}")
     return "".join(teile)
+
+
+_markdown_parser = mistune.create_markdown(renderer=None)
+
+
+def _markdown_inline_zu_typst(token: dict[str, Any]) -> str:
+    typ = token.get("type")
+    if typ == "text":
+        return f"#{_typst_str(token.get('raw', ''))}"
+    if typ in ("softbreak", "linebreak"):
+        return "#linebreak()"
+    if typ == "strong":
+        kinder = "".join(_markdown_inline_zu_typst(t) for t in token.get("children", []))
+        return f"*{kinder}*"
+    if typ == "emphasis":
+        kinder = "".join(_markdown_inline_zu_typst(t) for t in token.get("children", []))
+        return f"_{kinder}_"
+    if typ == "codespan":
+        return f"#{_typst_str(token.get('raw', ''))}"
+    # unbekannter/unterstützter Inline-Knoten: Rohtext (falls vorhanden) sicher escapen,
+    # sonst ignorieren - nie unescapte Kindinhalte roh verketten.
+    if "raw" in token:
+        return f"#{_typst_str(token['raw'])}"
+    return "".join(_markdown_inline_zu_typst(t) for t in token.get("children", []))
+
+
+def _markdown_block_zu_typst(token: dict[str, Any]) -> list[str]:
+    typ = token.get("type")
+    if typ == "paragraph":
+        inhalt = "".join(_markdown_inline_zu_typst(t) for t in token.get("children", []))
+        return [inhalt]
+    if typ == "blank_line":
+        return []
+    if typ == "list":
+        zeilen: list[str] = []
+        for item in token.get("children", []):
+            item_inhalt = "".join(
+                "".join(_markdown_inline_zu_typst(t) for t in block.get("children", []))
+                for block in item.get("children", [])
+                if block.get("type") in ("block_text", "paragraph")
+            )
+            zeilen.append(f"- {item_inhalt}")
+        return ["\n".join(zeilen)]
+    if typ == "heading":
+        inhalt = "".join(_markdown_inline_zu_typst(t) for t in token.get("children", []))
+        return [f'#text(weight: "bold")[{inhalt}]']
+    if typ == "block_code":
+        return [f"#{_typst_str(token.get('raw', ''))}"]
+    # Fallback: falls doch Kinder vorhanden sind, deren Inline-Inhalt sicher rendern.
+    if "children" in token:
+        inhalt = "".join(_markdown_inline_zu_typst(t) for t in token.get("children", []))
+        return [inhalt] if inhalt else []
+    return []
+
+
+def markdown_to_typst(text: str) -> str:
+    """Wandelt eine kleine, sichere Markdown-Teilmenge (fett, kursiv, Aufzählungen,
+    Absätze) in Typst-Markup um. Jeder literale Textlauf wird dabei zwingend über
+    `_typst_str` als Typst-String-Literal escaped (`#"..."`), sodass auch hier keine
+    Typst-Code-Injection über Freitext möglich ist - analog zu `_text_zeilen`.
+    """
+    tokens = _markdown_parser(text)
+    bloecke: list[str] = []
+    for token in tokens:
+        for zeile in _markdown_block_zu_typst(token):
+            if zeile:
+                bloecke.append(zeile)
+    return "\n#linebreak()\n".join(bloecke)
 
 
 def _dienstbedarf_bezeichnung(
@@ -108,12 +179,12 @@ def _build_source(
     if plan.veranstaltungen:
         zeilen.append("#v(1em)")
         zeilen.append('#text(size: 12pt, weight: "bold")[Veranstaltungen]')
-        zeilen.append("#block(above: 0.5em)[" + _text_zeilen(plan.veranstaltungen) + "]")
+        zeilen.append("#block(above: 0.5em)[" + markdown_to_typst(plan.veranstaltungen) + "]")
 
     if plan.ankuendigungen:
         zeilen.append("#v(1em)")
         zeilen.append('#text(size: 12pt, weight: "bold")[Ankündigungen]')
-        zeilen.append("#block(above: 0.5em)[" + _text_zeilen(plan.ankuendigungen) + "]")
+        zeilen.append("#block(above: 0.5em)[" + markdown_to_typst(plan.ankuendigungen) + "]")
 
     return "\n".join(zeilen)
 

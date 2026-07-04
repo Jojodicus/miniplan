@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarRange, ChevronRight, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, CalendarRange, ChevronRight, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type SubmitEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
@@ -14,8 +14,9 @@ import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
 import { EmptyState } from '../components/ui/EmptyState'
-import { IconButton } from '../components/ui/IconButton'
+import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { Input, Label, Select } from '../components/ui/FormField'
+import { useToast } from '../components/ui/Toast'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -44,6 +45,7 @@ export function MiniplaenePage() {
   const { pfarreiId } = useParams<{ pfarreiId: string }>()
   const id = Number(pfarreiId)
   const navigate = useNavigate()
+  const { showToast } = useToast()
 
   const [miniplaene, setMiniplaene] = useState<Miniplan[]>([])
   const heute = new Date()
@@ -70,11 +72,11 @@ export function MiniplaenePage() {
     }
   }
 
-  async function handleDelete(miniplanId: number, bezeichnung: string) {
-    if (!confirm(`Miniplan "${bezeichnung}" wirklich löschen?`)) return
+  async function handleDelete(miniplanId: number) {
     setError(null)
     try {
       await miniplanLoeschen(id, miniplanId)
+      showToast('Miniplan gelöscht')
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Löschen des Miniplans'))
@@ -127,15 +129,7 @@ export function MiniplaenePage() {
                     {miniplan.status === 'abgeschlossen' ? 'Abgeschlossen' : 'In Bearbeitung'}
                   </Badge>
                 </Link>
-                <IconButton
-                  label="Löschen"
-                  tone="danger"
-                  onClick={() =>
-                    handleDelete(miniplan.id, `${monatsName(miniplan.monat)} ${miniplan.jahr}`)
-                  }
-                >
-                  <Trash2 className="h-4 w-4" />
-                </IconButton>
+                <InlineConfirmButton onConfirm={() => handleDelete(miniplan.id)} />
               </div>
             ))}
           </div>

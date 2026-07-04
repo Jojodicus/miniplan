@@ -1,5 +1,5 @@
-import { ArrowLeft, Check, Plus, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type SubmitEvent } from 'react'
+import { ArrowLeft, ChevronDown, Plus, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import type { GruppenAnforderung } from '../api/dienstTypen'
@@ -16,18 +16,26 @@ import {
 import { gruppenListe, type Gruppe } from '../api/gruppen'
 import { minisListe, type Filtertag, type Mini } from '../api/minis'
 import {
+  gottesdienstOutZuVorschau,
   miniplanAktualisieren,
   miniplanDetail,
   miniplanVorschau,
-  miniplanZuVorschauEingabe,
   type Miniplan,
+  type MiniplanVorschauEingabe,
+  type VorschauDienstbedarf,
+  type VorschauGottesdienst,
 } from '../api/miniplaene'
 import { AppShell } from '../components/layout/AppShell'
 import { Alert } from '../components/ui/Alert'
 import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
+import { DateInput } from '../components/ui/DateInput'
 import { CheckboxChip, Input, Label, Select } from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
+import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
+import { MarkdownTextarea } from '../components/ui/MarkdownTextarea'
+import { TimeInput } from '../components/ui/TimeInput'
+import { useToast } from '../components/ui/Toast'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -37,6 +45,24 @@ let naechsterSchluessel = 0
 function neuerSchluessel(): string {
   naechsterSchluessel += 1
   return `neu-${naechsterSchluessel}`
+}
+
+type SpeicherStatus = 'gespeichert' | 'speichert' | 'ungespeichert' | 'fehler'
+
+function StatusAnzeige({ status }: { status: SpeicherStatus }) {
+  const text: Record<SpeicherStatus, string> = {
+    gespeichert: 'Gespeichert',
+    speichert: 'Speichert…',
+    ungespeichert: 'Änderungen unvollständig',
+    fehler: 'Fehler beim Speichern',
+  }
+  const farbe: Record<SpeicherStatus, string> = {
+    gespeichert: 'text-ink-faint',
+    speichert: 'text-pine-dark',
+    ungespeichert: 'text-ink-faint',
+    fehler: 'text-wine',
+  }
+  return <span className={`text-xs ${farbe[status]}`}>{text[status]}</span>
 }
 
 interface WorkingBedarf {
@@ -111,6 +137,48 @@ function zuEingabe(bedarf: WorkingBedarf): DienstbedarfEingabe {
   }
 }
 
+function bedarfZuVorschau(
+  bedarf: WorkingBedarf,
+  gruppen: Gruppe[],
+  minis: Mini[],
+): VorschauDienstbedarf {
+  return {
+    name: bedarf.dienst_typ_name ?? bedarf.name ?? '',
+    anzahl: bedarf.anzahl,
+    erforderliche_filtertags: bedarf.erforderliche_filtertags,
+    gruppen_anforderungen: bedarf.gruppen_anforderungen.map((a) => ({
+      gruppe_name: gruppen.find((g) => g.id === a.gruppe_id)?.name ?? '',
+      mindest_anzahl: a.mindest_anzahl,
+    })),
+    zugewiesene_minis: bedarf.mini_ids
+      .map((id) => minis.find((m) => m.id === id)?.name)
+      .filter((name): name is string => Boolean(name)),
+    zeige_label: bedarf.zeige_label,
+  }
+}
+
+interface GottesdienstDraft {
+  datum: string
+  uhrzeit: string
+  name: string
+  notiz: string
+  bedarfListe: WorkingBedarf[]
+}
+
+function draftZuVorschau(
+  draft: GottesdienstDraft,
+  gruppen: Gruppe[],
+  minis: Mini[],
+): VorschauGottesdienst {
+  return {
+    datum: draft.datum,
+    uhrzeit: draft.uhrzeit ? `${draft.uhrzeit}:00` : '',
+    name: draft.name,
+    notiz: draft.notiz.trim() ? draft.notiz : null,
+    dienstbedarf: draft.bedarfListe.map((b) => bedarfZuVorschau(b, gruppen, minis)),
+  }
+}
+
 function DienstbedarfZeile({
   bedarf,
   gruppen,
@@ -128,6 +196,8 @@ function DienstbedarfZeile({
   onChange: (patch: Partial<WorkingBedarf>) => void
   onRemove: () => void
 }) {
+  const [erweitertOffen, setErweitertOffen] = useState(false)
+
   function addGruppenAnforderung() {
     const belegteIds = new Set(bedarf.gruppen_anforderungen.map((a) => a.gruppe_id))
     const naechsteGruppe = gruppen.find((g) => !belegteIds.has(g.id))
@@ -170,153 +240,184 @@ function DienstbedarfZeile({
     })
   }
 
+  const anzahlEinschraenkungen =
+    bedarf.erforderliche_filtertags.length +
+    bedarf.gruppen_anforderungen.length +
+    bedarf.mini_ids.length
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line p-3">
-      <div className="flex items-start justify-between gap-2">
-        {bedarf.dienst_typ_id !== null ? (
-          <span className="text-sm font-medium text-ink">{bedarf.dienst_typ_name}</span>
-        ) : (
-          <Input
-            aria-label="Name des Dienstes"
-            placeholder="z. B. Alle Ministranten"
-            value={bedarf.name ?? ''}
-            onChange={(e) => onChange({ name: e.target.value })}
-            required
-            className="max-w-xs"
-            error={
-              zeigeFehler && !(bedarf.name ?? '').trim()
-                ? 'Name darf nicht leer sein'
-                : undefined
-            }
-          />
-        )}
-        <IconButton label="Dienst entfernen" tone="danger" onClick={onRemove}>
-          <Trash2 className="h-4 w-4" />
-        </IconButton>
-      </div>
-
-      <div>
-        <Label htmlFor={`${bedarf.schluessel}-anzahl`}>Anzahl</Label>
-        <Input
-          id={`${bedarf.schluessel}-anzahl`}
-          type="number"
-          min={0}
-          value={bedarf.anzahl}
-          onChange={(e) => onChange({ anzahl: Number(e.target.value) })}
-          className="w-24"
-        />
-      </div>
-
-      <CheckboxChip
-        id={`${bedarf.schluessel}-zeige-label`}
-        checked={bedarf.zeige_label}
-        onChange={() => onChange({ zeige_label: !bedarf.zeige_label })}
-      >
-        Auf dem Plan anzeigen
-      </CheckboxChip>
-
-      <div>
-        <Label>Verfügbarkeits-Status</Label>
-        <div className="flex flex-wrap gap-2">
-          {filtertags.map((filtertag) => (
-            <CheckboxChip
-              key={filtertag.key}
-              id={`${bedarf.schluessel}-${filtertag.key}`}
-              checked={bedarf.erforderliche_filtertags.includes(filtertag.key)}
-              onChange={() => toggleFiltertag(filtertag.key)}
-            >
-              {filtertag.label}
-            </CheckboxChip>
-          ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-1 flex-wrap items-center gap-3">
+          {bedarf.dienst_typ_id !== null ? (
+            <span className="text-sm font-medium text-ink">{bedarf.dienst_typ_name}</span>
+          ) : (
+            <Input
+              aria-label="Name des Dienstes"
+              placeholder="z. B. Alle Ministranten"
+              value={bedarf.name ?? ''}
+              onChange={(e) => onChange({ name: e.target.value })}
+              required
+              className="max-w-xs"
+              error={
+                zeigeFehler && !(bedarf.name ?? '').trim()
+                  ? 'Name darf nicht leer sein'
+                  : undefined
+              }
+            />
+          )}
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor={`${bedarf.schluessel}-anzahl`}>Anzahl</Label>
+            <Input
+              id={`${bedarf.schluessel}-anzahl`}
+              type="number"
+              min={0}
+              value={bedarf.anzahl}
+              onChange={(e) => onChange({ anzahl: Number(e.target.value) })}
+              className="h-8 w-20"
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setErweitertOffen((wert) => !wert)}
+            className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
+          >
+            <ChevronDown
+              className={`h-3.5 w-3.5 transition-transform ${erweitertOffen ? 'rotate-180' : ''}`}
+            />
+            Details
+            {!erweitertOffen && anzahlEinschraenkungen > 0 && (
+              <span className="rounded-full bg-pine-tint px-1.5 text-[10px] text-pine-dark">
+                {anzahlEinschraenkungen}
+              </span>
+            )}
+          </button>
+          <InlineConfirmButton onConfirm={onRemove} label="Dienst entfernen" size="sm" />
         </div>
       </div>
 
-      <div>
-        <Label hint="z. B. mind. 1 aus Gruppe Obermini">Gruppen-Mindestanzahl</Label>
-        <div className="flex flex-col gap-2">
-          {bedarf.gruppen_anforderungen.map((anforderung, index) => (
-            <div key={index} className="flex items-center gap-2">
-              <Select
-                value={anforderung.gruppe_id}
-                onChange={(e) =>
-                  updateGruppenAnforderung(index, { gruppe_id: Number(e.target.value) })
-                }
-                className="flex-1"
-              >
-                {gruppen.map((gruppe) => (
-                  <option key={gruppe.id} value={gruppe.id}>
-                    {gruppe.name}
-                  </option>
-                ))}
-              </Select>
-              <Input
-                type="number"
-                min={0}
-                value={anforderung.mindest_anzahl}
-                onChange={(e) =>
-                  updateGruppenAnforderung(index, { mindest_anzahl: Number(e.target.value) })
-                }
-                className="w-24"
-              />
-              <IconButton
-                label="Zeile entfernen"
-                tone="danger"
-                onClick={() => removeGruppenAnforderung(index)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </IconButton>
+      {erweitertOffen && (
+        <div className="flex flex-col gap-3 border-t border-line pt-3">
+          <CheckboxChip
+            id={`${bedarf.schluessel}-zeige-label`}
+            checked={bedarf.zeige_label}
+            onChange={() => onChange({ zeige_label: !bedarf.zeige_label })}
+          >
+            Auf dem Plan anzeigen
+          </CheckboxChip>
+
+          <div>
+            <Label>Verfügbarkeits-Status</Label>
+            <div className="flex flex-wrap gap-2">
+              {filtertags.map((filtertag) => (
+                <CheckboxChip
+                  key={filtertag.key}
+                  id={`${bedarf.schluessel}-${filtertag.key}`}
+                  checked={bedarf.erforderliche_filtertags.includes(filtertag.key)}
+                  onChange={() => toggleFiltertag(filtertag.key)}
+                >
+                  {filtertag.label}
+                </CheckboxChip>
+              ))}
             </div>
-          ))}
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          className="mt-2 self-start"
-          onClick={addGruppenAnforderung}
-          disabled={bedarf.gruppen_anforderungen.length >= gruppen.length}
-        >
-          <Plus className="h-4 w-4" />
-          Zeile hinzufügen
-        </Button>
-      </div>
+          </div>
 
-      <div>
-        <Label>Manuell zugewiesene Minis</Label>
-        <div className="flex flex-wrap gap-2">
-          {minis.map((mini) => (
-            <CheckboxChip
-              key={mini.id}
-              id={`${bedarf.schluessel}-mini-${mini.id}`}
-              checked={bedarf.mini_ids.includes(mini.id)}
-              onChange={() => toggleMini(mini.id)}
+          <div>
+            <Label hint="z. B. mind. 1 aus Gruppe Obermini">Gruppen-Mindestanzahl</Label>
+            <div className="flex flex-col gap-2">
+              {bedarf.gruppen_anforderungen.map((anforderung, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Select
+                    value={anforderung.gruppe_id}
+                    onChange={(e) =>
+                      updateGruppenAnforderung(index, { gruppe_id: Number(e.target.value) })
+                    }
+                    className="flex-1"
+                  >
+                    {gruppen.map((gruppe) => (
+                      <option key={gruppe.id} value={gruppe.id}>
+                        {gruppe.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={anforderung.mindest_anzahl}
+                    onChange={(e) =>
+                      updateGruppenAnforderung(index, { mindest_anzahl: Number(e.target.value) })
+                    }
+                    className="w-24"
+                  />
+                  <IconButton
+                    label="Zeile entfernen"
+                    tone="danger"
+                    onClick={() => removeGruppenAnforderung(index)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </IconButton>
+                </div>
+              ))}
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className="mt-2 self-start"
+              onClick={addGruppenAnforderung}
+              disabled={bedarf.gruppen_anforderungen.length >= gruppen.length}
             >
-              {mini.name}
-            </CheckboxChip>
-          ))}
+              <Plus className="h-4 w-4" />
+              Zeile hinzufügen
+            </Button>
+          </div>
+
+          <div>
+            <Label>Manuell zugewiesene Minis</Label>
+            <div className="flex flex-wrap gap-2">
+              {minis.map((mini) => (
+                <CheckboxChip
+                  key={mini.id}
+                  id={`${bedarf.schluessel}-mini-${mini.id}`}
+                  checked={bedarf.mini_ids.includes(mini.id)}
+                  onChange={() => toggleMini(mini.id)}
+                >
+                  {mini.name}
+                </CheckboxChip>
+              ))}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
+
+const AUTOSAVE_DEBOUNCE_MS = 800
 
 function GottesdienstKarte({
   gottesdienst,
   pfarreiId,
   miniplanId,
+  jahr,
   gruppen,
   minis,
   dienstTypen,
   filtertags,
   onReload,
+  onDraftChange,
 }: {
   gottesdienst: Gottesdienst
   pfarreiId: number
   miniplanId: number
+  jahr: number
   gruppen: Gruppe[]
   minis: Mini[]
   dienstTypen: DienstTyp[]
   filtertags: FiltertagDef[]
   onReload: () => void
+  onDraftChange: (gottesdienstId: number, draft: GottesdienstDraft) => void
 }) {
   const [datum, setDatum] = useState(gottesdienst.datum)
   const [uhrzeit, setUhrzeit] = useState(gottesdienst.uhrzeit.slice(0, 5))
@@ -326,8 +427,10 @@ function GottesdienstKarte({
     gottesdienst.dienstbedarf.map(bedarfAusOut),
   )
   const [neuerDienstTypId, setNeuerDienstTypId] = useState<number | ''>('')
-  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<SpeicherStatus>('gespeichert')
   const [versucht, setVersucht] = useState(false)
+  const { showToast } = useToast()
+  const istErstesRendern = useRef(true)
 
   function updateBedarf(schluessel: string, patch: Partial<WorkingBedarf>) {
     setBedarfListe((liste) =>
@@ -349,63 +452,76 @@ function GottesdienstKarte({
     setBedarfListe((liste) => [...liste, bedarfFreitext()])
   }
 
-  async function handleSave() {
-    setVersucht(true)
+  useEffect(() => {
+    onDraftChange(gottesdienst.id, { datum, uhrzeit, name, notiz, bedarfListe })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datum, uhrzeit, name, notiz, bedarfListe])
+
+  useEffect(() => {
+    if (istErstesRendern.current) {
+      istErstesRendern.current = false
+      return
+    }
     const bedarfOhneName = bedarfListe.some(
       (b) => b.dienst_typ_id === null && !(b.name ?? '').trim(),
     )
     if (!datum || !uhrzeit || bedarfOhneName) {
+      setStatus('ungespeichert')
       return
     }
-    setError(null)
-    try {
-      await gottesdienstBearbeiten(pfarreiId, miniplanId, gottesdienst.id, {
-        datum,
-        uhrzeit,
-        name,
-        notiz: notiz.trim() ? notiz : null,
-        dienstbedarf: bedarfListe.map(zuEingabe),
-      })
-      onReload()
-    } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Speichern des Gottesdienstes'))
-    }
-  }
+    setStatus('speichert')
+    const timer = setTimeout(async () => {
+      try {
+        await gottesdienstBearbeiten(pfarreiId, miniplanId, gottesdienst.id, {
+          datum,
+          uhrzeit,
+          name,
+          notiz: notiz.trim() ? notiz : null,
+          dienstbedarf: bedarfListe.map(zuEingabe),
+        })
+        setStatus('gespeichert')
+        onReload()
+      } catch (err) {
+        setStatus('fehler')
+        showToast(fehlerText(err, 'Fehler beim Speichern des Gottesdienstes'), 'error')
+      }
+    }, AUTOSAVE_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datum, uhrzeit, name, notiz, bedarfListe])
 
   async function handleDelete() {
-    if (!confirm(`Gottesdienst "${gottesdienst.name}" wirklich löschen?`)) return
-    setError(null)
     try {
       await gottesdienstLoeschen(pfarreiId, miniplanId, gottesdienst.id)
+      showToast('Gottesdienst gelöscht')
       onReload()
     } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Löschen des Gottesdienstes'))
+      showToast(fehlerText(err, 'Fehler beim Löschen des Gottesdienstes'), 'error')
     }
   }
 
   return (
     <Card className="animate-rise">
       <div className="flex flex-col gap-4 p-5">
-        {error && <Alert>{error}</Alert>}
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
             <Label htmlFor={`gottesdienst-${gottesdienst.id}-datum`}>Datum</Label>
-            <Input
+            <DateInput
               id={`gottesdienst-${gottesdienst.id}-datum`}
-              type="date"
+              pfarreiId={pfarreiId}
+              jahr={jahr}
               value={datum}
-              onChange={(e) => setDatum(e.target.value)}
+              onChange={setDatum}
               required
               error={versucht && !datum ? 'Datum wird benötigt' : undefined}
             />
           </div>
           <div>
             <Label htmlFor={`gottesdienst-${gottesdienst.id}-uhrzeit`}>Uhrzeit</Label>
-            <Input
+            <TimeInput
               id={`gottesdienst-${gottesdienst.id}-uhrzeit`}
-              type="time"
               value={uhrzeit}
-              onChange={(e) => setUhrzeit(e.target.value)}
+              onChange={setUhrzeit}
               required
               error={versucht && !uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
             />
@@ -416,6 +532,7 @@ function GottesdienstKarte({
               id={`gottesdienst-${gottesdienst.id}-name`}
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onBlur={() => setVersucht(true)}
               required
             />
           </div>
@@ -481,14 +598,12 @@ function GottesdienstKarte({
         </div>
 
         <div className="flex items-center justify-between border-t border-line pt-4">
-          <Button type="button" variant="danger" onClick={handleDelete}>
-            <Trash2 className="h-4 w-4" />
-            Gottesdienst löschen
-          </Button>
-          <Button type="button" onClick={handleSave}>
-            <Check className="h-4 w-4" />
-            Speichern
-          </Button>
+          <InlineConfirmButton
+            onConfirm={handleDelete}
+            label="Gottesdienst löschen"
+            confirmLabel="Gottesdienst wirklich löschen?"
+          />
+          <StatusAnzeige status={status} />
         </div>
       </div>
     </Card>
@@ -498,10 +613,12 @@ function GottesdienstKarte({
 function NeuerGottesdienstForm({
   pfarreiId,
   miniplanId,
+  jahr,
   onCreated,
 }: {
   pfarreiId: number
   miniplanId: number
+  jahr: number
   onCreated: () => void
 }) {
   const [datum, setDatum] = useState('')
@@ -530,6 +647,7 @@ function NeuerGottesdienstForm({
       setUhrzeit('')
       setName('')
       setNotiz('')
+      setVersucht(false)
       onCreated()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Anlegen des Gottesdienstes'))
@@ -552,22 +670,22 @@ function NeuerGottesdienstForm({
         <div className="grid gap-4 sm:grid-cols-4">
           <div>
             <Label htmlFor="neuer-gottesdienst-datum">Datum</Label>
-            <Input
+            <DateInput
               id="neuer-gottesdienst-datum"
-              type="date"
+              pfarreiId={pfarreiId}
+              jahr={jahr}
               value={datum}
-              onChange={(e) => setDatum(e.target.value)}
+              onChange={setDatum}
               required
               error={versucht && !datum ? 'Datum wird benötigt' : undefined}
             />
           </div>
           <div>
             <Label htmlFor="neuer-gottesdienst-uhrzeit">Uhrzeit</Label>
-            <Input
+            <TimeInput
               id="neuer-gottesdienst-uhrzeit"
-              type="time"
               value={uhrzeit}
-              onChange={(e) => setUhrzeit(e.target.value)}
+              onChange={setUhrzeit}
               required
               error={versucht && !uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
             />
@@ -609,70 +727,87 @@ function FreitextSection({
   pfarreiId,
   miniplan,
   onSaved,
+  onDraftChange,
 }: {
   pfarreiId: number
   miniplan: Miniplan
   onSaved: (miniplan: Miniplan) => void
+  onDraftChange: (veranstaltungen: string, ankuendigungen: string) => void
 }) {
   const [veranstaltungen, setVeranstaltungen] = useState(miniplan.veranstaltungen ?? '')
   const [ankuendigungen, setAnkuendigungen] = useState(miniplan.ankuendigungen ?? '')
-  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<SpeicherStatus>('gespeichert')
+  const { showToast } = useToast()
+  const istErstesRendern = useRef(true)
 
-  async function handleSave() {
-    setError(null)
-    try {
-      const aktualisiert = await miniplanAktualisieren(pfarreiId, miniplan.id, {
-        veranstaltungen: veranstaltungen || null,
-        ankuendigungen: ankuendigungen || null,
-      })
-      onSaved(aktualisiert)
-    } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Speichern der Freitextfelder'))
+  useEffect(() => {
+    onDraftChange(veranstaltungen, ankuendigungen)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [veranstaltungen, ankuendigungen])
+
+  useEffect(() => {
+    if (istErstesRendern.current) {
+      istErstesRendern.current = false
+      return
     }
-  }
+    setStatus('speichert')
+    const timer = setTimeout(async () => {
+      try {
+        const aktualisiert = await miniplanAktualisieren(pfarreiId, miniplan.id, {
+          veranstaltungen: veranstaltungen || null,
+          ankuendigungen: ankuendigungen || null,
+        })
+        onSaved(aktualisiert)
+        setStatus('gespeichert')
+      } catch (err) {
+        setStatus('fehler')
+        showToast(fehlerText(err, 'Fehler beim Speichern der Freitextfelder'), 'error')
+      }
+    }, AUTOSAVE_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [veranstaltungen, ankuendigungen])
 
   return (
     <Card className="animate-rise">
       <CardHeader
         title="Veranstaltungen & Ankündigungen"
-        description="Freitextfelder, die unterhalb des Plans angezeigt werden."
+        description="Freitextfelder (Markdown: **fett**, *kursiv*, Aufzählungen), die unterhalb des Plans angezeigt werden."
+        action={<StatusAnzeige status={status} />}
       />
-      {error && (
-        <div className="px-5 pt-4">
-          <Alert>{error}</Alert>
-        </div>
-      )}
       <div className="flex flex-col gap-4 p-5">
         <div>
           <Label htmlFor="miniplan-veranstaltungen">Veranstaltungen</Label>
-          <textarea
+          <MarkdownTextarea
             id="miniplan-veranstaltungen"
             value={veranstaltungen}
-            onChange={(e) => setVeranstaltungen(e.target.value)}
+            onChange={setVeranstaltungen}
             rows={3}
-            className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15"
           />
         </div>
         <div>
           <Label htmlFor="miniplan-ankuendigungen">Ankündigungen</Label>
-          <textarea
+          <MarkdownTextarea
             id="miniplan-ankuendigungen"
             value={ankuendigungen}
-            onChange={(e) => setAnkuendigungen(e.target.value)}
+            onChange={setAnkuendigungen}
             rows={3}
-            className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15"
           />
         </div>
-        <Button type="button" onClick={handleSave} className="self-start">
-          <Check className="h-4 w-4" />
-          Speichern
-        </Button>
       </div>
     </Card>
   )
 }
 
-function VorschauPanel({ pfarreiId, miniplan }: { pfarreiId: number; miniplan: Miniplan }) {
+function VorschauPanel({
+  pfarreiId,
+  miniplanId,
+  eingabe,
+}: {
+  pfarreiId: number
+  miniplanId: number
+  eingabe: MiniplanVorschauEingabe
+}) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [fehler, setFehler] = useState<string[] | null>(null)
   const [ladend, setLadend] = useState(false)
@@ -682,26 +817,24 @@ function VorschauPanel({ pfarreiId, miniplan }: { pfarreiId: number; miniplan: M
     let abgebrochen = false
     setLadend(true)
     const timer = setTimeout(() => {
-      miniplanVorschau(pfarreiId, miniplan.id, miniplanZuVorschauEingabe(miniplan)).then(
-        (ergebnis) => {
-          if (abgebrochen) return
-          if (ergebnis.ok) {
-            if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
-            blobUrlRef.current = ergebnis.blobUrl
-            setBlobUrl(ergebnis.blobUrl)
-            setFehler(null)
-          } else {
-            setFehler(ergebnis.fehler)
-          }
-          setLadend(false)
-        },
-      )
+      miniplanVorschau(pfarreiId, miniplanId, eingabe).then((ergebnis) => {
+        if (abgebrochen) return
+        if (ergebnis.ok) {
+          if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
+          blobUrlRef.current = ergebnis.blobUrl
+          setBlobUrl(ergebnis.blobUrl)
+          setFehler(null)
+        } else {
+          setFehler(ergebnis.fehler)
+        }
+        setLadend(false)
+      })
     }, 500)
     return () => {
       abgebrochen = true
       clearTimeout(timer)
     }
-  }, [pfarreiId, miniplan])
+  }, [pfarreiId, miniplanId, eingabe])
 
   useEffect(
     () => () => {
@@ -711,10 +844,10 @@ function VorschauPanel({ pfarreiId, miniplan }: { pfarreiId: number; miniplan: M
   )
 
   return (
-    <Card className="animate-rise">
+    <Card className="animate-rise lg:sticky lg:top-6">
       <CardHeader
         title="PDF-Vorschau"
-        description="Wird bei jeder gespeicherten Änderung automatisch aktualisiert."
+        description="Wird bei jeder Änderung live aktualisiert (kein Speichern nötig)."
       />
       <div className="flex flex-col gap-3 p-5">
         {fehler && (
@@ -732,7 +865,7 @@ function VorschauPanel({ pfarreiId, miniplan }: { pfarreiId: number; miniplan: M
           <iframe
             title="Miniplan-PDF-Vorschau"
             src={blobUrl}
-            className="h-[600px] w-full rounded-lg border border-line"
+            className="h-[70vh] w-full rounded-lg border border-line lg:h-[calc(100vh-12rem)]"
           />
         )}
       </div>
@@ -750,6 +883,13 @@ export function MiniplanEditorPage() {
   const [minis, setMinis] = useState<Mini[]>([])
   const [dienstTypen, setDienstTypen] = useState<DienstTyp[]>([])
   const [filtertags, setFiltertags] = useState<FiltertagDef[]>([])
+  const [gottesdienstDrafts, setGottesdienstDrafts] = useState<
+    Record<number, GottesdienstDraft>
+  >({})
+  const [freitextDraft, setFreitextDraft] = useState<{
+    veranstaltungen: string
+    ankuendigungen: string
+  } | null>(null)
 
   const reload = useCallback(() => {
     miniplanDetail(id, planId).then(setMiniplan)
@@ -766,7 +906,36 @@ export function MiniplanEditorPage() {
     filtertagsListe(id).then(setFiltertags)
   }, [id])
 
-  if (!miniplan) {
+  const handleGottesdienstDraftChange = useCallback(
+    (gottesdienstId: number, draft: GottesdienstDraft) => {
+      setGottesdienstDrafts((aktuell) => ({ ...aktuell, [gottesdienstId]: draft }))
+    },
+    [],
+  )
+
+  const handleFreitextDraftChange = useCallback((veranstaltungen: string, ankuendigungen: string) => {
+    setFreitextDraft({ veranstaltungen, ankuendigungen })
+  }, [])
+
+  const vorschauEingabe = useMemo<MiniplanVorschauEingabe | null>(() => {
+    if (!miniplan) return null
+    return {
+      monat: miniplan.monat,
+      jahr: miniplan.jahr,
+      veranstaltungen: freitextDraft
+        ? freitextDraft.veranstaltungen || null
+        : miniplan.veranstaltungen,
+      ankuendigungen: freitextDraft
+        ? freitextDraft.ankuendigungen || null
+        : miniplan.ankuendigungen,
+      gottesdienste: miniplan.gottesdienste.map((gd) => {
+        const draft = gottesdienstDrafts[gd.id]
+        return draft ? draftZuVorschau(draft, gruppen, minis) : gottesdienstOutZuVorschau(gd)
+      }),
+    }
+  }, [miniplan, gottesdienstDrafts, freitextDraft, gruppen, minis])
+
+  if (!miniplan || !vorschauEingabe) {
     return (
       <AppShell>
         <p className="text-ink-soft">Lade Miniplan…</p>
@@ -787,26 +956,42 @@ export function MiniplanEditorPage() {
         Miniplan {miniplan.monat}/{miniplan.jahr}
       </h1>
 
-      <div className="mt-6 flex flex-col gap-6">
-        <VorschauPanel pfarreiId={id} miniplan={miniplan} />
+      <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-start">
+        <div className="flex flex-1 flex-col gap-6">
+          {miniplan.gottesdienste.map((gottesdienst) => (
+            <GottesdienstKarte
+              key={gottesdienst.id}
+              gottesdienst={gottesdienst}
+              pfarreiId={id}
+              miniplanId={planId}
+              jahr={miniplan.jahr}
+              gruppen={gruppen}
+              minis={minis}
+              dienstTypen={dienstTypen}
+              filtertags={filtertags}
+              onReload={reload}
+              onDraftChange={handleGottesdienstDraftChange}
+            />
+          ))}
 
-        {miniplan.gottesdienste.map((gottesdienst) => (
-          <GottesdienstKarte
-            key={gottesdienst.id}
-            gottesdienst={gottesdienst}
+          <NeuerGottesdienstForm
             pfarreiId={id}
             miniplanId={planId}
-            gruppen={gruppen}
-            minis={minis}
-            dienstTypen={dienstTypen}
-            filtertags={filtertags}
-            onReload={reload}
+            jahr={miniplan.jahr}
+            onCreated={reload}
           />
-        ))}
 
-        <NeuerGottesdienstForm pfarreiId={id} miniplanId={planId} onCreated={reload} />
+          <FreitextSection
+            pfarreiId={id}
+            miniplan={miniplan}
+            onSaved={setMiniplan}
+            onDraftChange={handleFreitextDraftChange}
+          />
+        </div>
 
-        <FreitextSection pfarreiId={id} miniplan={miniplan} onSaved={setMiniplan} />
+        <div className="lg:w-[480px] lg:shrink-0">
+          <VorschauPanel pfarreiId={id} miniplanId={planId} eingabe={vorschauEingabe} />
+        </div>
       </div>
     </AppShell>
   )

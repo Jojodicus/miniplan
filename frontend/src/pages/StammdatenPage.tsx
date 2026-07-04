@@ -75,6 +75,8 @@ import { Card, CardHeader } from '../components/ui/Card'
 import { EmptyState } from '../components/ui/EmptyState'
 import { CheckboxChip, Input, Label, Select } from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
+import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
+import { useToast } from '../components/ui/Toast'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -147,6 +149,7 @@ function GruppenSection({
   const [error, setError] = useState<string | null>(null)
   const [editId, setEditId] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
+  const { showToast } = useToast()
 
   async function handleCreate(event: SubmitEvent) {
     event.preventDefault()
@@ -173,11 +176,11 @@ function GruppenSection({
     }
   }
 
-  async function handleDelete(gruppeId: number, gruppeName: string) {
-    if (!confirm(`Gruppe "${gruppeName}" wirklich löschen?`)) return
+  async function handleDelete(gruppeId: number) {
     setError(null)
     try {
       await gruppeLoeschen(pfarreiId, gruppeId)
+      showToast('Gruppe gelöscht')
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Löschen der Gruppe'))
@@ -231,13 +234,7 @@ function GruppenSection({
                   >
                     <Pencil className="h-4 w-4" />
                   </IconButton>
-                  <IconButton
-                    label="Löschen"
-                    tone="danger"
-                    onClick={() => handleDelete(gruppe.id, gruppe.name)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </IconButton>
+                  <InlineConfirmButton onConfirm={() => handleDelete(gruppe.id)} />
                 </div>
               </Row>
             ),
@@ -278,6 +275,7 @@ function MinisSection({
   const [gruppeId, setGruppeId] = useState<number | ''>('')
   const [ausgewaehlteFiltertags, setAusgewaehlteFiltertags] = useState<Filtertag[]>([])
   const [error, setError] = useState<string | null>(null)
+  const { showToast } = useToast()
 
   const reload = useCallback(() => {
     minisListe(pfarreiId).then(setMinis)
@@ -311,11 +309,11 @@ function MinisSection({
     }
   }
 
-  async function handleDelete(miniId: number, miniName: string) {
-    if (!confirm(`Mini "${miniName}" wirklich löschen?`)) return
+  async function handleDelete(miniId: number) {
     setError(null)
     try {
       await miniLoeschen(pfarreiId, miniId)
+      showToast('Mini gelöscht')
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Löschen des Minis'))
@@ -353,13 +351,7 @@ function MinisSection({
                   </Badge>
                 ))}
               </div>
-              <IconButton
-                label="Löschen"
-                tone="danger"
-                onClick={() => handleDelete(mini.id, mini.name)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </IconButton>
+              <InlineConfirmButton onConfirm={() => handleDelete(mini.id)} />
             </Row>
           ))}
         </div>
@@ -497,6 +489,7 @@ function DienstTypenSection({
   const [gruppenAnforderungen, setGruppenAnforderungen] = useState<GruppenAnforderung[]>([])
   const [zeigeLabel, setZeigeLabel] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { showToast } = useToast()
 
   const reload = useCallback(() => {
     dienstTypenListe(pfarreiId).then(setDienstTypen)
@@ -529,11 +522,11 @@ function DienstTypenSection({
     }
   }
 
-  async function handleDelete(dienstTypId: number, dienstTypName: string) {
-    if (!confirm(`Dienst-Typ "${dienstTypName}" wirklich löschen?`)) return
+  async function handleDelete(dienstTypId: number) {
     setError(null)
     try {
       await dienstTypLoeschen(pfarreiId, dienstTypId)
+      showToast('Dienst-Typ gelöscht')
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Löschen des Dienst-Typs'))
@@ -572,13 +565,7 @@ function DienstTypenSection({
                   </Badge>
                 ))}
               </div>
-              <IconButton
-                label="Löschen"
-                tone="danger"
-                onClick={() => handleDelete(dienstTyp.id, dienstTyp.name)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </IconButton>
+              <InlineConfirmButton onConfirm={() => handleDelete(dienstTyp.id)} />
             </Row>
           ))}
         </div>
@@ -649,9 +636,7 @@ function FiltertagBlockerZeile({
         {WOCHENTAGE[blocker.wochentag]}, {blocker.start_zeit.slice(0, 5)}–
         {blocker.end_zeit.slice(0, 5)} Uhr
       </span>
-      <IconButton label="Löschen" tone="danger" onClick={onDelete}>
-        <Trash2 className="h-4 w-4" />
-      </IconButton>
+      <InlineConfirmButton onConfirm={onDelete} size="sm" />
     </Row>
   )
 }
@@ -738,6 +723,7 @@ function FiltertagsSection({
   const [editLabel, setEditLabel] = useState('')
   const [editIstSchuelerArtig, setEditIstSchuelerArtig] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { showToast } = useToast()
 
   const reloadBlocker = useCallback(() => {
     filtertagBlockerListe(pfarreiId).then(setBlocker)
@@ -778,11 +764,11 @@ function FiltertagsSection({
     }
   }
 
-  async function handleDelete(filtertagId: number, filtertagLabelText: string) {
-    if (!confirm(`Verfügbarkeits-Status "${filtertagLabelText}" wirklich löschen?`)) return
+  async function handleDelete(filtertagId: number) {
     setError(null)
     try {
       await filtertagLoeschen(pfarreiId, filtertagId)
+      showToast('Verfügbarkeits-Status gelöscht')
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Löschen des Verfügbarkeits-Status'))
@@ -803,6 +789,7 @@ function FiltertagsSection({
     setError(null)
     try {
       await filtertagBlockerLoeschen(pfarreiId, blockerId)
+      showToast('Zeitfenster gelöscht')
       reloadBlocker()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Löschen des Zeitfensters'))
@@ -869,13 +856,7 @@ function FiltertagsSection({
                     >
                       <Pencil className="h-4 w-4" />
                     </IconButton>
-                    <IconButton
-                      label="Löschen"
-                      tone="danger"
-                      onClick={() => handleDelete(filtertag.id, filtertag.label)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </IconButton>
+                    <InlineConfirmButton onConfirm={() => handleDelete(filtertag.id)} />
                   </div>
                 </Row>
                 <div className="bg-pine-tint/20 pl-4">
@@ -1126,12 +1107,65 @@ const TABS = [
   { key: 'gruppen', label: 'Gruppen', icon: Users },
   { key: 'minis', label: 'Minis', icon: UserRound },
   { key: 'dienst-typen', label: 'Dienst-Typen', icon: ClipboardList },
-  { key: 'verfuegbarkeit', label: 'Verfügbarkeits-Status', icon: Clock },
+  { key: 'verfuegbarkeit', label: 'Verfügbarkeit', icon: Clock },
+] as const
+
+type TabKey = (typeof TABS)[number]['key']
+
+const VERFUEGBARKEIT_TABS = [
+  { key: 'status', label: 'Verfügbarkeits-Status', icon: Clock },
   { key: 'ferien', label: 'Ferien', icon: CalendarDays },
   { key: 'feiertage', label: 'Feiertage', icon: Landmark },
 ] as const
 
-type TabKey = (typeof TABS)[number]['key']
+type VerfuegbarkeitTabKey = (typeof VERFUEGBARKEIT_TABS)[number]['key']
+
+function VerfuegbarkeitSection({
+  pfarreiId,
+  filtertags,
+  reloadFiltertags,
+}: {
+  pfarreiId: number
+  filtertags: FiltertagDef[]
+  reloadFiltertags: () => void
+}) {
+  const [subTab, setSubTab] = useState<VerfuegbarkeitTabKey>('status')
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Alert>
+        <span>
+          Drei zusammenspielende Mechanismen bestimmen, wann ein Mini verfügbar ist: <b>Ferien</b>{' '}
+          und <b>Feiertage</b> gelten pfarreiweit für alle „schüler-artigen“ Verfügbarkeits-Status
+          und <b>überschreiben</b> dabei die wöchentlichen <b>Blocker-Regeln</b> des jeweiligen
+          Verfügbarkeits-Status (z. B. blockiert „Schüler“ normalerweise Schulzeiten, aber nicht
+          während der Ferien).
+        </span>
+      </Alert>
+      <div className="flex gap-1 border-b border-line">
+        {VERFUEGBARKEIT_TABS.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => setSubTab(key)}
+            className={`flex cursor-pointer items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+              subTab === key
+                ? 'border-pine text-pine-dark'
+                : 'border-transparent text-ink-soft hover:text-ink'
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
+      </div>
+      {subTab === 'status' && (
+        <FiltertagsSection pfarreiId={pfarreiId} filtertags={filtertags} reload={reloadFiltertags} />
+      )}
+      {subTab === 'ferien' && <FerienSection pfarreiId={pfarreiId} />}
+      {subTab === 'feiertage' && <FeiertageSection pfarreiId={pfarreiId} />}
+    </div>
+  )
+}
 
 export function StammdatenPage() {
   const { pfarreiId } = useParams<{ pfarreiId: string }>()
@@ -1205,10 +1239,12 @@ export function StammdatenPage() {
           <DienstTypenSection pfarreiId={id} gruppen={gruppen} filtertags={filtertags} />
         )}
         {tab === 'verfuegbarkeit' && (
-          <FiltertagsSection pfarreiId={id} filtertags={filtertags} reload={reloadFiltertags} />
+          <VerfuegbarkeitSection
+            pfarreiId={id}
+            filtertags={filtertags}
+            reloadFiltertags={reloadFiltertags}
+          />
         )}
-        {tab === 'ferien' && <FerienSection pfarreiId={id} />}
-        {tab === 'feiertage' && <FeiertageSection pfarreiId={id} />}
       </div>
     </AppShell>
   )
