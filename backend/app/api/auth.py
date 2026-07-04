@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/login", response_model=Token, dependencies=[Depends(enforce_login_rate_limit)])
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)) -> Token:
-    nutzer = db.query(Nutzer).filter(Nutzer.email == payload.email).first()
+    nutzer = db.query(Nutzer).filter(Nutzer.email == payload.email.strip().lower()).first()
     password_hash = nutzer.password_hash if nutzer is not None else None
     passwort_korrekt = verify_password_or_dummy(payload.password, password_hash)
     if nutzer is None or not passwort_korrekt:

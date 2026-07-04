@@ -22,6 +22,14 @@ def test_login_falsches_passwort(client: TestClient, admin_user: Nutzer) -> None
     assert response.status_code == 401
 
 
+def test_login_email_ist_case_insensitiv(client: TestClient, admin_user: Nutzer) -> None:
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "Admin@Example.com", "password": "geheim123"},
+    )
+    assert response.status_code == 200
+
+
 def test_login_unbekannter_nutzer(client: TestClient) -> None:
     response = client.post(
         "/api/auth/login", json={"email": "unbekannt@example.com", "password": "geheim123"}

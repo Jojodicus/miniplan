@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -41,7 +41,11 @@ if static_dir.is_dir():
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa(full_path: str) -> FileResponse:
         """Liefert vorhandene Static-Dateien direkt aus, ansonsten die SPA-Shell (index.html),
-        damit React-Router-Routen wie /login auch bei direktem Aufruf funktionieren."""
+        damit React-Router-Routen wie /login auch bei direktem Aufruf funktionieren. Unbekannte
+        /api/-Pfade geben 404 statt der SPA-Shell zurück, damit sie nicht als vermeintlich
+        erfolgreiche HTML-Antwort erscheinen."""
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         candidate = (static_dir / full_path).resolve()
         is_within_static_dir = candidate.is_relative_to(resolved_static_dir)
         if full_path and is_within_static_dir and candidate.is_file():

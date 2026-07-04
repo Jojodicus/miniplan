@@ -2,7 +2,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
@@ -15,6 +15,8 @@ def _build_spa_app(static_dir: Path) -> FastAPI:
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa(full_path: str) -> FileResponse:
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         candidate = (static_dir / full_path).resolve()
         is_within_static_dir = candidate.is_relative_to(resolved_static_dir)
         if full_path and is_within_static_dir and candidate.is_file():
@@ -51,3 +53,9 @@ def test_pfad_traversal_ausserhalb_des_static_verzeichnisses_wird_blockiert(
     assert response.status_code == 200
     assert "top-secret" not in response.text
     assert "spa-shell" in response.text
+
+
+def test_unbekannter_api_pfad_liefert_404_statt_spa_shell(spa_client: TestClient) -> None:
+    response = spa_client.get("/api/unbekannt")
+    assert response.status_code == 404
+    assert "spa-shell" not in response.text

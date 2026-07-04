@@ -69,3 +69,45 @@ def test_create_user_doppelte_email_schlaegt_fehl(db_session: Session) -> None:
     cli.create_user("admin@example.com", "geheim123", "admin", None)
     with pytest.raises(SystemExit):
         cli.create_user("admin@example.com", "anderes-pw", "admin", None)
+
+
+def test_create_user_email_wird_normalisiert(db_session: Session) -> None:
+    cli.create_user("Admin@Example.com", "geheim123", "admin", None)
+
+    nutzer = db_session.query(Nutzer).filter(Nutzer.email == "admin@example.com").first()
+    assert nutzer is not None
+
+    with pytest.raises(SystemExit):
+        cli.create_user("  ADMIN@EXAMPLE.COM  ", "anderes-pw", "admin", None)
+
+
+def test_create_user_meldet_integrity_error_als_system_exit(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Simuliert eine Race Condition: die Existenzprüfung schlägt fälschlich negativ aus (z.B.
+    weil ein anderer Prozess den Nutzer zwischen Prüfung und Commit angelegt hat). Der Commit
+    muss den resultierenden IntegrityError sauber als SystemExit(1) melden statt eine rohe
+    Exception durchzureichen."""
+    db_session.add(
+        Nutzer(email="admin@example.com", password_hash="platzhalter", ist_admin=True)
+    )
+    db_session.commit()
+
+    class _KeinTrefferQuery:
+        def filter(self, *args: object, **kwargs: object) -> "_KeinTrefferQuery":
+            return self
+
+        def first(self) -> None:
+            return None
+
+    original_query = Session.query
+    monkeypatch.setattr(
+        Session,
+        "query",
+        lambda self, model: _KeinTrefferQuery()
+        if model is Nutzer
+        else original_query(self, model),
+    )
+
+    with pytest.raises(SystemExit):
+        cli.create_user("admin@example.com", "anderes-pw", "admin", None)

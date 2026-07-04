@@ -1,6 +1,8 @@
 import argparse
 import sys
 
+from sqlalchemy.exc import IntegrityError
+
 from app.database import SessionLocal
 from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
 from app.models.pfarrei import Pfarrei
@@ -8,6 +10,7 @@ from app.security import hash_password
 
 
 def create_user(email: str, password: str, role: str, pfarrei: str | None) -> None:
+    email = email.strip().lower()
     db = SessionLocal()
     try:
         if db.query(Nutzer).filter(Nutzer.email == email).first() is not None:
@@ -17,7 +20,13 @@ def create_user(email: str, password: str, role: str, pfarrei: str | None) -> No
         ist_admin = role == "admin"
         nutzer = Nutzer(email=email, password_hash=hash_password(password), ist_admin=ist_admin)
         db.add(nutzer)
-        db.flush()
+
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            print(f"Fehler: Nutzer mit E-Mail '{email}' existiert bereits.", file=sys.stderr)
+            raise SystemExit(1) from None
 
         if not ist_admin:
             if not pfarrei:
@@ -48,7 +57,12 @@ def create_pfarrei(name: str) -> None:
             print(f"Fehler: Pfarrei '{name}' existiert bereits.", file=sys.stderr)
             raise SystemExit(1)
         db.add(Pfarrei(name=name))
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            print(f"Fehler: Pfarrei '{name}' existiert bereits.", file=sys.stderr)
+            raise SystemExit(1) from None
         print(f"Pfarrei '{name}' angelegt.")
     finally:
         db.close()
