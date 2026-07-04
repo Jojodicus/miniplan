@@ -5,6 +5,7 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.nutzer import Nutzer
+from app.rate_limit import enforce_login_rate_limit
 from app.schemas.auth import LoginRequest, Token
 from app.schemas.nutzer import NutzerOut
 from app.security import (
@@ -16,7 +17,7 @@ from app.security import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=Token, dependencies=[Depends(enforce_login_rate_limit)])
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)) -> Token:
     nutzer = db.query(Nutzer).filter(Nutzer.email == payload.email).first()
     password_hash = nutzer.password_hash if nutzer is not None else None

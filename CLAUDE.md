@@ -26,10 +26,12 @@ backend/
     database.py   Engine/Session/Base, get_db-Dependency
     security.py   Passwort-Hashing (bcrypt), JWT-Erstellung/-Validierung
     deps.py       Auth-Dependencies (get_current_user, require_admin, RequirePfarreiRolle)
+    rate_limit.py In-Memory-Rate-Limit pro Client-IP für den Login-Endpoint (gilt nur pro
+                  Prozess, siehe Deployment-Hinweis dort)
     cli.py        Kommandozeilen-Nutzer-/Pfarrei-Erstellung
-    main.py       FastAPI-App, Router-Registrierung, Static-File-Ausliefertung inkl.
-                  SPA-Fallback (client-seitige Routen wie /login funktionieren auch bei
-                  direktem Aufruf)
+    main.py       FastAPI-App, Security-Header-Middleware, `/api/health`, Router-Registrierung,
+                  Static-File-Ausliefertung inkl. SPA-Fallback (client-seitige Routen wie /login
+                  funktionieren auch bei direktem Aufruf)
   alembic/        Migrationen
   tests/          Pytest-Suite (pytest.ini_options in pyproject.toml), läuft komplett gegen eine
                   In-Memory-SQLite-DB (siehe tests/conftest.py) – keine temporären Dateien
@@ -41,7 +43,8 @@ frontend/
     pages/        Seiten-Komponenten (Login, Dashboard, ...)
   e2e/            Playwright-Tests; global-setup.ts/global-teardown.ts bauen/starten bzw. stoppen
                   den echten Docker-Container (docker-compose.e2e.yml) automatisch
-Dockerfile              Multi-Stage-Build: Frontend-Build -> Backend-Image (inkl. Typst-Binary)
+Dockerfile              Multi-Stage-Build: Frontend-Build -> Backend-Image (inkl. Typst-Binary),
+                        HEALTHCHECK gegen /api/health
 docker-compose.yml      Deployment: ein Service, SQLite + Secret-Key-Datei im Volume /data
 docker-compose.e2e.yml  isolierte Variante für Playwright-E2E-Tests (eigener Port 8100, tmpfs
                         statt Volume, seedet Testdaten beim Start noch vor dem Öffnen des Ports)

@@ -10,6 +10,7 @@ from app.database import Base, get_db
 from app.main import app
 from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
 from app.models.pfarrei import Pfarrei
+from app.rate_limit import _attempts
 from app.security import hash_password
 
 engine = create_engine(
@@ -25,6 +26,13 @@ def _reset_db() -> Generator[None, None, None]:
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limit() -> Generator[None, None, None]:
+    _attempts.clear()
+    yield
+    _attempts.clear()
 
 
 @pytest.fixture

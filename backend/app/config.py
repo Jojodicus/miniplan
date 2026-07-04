@@ -1,6 +1,7 @@
 import logging
 import os
 import secrets
+import time
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -33,15 +34,32 @@ class Settings(BaseSettings):
             self.secret_key = "dev-secret-key-change-in-production"
             return
 
-        path = Path(self.secret_key_file)
-        if path.is_file():
-            self.secret_key = path.read_text().strip()
-            return
+        self.secret_key = self._read_or_create_secret_key_file(Path(self.secret_key_file))
 
-        self.secret_key = secrets.token_hex(32)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(self.secret_key)
-        os.chmod(path, 0o600)
+    @staticmethod
+    def _read_or_create_secret_key_file(path: Path) -> str:
+        # Exklusives Anlegen der Datei sorgt dafür, dass bei parallel startenden Prozessen
+        # (mehrere Worker/Container gegen dasselbe Volume) nur einer den Key generiert; alle
+        # anderen lesen den bereits geschriebenen Key, statt sich gegenseitig zu überschreiben.
+        for _ in range(50):
+            if path.is_file():
+                content = path.read_text().strip()
+                if content:
+                    return content
+                time.sleep(0.05)
+                continue
+
+            path.parent.mkdir(parents=True, exist_ok=True)
+            key = secrets.token_hex(32)
+            try:
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except FileExistsError:
+                continue
+            with os.fdopen(fd, "w") as f:
+                f.write(key)
+            return key
+
+        raise RuntimeError(f"Secret-Key-Datei {path} konnte nicht gelesen oder erstellt werden.")
 
 
 settings = Settings()

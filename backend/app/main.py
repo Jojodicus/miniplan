@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api import auth, pfarreien
@@ -9,8 +9,26 @@ from app.config import settings
 
 app = FastAPI(title="Miniplan")
 
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next) -> Response:
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    if settings.cookie_secure:
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    return response
+
+
 app.include_router(auth.router)
 app.include_router(pfarreien.router)
+
+
+@app.get("/api/health", include_in_schema=False)
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
 
 static_dir = Path(settings.static_files_dir)
 if static_dir.is_dir():

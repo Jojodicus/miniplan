@@ -66,3 +66,31 @@ def test_logout_entfernt_cookie(client: TestClient, admin_user: Nutzer) -> None:
 
     response = client.get("/api/auth/me")
     assert response.status_code == 401
+
+
+def test_login_wird_nach_zu_vielen_versuchen_rate_limitiert(
+    client: TestClient, admin_user: Nutzer
+) -> None:
+    for _ in range(10):
+        response = client.post(
+            "/api/auth/login", json={"email": "admin@example.com", "password": "falsch"}
+        )
+        assert response.status_code == 401
+
+    response = client.post(
+        "/api/auth/login", json={"email": "admin@example.com", "password": "geheim123"}
+    )
+    assert response.status_code == 429
+
+
+def test_security_header_werden_gesetzt(client: TestClient) -> None:
+    response = client.get("/api/health")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["content-security-policy"] == "default-src 'self'"
+
+
+def test_health_endpoint(client: TestClient) -> None:
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

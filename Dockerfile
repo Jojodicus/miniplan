@@ -41,4 +41,6 @@ VOLUME ["/data"]
 USER miniplan
 
 EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
+    CMD curl -fsS http://localhost:8000/api/health || exit 1
 ENTRYPOINT ["./docker-entrypoint.sh"]
