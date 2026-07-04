@@ -1,5 +1,6 @@
 services:
   miniplan:
+    container_name: miniplan
     build: .
     ports:
       - "8000:8000"

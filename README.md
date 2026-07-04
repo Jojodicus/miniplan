@@ -17,8 +17,8 @@ docker compose up --build
 Danach ist die App unter `http://localhost:8000` erreichbar. Ersten Admin-Nutzer anlegen:
 
 ```bash
-docker exec <container-name> python -m app.cli create-pfarrei --name "Meine Pfarrei"
-docker exec <container-name> python -m app.cli create-user \
+docker exec miniplan python -m app.cli create-pfarrei --name "Meine Pfarrei"
+docker exec miniplan python -m app.cli create-user \
   --email admin@example.com --password geheim123 --role admin
 ```
 
