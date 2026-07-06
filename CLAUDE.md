@@ -155,3 +155,9 @@ docker compose -p miniplan-e2e -f docker-compose.e2e.yml up -d --build   # manue
 - Tests hinterlassen keine temporären Dateien oder Container: Backend-Tests laufen gegen eine
   In-Memory-DB, die E2E-Docker-Umgebung wird über `globalSetup`/`globalTeardown` in
   `frontend/playwright.config.ts` auch bei Testfehlern zuverlässig wieder abgebaut.
+- README.md ist nutzerfacing und bleibt knapp: nur das Nötigste (was tun, welche Variable
+  setzen), keine Begründungen, keine Beispiel-Configs für Drittsoftware, keine Wiederholung
+  von Offensichtlichem.
+- CLAUDE.md bleibt ein Überblick (Struktur, Datenmodell, Befehle) und wächst nicht mit jeder
+  Änderung mit. Nicht-offensichtliches Warum (Design-Entscheidungen, Bugs die eine Änderung
+  motiviert haben) gehört als knapper Kommentar direkt an die betroffene Stelle im Code.

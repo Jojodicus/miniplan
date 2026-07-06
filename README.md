@@ -24,6 +24,19 @@ docker exec miniplan python -m app.cli create-user \
 
 Für lokale Backend-/Frontend-Entwicklung ohne Docker siehe [`CLAUDE.md`](CLAUDE.md).
 
+## Betrieb hinter einem Reverse Proxy (Caddy, Nginx Proxy Manager, ...)
+
+Beim Deployment hinter einem Reverse Proxy zwei Umgebungsvariablen setzen:
+
+```yaml
+environment:
+  MINIPLAN_COOKIE_SECURE: "true"       # sobald TLS am Proxy terminiert
+  UVICORN_FORWARDED_ALLOW_IPS: "*"     # oder die IP/das Docker-Netz des Proxys
+```
+
+CORS-Konfiguration ist nicht nötig, da Frontend und API immer über dieselbe Origin
+ausgeliefert werden.
+
 ## Testen
 
 **Backend (Pytest, läuft komplett gegen eine In-Memory-DB):**
