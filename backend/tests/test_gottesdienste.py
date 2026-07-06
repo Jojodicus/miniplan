@@ -24,7 +24,6 @@ def _dienst_typ(db_session, pfarrei: Pfarrei, gruppe: Gruppe) -> DienstTyp:
         pfarrei_id=pfarrei.id,
         name="Weihrauch",
         standard_anzahl=2,
-        erforderliche_filtertags=["arbeiter"],
         gruppen_anforderungen=[
             DienstTypGruppenAnforderung(gruppe_id=gruppe.id, mindest_anzahl=1)
         ],
@@ -194,6 +193,38 @@ def test_dienstbedarf_mindestanzahl_ueber_anzahl_abgelehnt(
     assert response.status_code == 422
 
 
+def test_dienstbedarf_mehr_minis_als_anzahl_abgelehnt(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    gruppe: Gruppe,
+    db_session,
+) -> None:
+    miniplan = _miniplan(db_session, pfarrei)
+    mini_1 = _mini(db_session, pfarrei, gruppe, "Mini Eins")
+    mini_2 = _mini(db_session, pfarrei, gruppe, "Mini Zwei")
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/gottesdienste",
+        json={
+            "datum": "2026-07-05",
+            "uhrzeit": "10:00:00",
+            "name": "Sonntagsmesse",
+            "dienstbedarf": [
+                {
+                    "name": "Kreuz",
+                    "anzahl": 1,
+                    "erforderliche_filtertags": [],
+                    "mini_ids": [mini_1.id, mini_2.id],
+                }
+            ],
+        },
+        headers=headers,
+    )
+    assert response.status_code == 422
+
+
 def test_dienstbedarf_mit_fremdem_dienst_typ_abgelehnt(
     client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, db_session
 ) -> None:
@@ -203,7 +234,7 @@ def test_dienstbedarf_mit_fremdem_dienst_typ_abgelehnt(
     db_session.commit()
     db_session.refresh(andere_pfarrei)
     fremder_dienst_typ = DienstTyp(
-        pfarrei_id=andere_pfarrei.id, name="Fremd", standard_anzahl=1, erforderliche_filtertags=[]
+        pfarrei_id=andere_pfarrei.id, name="Fremd", standard_anzahl=1
     )
     db_session.add(fremder_dienst_typ)
     db_session.commit()
@@ -297,6 +328,29 @@ def test_gottesdienst_notiz_ist_optional_und_rundtrip_faehig(
     )
     assert aktualisiert.status_code == 200
     assert aktualisiert.json()["notiz"] is None
+
+
+def test_gottesdienst_name_ist_optional_und_rundtrip_faehig(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, db_session
+) -> None:
+    miniplan = _miniplan(db_session, pfarrei)
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+
+    ohne_name = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/gottesdienste",
+        json={"datum": "2026-07-05", "uhrzeit": "10:00:00"},
+        headers=headers,
+    )
+    assert ohne_name.status_code == 201
+    assert ohne_name.json()["name"] is None
+
+    leerer_name = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/gottesdienste",
+        json={"datum": "2026-07-06", "uhrzeit": "10:00:00", "name": "   "},
+        headers=headers,
+    )
+    assert leerer_name.status_code == 201
+    assert leerer_name.json()["name"] is None
 
 
 def test_gottesdienst_bearbeiten_ersetzt_dienstbedarf(

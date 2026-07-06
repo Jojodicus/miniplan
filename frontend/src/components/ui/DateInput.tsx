@@ -1,19 +1,51 @@
-import { useEffect, useState } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { feiertageListe, type Feiertag } from '../../api/feiertage'
-import { Input } from './FormField'
+import { IconButton } from './IconButton'
+
+const WOCHENTAGE_KURZ = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+const MONATSNAMEN = [
+  'Januar',
+  'Februar',
+  'März',
+  'April',
+  'Mai',
+  'Juni',
+  'Juli',
+  'August',
+  'September',
+  'Oktober',
+  'November',
+  'Dezember',
+]
+
+function formatIso(jahr: number, monat: number, tag: number): string {
+  return `${jahr}-${String(monat + 1).padStart(2, '0')}-${String(tag).padStart(2, '0')}`
+}
+
+function formatAnzeige(iso: string): string {
+  const [jahr, monat, tag] = iso.split('-')
+  return `${tag}.${monat}.${jahr}`
+}
+
+// Montag = 0 ... Sonntag = 6, damit die Woche wie im deutschen Kalender mit Montag beginnt
+// (JS Date.getDay() liefert Sonntag = 0, daher die Verschiebung).
+function montagBasierterWochentag(datum: Date): number {
+  return (datum.getDay() + 6) % 7
+}
 
 /**
- * Wrapper um das native `<input type="date">`, der zusätzlich anzeigt, ob das gewählte Datum
- * ein Sonntag oder ein (per `GET /feiertage` berechneter) Feiertag ist - inkl. Namen des
- * Feiertags. Eine vollständig selbstgebaute Kalender-Grafik mit pro-Tag-Einfärbung wäre hier
- * unverhältnismäßig aufwendig (native Datums-Picker lassen sich browserübergreifend nicht
- * zuverlässig pro Tag einfärben); stattdessen wird der Status des aktuell gewählten Datums
- * direkt unter dem Feld angezeigt.
+ * Kalender-Popover statt des nativen `<input type="date">`, das sich browserübergreifend nicht
+ * pro Tag einfärben lässt: markiert Sonntage und (per `GET /feiertage` berechnete) Feiertage
+ * direkt im Monatsraster. Der Status des aktuell gewählten Datums wird zusätzlich als Text unter
+ * dem Feld angezeigt (Fallback/Barrierefreiheit).
  */
 export function DateInput({
   id,
   pfarreiId,
   jahr,
+  monat,
   value,
   onChange,
   required,
@@ -22,6 +54,9 @@ export function DateInput({
   id?: string
   pfarreiId: number
   jahr: number
+  /** 1-12, z. B. der Monat des Miniplans - bestimmt den initial angezeigten Kalendermonat,
+   * solange noch kein Datum gewählt ist. */
+  monat?: number
   value: string
   onChange: (value: string) => void
   required?: boolean
@@ -29,38 +64,125 @@ export function DateInput({
 }) {
   const angezeigtesJahr = value ? Number(value.slice(0, 4)) : jahr
   const [feiertage, setFeiertage] = useState<Feiertag[]>([])
+  const [offen, setOffen] = useState(false)
+  const [ansichtJahr, setAnsichtJahr] = useState(angezeigtesJahr)
+  const [ansichtMonat, setAnsichtMonat] = useState(
+    value ? Number(value.slice(5, 7)) - 1 : monat ? monat - 1 : new Date().getMonth(),
+  )
+  const containerRef = useRef<HTMLDivElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
 
   useEffect(() => {
     let abgebrochen = false
-    feiertageListe(pfarreiId, angezeigtesJahr).then((liste) => {
+    feiertageListe(pfarreiId, ansichtJahr).then((liste) => {
       if (!abgebrochen) setFeiertage(liste)
     })
     return () => {
       abgebrochen = true
     }
-  }, [pfarreiId, angezeigtesJahr])
+  }, [pfarreiId, ansichtJahr])
+
+  useEffect(() => {
+    if (!offen) return
+
+    function aktualisierePosition() {
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (!rect) return
+      setPosition({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX })
+    }
+    aktualisierePosition()
+    window.addEventListener('scroll', aktualisierePosition, true)
+    window.addEventListener('resize', aktualisierePosition)
+
+    // Popover ist per Portal außerhalb des containerRef gerendert (siehe Kommentar unten), daher
+    // muss beim Klick-außerhalb-Check auch der Popover selbst berücksichtigt werden.
+    function handleClick(event: MouseEvent) {
+      const target = event.target as Node
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        popoverRef.current &&
+        !popoverRef.current.contains(target)
+      ) {
+        setOffen(false)
+      }
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOffen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      window.removeEventListener('scroll', aktualisierePosition, true)
+      window.removeEventListener('resize', aktualisierePosition)
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleKey)
+    }
+  }, [offen])
 
   const feiertag = value ? feiertage.find((f) => f.datum === value) : undefined
   const istSonntag = value ? new Date(`${value}T00:00:00`).getDay() === 0 : false
 
+  function oeffnen() {
+    if (value) {
+      setAnsichtJahr(Number(value.slice(0, 4)))
+      setAnsichtMonat(Number(value.slice(5, 7)) - 1)
+    }
+    setOffen((wert) => !wert)
+  }
+
+  function monatWechseln(delta: number) {
+    let neuerMonat = ansichtMonat + delta
+    let neuesJahr = ansichtJahr
+    if (neuerMonat < 0) {
+      neuerMonat = 11
+      neuesJahr -= 1
+    } else if (neuerMonat > 11) {
+      neuerMonat = 0
+      neuesJahr += 1
+    }
+    setAnsichtMonat(neuerMonat)
+    setAnsichtJahr(neuesJahr)
+  }
+
+  function tagWaehlen(tag: number) {
+    onChange(formatIso(ansichtJahr, ansichtMonat, tag))
+    setOffen(false)
+  }
+
+  const anzahlTage = new Date(ansichtJahr, ansichtMonat + 1, 0).getDate()
+  const startOffset = montagBasierterWochentag(new Date(ansichtJahr, ansichtMonat, 1))
+  const heuteDate = new Date()
+  const heute = formatIso(heuteDate.getFullYear(), heuteDate.getMonth(), heuteDate.getDate())
+
+  const zellen: (number | null)[] = [
+    ...Array<null>(startOffset).fill(null),
+    ...Array.from({ length: anzahlTage }, (_, i) => i + 1),
+  ]
+
   return (
-    <div>
-      <Input
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
         id={id}
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        required={required}
-        error={error}
-        title={feiertag ? feiertag.name : undefined}
-        className={
-          feiertag
+        onClick={oeffnen}
+        aria-required={required}
+        aria-invalid={error ? true : undefined}
+        className={`h-10 w-full rounded-md border bg-paper px-3 text-left text-sm outline-none transition-shadow focus:ring-2 focus:ring-pine/15 ${
+          error ? 'border-wine focus:border-wine focus:ring-wine/15' : 'focus:border-pine'
+        } ${
+          !error && feiertag
             ? 'border-gold/60 ring-1 ring-gold/20'
-            : istSonntag
+            : !error && istSonntag
               ? 'border-wine/40'
-              : ''
-        }
-      />
+              : !error
+                ? 'border-line'
+                : ''
+        } ${value ? 'text-ink' : 'text-ink-faint'}`}
+      >
+        {value ? formatAnzeige(value) : 'Datum wählen'}
+      </button>
       {(feiertag || istSonntag) && (
         <p
           className={`mt-1 text-xs ${feiertag ? 'text-[#7a5a20]' : 'text-wine'}`}
@@ -69,6 +191,65 @@ export function DateInput({
           {feiertag ? `Feiertag: ${feiertag.name}` : 'Sonntag'}
         </p>
       )}
+      {error && <p className="mt-1 text-xs text-wine">{error}</p>}
+      {offen &&
+        position &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            style={{ top: position.top, left: position.left }}
+            className="fixed z-50 w-72 rounded-lg border border-line bg-paper p-3 shadow-lg"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <IconButton label="Vorheriger Monat" onClick={() => monatWechseln(-1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </IconButton>
+              <span className="text-sm font-medium text-ink">
+                {MONATSNAMEN[ansichtMonat]} {ansichtJahr}
+              </span>
+              <IconButton label="Nächster Monat" onClick={() => monatWechseln(1)}>
+                <ChevronRight className="h-4 w-4" />
+              </IconButton>
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-center text-xs text-ink-faint">
+              {WOCHENTAGE_KURZ.map((tag) => (
+                <span key={tag} className="py-1">
+                  {tag}
+                </span>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {zellen.map((tag, index) => {
+                if (tag === null) return <div key={`leer-${index}`} />
+                const iso = formatIso(ansichtJahr, ansichtMonat, tag)
+                const istAusgewaehlt = iso === value
+                const tagFeiertag = feiertage.find((f) => f.datum === iso)
+                const tagIstSonntag = new Date(ansichtJahr, ansichtMonat, tag).getDay() === 0
+                const istHeute = iso === heute
+                return (
+                  <button
+                    key={iso}
+                    type="button"
+                    onClick={() => tagWaehlen(tag)}
+                    title={tagFeiertag?.name}
+                    className={`flex h-8 items-center justify-center rounded-md text-sm transition-colors ${
+                      istAusgewaehlt
+                        ? 'bg-pine font-medium text-paper'
+                        : tagFeiertag
+                          ? 'bg-gold/15 text-[#7a5a20] hover:bg-gold/25'
+                          : tagIstSonntag
+                            ? 'text-wine hover:bg-wine-tint'
+                            : 'text-ink hover:bg-pine-tint'
+                    } ${istHeute && !istAusgewaehlt ? 'ring-1 ring-inset ring-pine/40' : ''}`}
+                  >
+                    {tag}
+                  </button>
+                )
+              })}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

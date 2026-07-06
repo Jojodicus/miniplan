@@ -20,6 +20,51 @@ def test_bundesland_setzen(
     assert response.json()["bundesland"] == "NW"
 
 
+def test_bundesland_setzen_triggert_ferien_sync(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aufrufe = []
+
+    def fake_sync(pfarrei_arg, db):
+        aufrufe.append(pfarrei_arg.bundesland)
+        return []
+
+    monkeypatch.setattr("app.api.pfarreien.sync_ferien", fake_sync)
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.put(
+        f"/api/pfarreien/{pfarrei.id}/bundesland",
+        json={"bundesland": "NW"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert len(aufrufe) == 1
+
+
+def test_bundesland_setzen_ignoriert_ferien_sync_fehler(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_sync(pfarrei_arg, db):
+        raise ferien_sync.FerienSyncFehler("nicht erreichbar")
+
+    monkeypatch.setattr("app.api.pfarreien.sync_ferien", fake_sync)
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.put(
+        f"/api/pfarreien/{pfarrei.id}/bundesland",
+        json={"bundesland": "NW"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["bundesland"] == "NW"
+
+
 def test_ferien_aktualisieren_ruft_sync_auf(
     client: TestClient,
     verantwortlicher_user: Nutzer,

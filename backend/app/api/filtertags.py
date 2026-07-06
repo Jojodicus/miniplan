@@ -1,3 +1,6 @@
+import re
+import unicodedata
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -12,6 +15,25 @@ from app.schemas.filtertag import FiltertagCreate, FiltertagOut, FiltertagUpdate
 
 router = APIRouter(prefix="/api/pfarreien/{pfarrei_id}/filtertags", tags=["filtertags"])
 require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER)
+
+
+def _slug(text: str) -> str:
+    normalisiert = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", normalisiert.lower()).strip("-")
+    return slug or "status"
+
+
+def _eindeutiger_key(pfarrei_id: int, label: str, db: Session) -> str:
+    basis = _slug(label)
+    vorhandene_keys = {
+        row[0] for row in db.query(Filtertag.key).filter(Filtertag.pfarrei_id == pfarrei_id).all()
+    }
+    if basis not in vorhandene_keys:
+        return basis
+    zaehler = 2
+    while f"{basis}-{zaehler}" in vorhandene_keys:
+        zaehler += 1
+    return f"{basis}-{zaehler}"
 
 
 def _get_filtertag_or_404(pfarrei_id: int, filtertag_id: int, db: Session) -> Filtertag:
@@ -45,7 +67,8 @@ def erstellen(
     _pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
 ) -> Filtertag:
-    filtertag = Filtertag(pfarrei_id=pfarrei_id, **daten.model_dump())
+    key = _eindeutiger_key(pfarrei_id, daten.label, db)
+    filtertag = Filtertag(pfarrei_id=pfarrei_id, key=key, **daten.model_dump())
     db.add(filtertag)
     try:
         db.commit()
@@ -53,7 +76,7 @@ def erstellen(
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Filtertag mit diesem Key existiert bereits",
+            detail="Verfügbarkeits-Status mit dieser Bezeichnung existiert bereits",
         ) from None
     db.refresh(filtertag)
     return filtertag

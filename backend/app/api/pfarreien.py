@@ -59,6 +59,12 @@ def bundesland_setzen(
     pfarrei.bundesland = daten.bundesland
     db.commit()
     db.refresh(pfarrei)
+    # Best-effort: schlägt die externe Ferien-Quelle fehl, bleiben bestehende Ferienzeiten
+    # erhalten (siehe sync_ferien) - das Setzen des Bundeslands soll dadurch nicht scheitern.
+    try:
+        sync_ferien(pfarrei, db)
+    except FerienSyncFehler:
+        pass
     return pfarrei
 
 

@@ -1,4 +1,3 @@
-import type { Filtertag } from './minis'
 import { api } from './client'
 import type { Gruppe } from './gruppen'
 
@@ -17,7 +16,6 @@ export interface DienstTyp {
   pfarrei_id: number
   name: string
   standard_anzahl: number
-  erforderliche_filtertags: Filtertag[]
   gruppen_anforderungen: GruppenAnforderungOut[]
   zeige_label: boolean
 }
@@ -25,7 +23,6 @@ export interface DienstTyp {
 export interface DienstTypEingabe {
   name: string
   standard_anzahl: number
-  erforderliche_filtertags: Filtertag[]
   gruppen_anforderungen: GruppenAnforderung[]
   zeige_label: boolean
 }

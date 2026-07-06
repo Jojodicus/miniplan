@@ -11,7 +11,7 @@ def test_filtertag_anlegen_und_auflisten(
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     response = client.post(
         f"/api/pfarreien/{pfarrei.id}/filtertags",
-        json={"key": "azubi", "label": "Azubi", "ist_schueler_artig": True},
+        json={"label": "Azubi", "ist_schueler_artig": True},
         headers=headers,
     )
     assert response.status_code == 201
@@ -25,28 +25,24 @@ def test_filtertag_anlegen_und_auflisten(
     assert len(response.json()) == 1
 
 
-def test_filtertag_anlegen_doppelter_key_konflikt(
+def test_filtertag_anlegen_generiert_eindeutigen_key_bei_gleicher_bezeichnung(
     client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei
 ) -> None:
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
-    daten = {"key": "azubi", "label": "Azubi", "ist_schueler_artig": True}
-    client.post(f"/api/pfarreien/{pfarrei.id}/filtertags", json=daten, headers=headers)
-    response = client.post(
-        f"/api/pfarreien/{pfarrei.id}/filtertags", json=daten, headers=headers
-    )
-    assert response.status_code == 409
-
-
-def test_filtertag_anlegen_mit_ungueltigem_key_abgelehnt(
-    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei
-) -> None:
-    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
-    response = client.post(
+    erste = client.post(
         f"/api/pfarreien/{pfarrei.id}/filtertags",
-        json={"key": "Nicht Gültig!", "label": "X", "ist_schueler_artig": False},
+        json={"label": "Azubi", "ist_schueler_artig": True},
         headers=headers,
     )
-    assert response.status_code == 422
+    zweite = client.post(
+        f"/api/pfarreien/{pfarrei.id}/filtertags",
+        json={"label": "Azubi", "ist_schueler_artig": False},
+        headers=headers,
+    )
+    assert erste.status_code == 201
+    assert zweite.status_code == 201
+    assert erste.json()["key"] == "azubi"
+    assert zweite.json()["key"] == "azubi-2"
 
 
 def test_filtertag_bearbeiten(
@@ -55,7 +51,7 @@ def test_filtertag_bearbeiten(
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     erstellt = client.post(
         f"/api/pfarreien/{pfarrei.id}/filtertags",
-        json={"key": "azubi", "label": "Azubi", "ist_schueler_artig": True},
+        json={"label": "Azubi", "ist_schueler_artig": True},
         headers=headers,
     ).json()
 
@@ -79,7 +75,7 @@ def test_filtertag_loeschen(
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     erstellt = client.post(
         f"/api/pfarreien/{pfarrei.id}/filtertags",
-        json={"key": "azubi", "label": "Azubi", "ist_schueler_artig": True},
+        json={"label": "Azubi", "ist_schueler_artig": True},
         headers=headers,
     ).json()
 

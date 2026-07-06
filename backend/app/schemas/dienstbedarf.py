@@ -7,7 +7,7 @@ from app.schemas.mini import MiniOut
 class DienstbedarfIn(BaseModel):
     dienst_typ_id: int | None = None
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    anzahl: int = Field(ge=0)
+    anzahl: int = Field(ge=1)
     erforderliche_filtertags: list[str] = []
     gruppen_anforderungen: list[GruppenAnforderung] = []
     mini_ids: list[int] = []
@@ -19,10 +19,19 @@ class DienstbedarfIn(BaseModel):
             raise ValueError(
                 "Entweder dienst_typ_id oder name muss gesetzt sein, nicht beides oder keines"
             )
+        for anforderung in self.gruppen_anforderungen:
+            if anforderung.mindest_anzahl > self.anzahl:
+                raise ValueError(
+                    "Die Mindestanzahl einer Gruppe darf die Anzahl nicht überschreiten"
+                )
         summe = sum(a.mindest_anzahl for a in self.gruppen_anforderungen)
         if summe > self.anzahl:
             raise ValueError(
                 "Die Summe der Mindestanzahlen darf die Anzahl nicht überschreiten"
+            )
+        if len(self.mini_ids) > self.anzahl:
+            raise ValueError(
+                "Es dürfen nicht mehr Minis zugewiesen werden als die Anzahl vorgibt"
             )
         return self
 

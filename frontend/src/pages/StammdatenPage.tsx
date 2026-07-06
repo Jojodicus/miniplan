@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState, type SubmitEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import {
+  dienstTypBearbeiten,
   dienstTypErstellen,
   dienstTypLoeschen,
   dienstTypenListe,
@@ -54,6 +55,7 @@ import {
   type Gruppe,
 } from '../api/gruppen'
 import {
+  miniBearbeiten,
   miniErstellen,
   miniLoeschen,
   minisListe,
@@ -86,38 +88,39 @@ function filtertagLabel(filtertags: FiltertagDef[], key: Filtertag): string {
   return filtertags.find((f) => f.key === key)?.label ?? key
 }
 
-function FiltertagChips({
+function FiltertagAuswahl({
   filtertags,
   ausgewaehlt,
   onChange,
   idPrefix,
 }: {
   filtertags: FiltertagDef[]
-  ausgewaehlt: Filtertag[]
-  onChange: (tags: Filtertag[]) => void
+  ausgewaehlt: Filtertag | null
+  onChange: (tag: Filtertag | null) => void
   idPrefix: string
 }) {
-  function toggle(tag: Filtertag) {
-    onChange(
-      ausgewaehlt.includes(tag) ? ausgewaehlt.filter((t) => t !== tag) : [...ausgewaehlt, tag],
-    )
-  }
-
   return (
     <div>
-      <Label hint="Status: wann ein Mini verfügbar ist">Verfügbarkeits-Status</Label>
+      <Label hint="realistisch trifft meist nur einer zu">Verfügbarkeits-Status</Label>
       {filtertags.length === 0 ? (
         <p className="text-sm text-ink-soft">
           Noch keine Verfügbarkeits-Status angelegt (Reiter „Verfügbarkeits-Status“).
         </p>
       ) : (
         <div className="flex flex-wrap gap-2">
+          <CheckboxChip
+            id={`${idPrefix}-keiner`}
+            checked={ausgewaehlt === null}
+            onChange={() => onChange(null)}
+          >
+            Keiner
+          </CheckboxChip>
           {filtertags.map((filtertag) => (
             <CheckboxChip
               key={filtertag.key}
               id={`${idPrefix}-${filtertag.key}`}
-              checked={ausgewaehlt.includes(filtertag.key)}
-              onChange={() => toggle(filtertag.key)}
+              checked={ausgewaehlt === filtertag.key}
+              onChange={() => onChange(filtertag.key)}
             >
               {filtertag.label}
             </CheckboxChip>
@@ -273,8 +276,12 @@ function MinisSection({
   const [minis, setMinis] = useState<Mini[]>([])
   const [name, setName] = useState('')
   const [gruppeId, setGruppeId] = useState<number | ''>('')
-  const [ausgewaehlteFiltertags, setAusgewaehlteFiltertags] = useState<Filtertag[]>([])
+  const [ausgewaehlterFiltertag, setAusgewaehlterFiltertag] = useState<Filtertag | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [editId, setEditId] = useState<number | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editGruppeId, setEditGruppeId] = useState<number | ''>('')
+  const [editFiltertag, setEditFiltertag] = useState<Filtertag | null>(null)
   const { showToast } = useToast()
 
   const reload = useCallback(() => {
@@ -299,13 +306,30 @@ function MinisSection({
       await miniErstellen(pfarreiId, {
         name,
         gruppe_id: gruppeId,
-        filtertags: ausgewaehlteFiltertags,
+        filtertags: ausgewaehlterFiltertag ? [ausgewaehlterFiltertag] : [],
       })
       setName('')
-      setAusgewaehlteFiltertags([])
+      setAusgewaehlterFiltertag(null)
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Anlegen des Minis'))
+    }
+  }
+
+  async function handleUpdate(event: SubmitEvent) {
+    event.preventDefault()
+    if (editId === null || editGruppeId === '') return
+    setError(null)
+    try {
+      await miniBearbeiten(pfarreiId, editId, {
+        name: editName,
+        gruppe_id: editGruppeId,
+        filtertags: editFiltertag ? [editFiltertag] : [],
+      })
+      setEditId(null)
+      reload()
+    } catch (err) {
+      setError(fehlerText(err, 'Fehler beim Bearbeiten des Minis'))
     }
   }
 
@@ -340,20 +364,87 @@ function MinisSection({
         />
       ) : (
         <div>
-          {minis.map((mini) => (
-            <Row key={mini.id}>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium text-ink">{mini.name}</span>
-                <Badge tone="pine">{gruppenName(mini.gruppe_id)}</Badge>
-                {mini.filtertags.map((tag) => (
-                  <Badge key={tag} tone="gold">
-                    {filtertagLabel(filtertags, tag)}
-                  </Badge>
-                ))}
+          {minis.map((mini) =>
+            editId === mini.id ? (
+              <div key={mini.id} className="border-b border-line p-4 last:border-b-0">
+                <form onSubmit={handleUpdate} className="flex flex-col gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor={`mini-${mini.id}-edit-name`}>Name</Label>
+                      <Input
+                        id={`mini-${mini.id}-edit-name`}
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        required
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`mini-${mini.id}-edit-gruppe`}>Gruppe</Label>
+                      <Select
+                        id={`mini-${mini.id}-edit-gruppe`}
+                        value={editGruppeId}
+                        onChange={(e) => setEditGruppeId(Number(e.target.value))}
+                        required
+                      >
+                        {gruppen.map((gruppe) => (
+                          <option key={gruppe.id} value={gruppe.id}>
+                            {gruppe.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  </div>
+                  <FiltertagAuswahl
+                    filtertags={filtertags}
+                    ausgewaehlt={editFiltertag}
+                    onChange={setEditFiltertag}
+                    idPrefix={`mini-${mini.id}-edit`}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button type="submit" size="sm">
+                      <Check className="h-4 w-4" />
+                      Speichern
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditId(null)}
+                    >
+                      Abbrechen
+                    </Button>
+                  </div>
+                </form>
               </div>
-              <InlineConfirmButton onConfirm={() => handleDelete(mini.id)} />
-            </Row>
-          ))}
+            ) : (
+              <Row key={mini.id}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-ink">{mini.name}</span>
+                  <Badge tone="pine">{gruppenName(mini.gruppe_id)}</Badge>
+                  {mini.filtertags.map((tag) => (
+                    <Badge key={tag} tone="gold">
+                      {filtertagLabel(filtertags, tag)}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1">
+                  <IconButton
+                    label="Bearbeiten"
+                    onClick={() => {
+                      setEditId(mini.id)
+                      setEditName(mini.name)
+                      setEditGruppeId(mini.gruppe_id)
+                      setEditFiltertag(mini.filtertags[0] ?? null)
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </IconButton>
+                  <InlineConfirmButton onConfirm={() => handleDelete(mini.id)} />
+                </div>
+              </Row>
+            ),
+          )}
         </div>
       )}
       <form onSubmit={handleCreate} className="flex flex-col gap-4 border-t border-line p-5">
@@ -384,10 +475,10 @@ function MinisSection({
             </Select>
           </div>
         </div>
-        <FiltertagChips
+        <FiltertagAuswahl
           filtertags={filtertags}
-          ausgewaehlt={ausgewaehlteFiltertags}
-          onChange={setAusgewaehlteFiltertags}
+          ausgewaehlt={ausgewaehlterFiltertag}
+          onChange={setAusgewaehlterFiltertag}
           idPrefix="mini-neu"
         />
         <Button type="submit" disabled={gruppen.length === 0} className="self-start">
@@ -404,11 +495,13 @@ function GruppenAnforderungenEditor({
   anforderungen,
   onChange,
   idPrefix,
+  maxAnzahl,
 }: {
   gruppen: Gruppe[]
   anforderungen: GruppenAnforderung[]
   onChange: (anforderungen: GruppenAnforderung[]) => void
   idPrefix: string
+  maxAnzahl: number
 }) {
   function addRow() {
     const belegteIds = new Set(anforderungen.map((a) => a.gruppe_id))
@@ -446,10 +539,13 @@ function GruppenAnforderungenEditor({
             <Input
               id={`${idPrefix}-mindestanzahl-${index}`}
               type="number"
-              min={0}
+              min={1}
+              max={maxAnzahl}
               value={anforderung.mindest_anzahl}
               onChange={(e) =>
-                updateRow(index, { mindest_anzahl: Number(e.target.value) })
+                updateRow(index, {
+                  mindest_anzahl: Math.min(Number(e.target.value), maxAnzahl),
+                })
               }
               className="w-24"
             />
@@ -476,19 +572,23 @@ function GruppenAnforderungenEditor({
 function DienstTypenSection({
   pfarreiId,
   gruppen,
-  filtertags,
 }: {
   pfarreiId: number
   gruppen: Gruppe[]
-  filtertags: FiltertagDef[]
 }) {
   const [dienstTypen, setDienstTypen] = useState<DienstTyp[]>([])
   const [name, setName] = useState('')
   const [standardAnzahl, setStandardAnzahl] = useState(1)
-  const [erforderlicheTags, setErforderlicheTags] = useState<Filtertag[]>([])
   const [gruppenAnforderungen, setGruppenAnforderungen] = useState<GruppenAnforderung[]>([])
   const [zeigeLabel, setZeigeLabel] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [editId, setEditId] = useState<number | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editStandardAnzahl, setEditStandardAnzahl] = useState(1)
+  const [editGruppenAnforderungen, setEditGruppenAnforderungen] = useState<GruppenAnforderung[]>(
+    [],
+  )
+  const [editZeigeLabel, setEditZeigeLabel] = useState(false)
   const { showToast } = useToast()
 
   const reload = useCallback(() => {
@@ -505,7 +605,6 @@ function DienstTypenSection({
     const daten: DienstTypEingabe = {
       name,
       standard_anzahl: standardAnzahl,
-      erforderliche_filtertags: erforderlicheTags,
       gruppen_anforderungen: gruppenAnforderungen,
       zeige_label: zeigeLabel,
     }
@@ -513,12 +612,29 @@ function DienstTypenSection({
       await dienstTypErstellen(pfarreiId, daten)
       setName('')
       setStandardAnzahl(1)
-      setErforderlicheTags([])
       setGruppenAnforderungen([])
       setZeigeLabel(false)
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Anlegen des Dienst-Typs'))
+    }
+  }
+
+  async function handleUpdate(event: SubmitEvent) {
+    event.preventDefault()
+    if (editId === null) return
+    setError(null)
+    try {
+      await dienstTypBearbeiten(pfarreiId, editId, {
+        name: editName,
+        standard_anzahl: editStandardAnzahl,
+        gruppen_anforderungen: editGruppenAnforderungen,
+        zeige_label: editZeigeLabel,
+      })
+      setEditId(null)
+      reload()
+    } catch (err) {
+      setError(fehlerText(err, 'Fehler beim Bearbeiten des Dienst-Typs'))
     }
   }
 
@@ -548,26 +664,100 @@ function DienstTypenSection({
         <EmptyState icon={ClipboardList} title="Noch keine Dienst-Typen angelegt" />
       ) : (
         <div>
-          {dienstTypen.map((dienstTyp) => (
-            <Row key={dienstTyp.id}>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium text-ink">{dienstTyp.name}</span>
-                <Badge tone="neutral">{dienstTyp.standard_anzahl}× besetzt</Badge>
-                {dienstTyp.zeige_label && <Badge tone="neutral">auf Plan sichtbar</Badge>}
-                {dienstTyp.gruppen_anforderungen.map((a) => (
-                  <Badge key={a.gruppe.id} tone="pine">
-                    mind. {a.mindest_anzahl}× {a.gruppe.name}
-                  </Badge>
-                ))}
-                {dienstTyp.erforderliche_filtertags.map((tag) => (
-                  <Badge key={tag} tone="gold">
-                    {filtertagLabel(filtertags, tag)}
-                  </Badge>
-                ))}
+          {dienstTypen.map((dienstTyp) =>
+            editId === dienstTyp.id ? (
+              <div key={dienstTyp.id} className="border-b border-line p-4 last:border-b-0">
+                <form onSubmit={handleUpdate} className="flex flex-col gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor={`dienst-typ-${dienstTyp.id}-edit-name`}>Name</Label>
+                      <Input
+                        id={`dienst-typ-${dienstTyp.id}-edit-name`}
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        required
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`dienst-typ-${dienstTyp.id}-edit-anzahl`}>
+                        Standard-Anzahl
+                      </Label>
+                      <Input
+                        id={`dienst-typ-${dienstTyp.id}-edit-anzahl`}
+                        type="number"
+                        min={1}
+                        value={editStandardAnzahl}
+                        onChange={(e) => setEditStandardAnzahl(Number(e.target.value))}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <GruppenAnforderungenEditor
+                    gruppen={gruppen}
+                    anforderungen={editGruppenAnforderungen}
+                    maxAnzahl={editStandardAnzahl}
+                    onChange={setEditGruppenAnforderungen}
+                    idPrefix={`dienst-typ-${dienstTyp.id}-edit`}
+                  />
+                  <CheckboxChip
+                    id={`dienst-typ-${dienstTyp.id}-edit-zeige-label`}
+                    checked={editZeigeLabel}
+                    onChange={() => setEditZeigeLabel((wert) => !wert)}
+                  >
+                    Auf dem Plan anzeigen
+                  </CheckboxChip>
+                  <div className="flex items-center gap-2">
+                    <Button type="submit" size="sm">
+                      <Check className="h-4 w-4" />
+                      Speichern
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditId(null)}
+                    >
+                      Abbrechen
+                    </Button>
+                  </div>
+                </form>
               </div>
-              <InlineConfirmButton onConfirm={() => handleDelete(dienstTyp.id)} />
-            </Row>
-          ))}
+            ) : (
+              <Row key={dienstTyp.id}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-ink">{dienstTyp.name}</span>
+                  <Badge tone="neutral">{dienstTyp.standard_anzahl}× besetzt</Badge>
+                  {dienstTyp.zeige_label && <Badge tone="neutral">auf Plan sichtbar</Badge>}
+                  {dienstTyp.gruppen_anforderungen.map((a) => (
+                    <Badge key={a.gruppe.id} tone="pine">
+                      mind. {a.mindest_anzahl}× {a.gruppe.name}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1">
+                  <IconButton
+                    label="Bearbeiten"
+                    onClick={() => {
+                      setEditId(dienstTyp.id)
+                      setEditName(dienstTyp.name)
+                      setEditStandardAnzahl(dienstTyp.standard_anzahl)
+                      setEditGruppenAnforderungen(
+                        dienstTyp.gruppen_anforderungen.map((a) => ({
+                          gruppe_id: a.gruppe.id,
+                          mindest_anzahl: a.mindest_anzahl,
+                        })),
+                      )
+                      setEditZeigeLabel(dienstTyp.zeige_label)
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </IconButton>
+                  <InlineConfirmButton onConfirm={() => handleDelete(dienstTyp.id)} />
+                </div>
+              </Row>
+            ),
+          )}
         </div>
       )}
       <form onSubmit={handleCreate} className="flex flex-col gap-4 border-t border-line p-5">
@@ -596,13 +786,8 @@ function DienstTypenSection({
         <GruppenAnforderungenEditor
           gruppen={gruppen}
           anforderungen={gruppenAnforderungen}
+          maxAnzahl={standardAnzahl}
           onChange={setGruppenAnforderungen}
-          idPrefix="dienst-typ-neu"
-        />
-        <FiltertagChips
-          filtertags={filtertags}
-          ausgewaehlt={erforderlicheTags}
-          onChange={setErforderlicheTags}
           idPrefix="dienst-typ-neu"
         />
         <CheckboxChip
@@ -633,8 +818,7 @@ function FiltertagBlockerZeile({
   return (
     <Row>
       <span className="text-sm text-ink">
-        {WOCHENTAGE[blocker.wochentag]}, {blocker.start_zeit.slice(0, 5)}–
-        {blocker.end_zeit.slice(0, 5)} Uhr
+        {blocker.start_zeit.slice(0, 5)}–{blocker.end_zeit.slice(0, 5)} Uhr
       </span>
       <InlineConfirmButton onConfirm={onDelete} size="sm" />
     </Row>
@@ -716,7 +900,6 @@ function FiltertagsSection({
   reload: () => void
 }) {
   const [blocker, setBlocker] = useState<FiltertagBlocker[]>([])
-  const [key, setKey] = useState('')
   const [label, setLabel] = useState('')
   const [istSchuelerArtig, setIstSchuelerArtig] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -736,10 +919,9 @@ function FiltertagsSection({
   async function handleCreate(event: SubmitEvent) {
     event.preventDefault()
     setError(null)
-    const daten: FiltertagEingabe = { key, label, ist_schueler_artig: istSchuelerArtig }
+    const daten: FiltertagEingabe = { label, ist_schueler_artig: istSchuelerArtig }
     try {
       await filtertagErstellen(pfarreiId, daten)
-      setKey('')
       setLabel('')
       setIstSchuelerArtig(false)
       reload()
@@ -800,7 +982,7 @@ function FiltertagsSection({
     <Card className="animate-rise">
       <CardHeader
         title="Verfügbarkeits-Status"
-        description="Status: wann ein Mini verfügbar ist (z. B. „Schüler“ blockiert Schulzeiten). Anders als die Gruppe hat der Status keinen Einfluss auf die Mindestbesetzung, sondern nur auf die Verfügbarkeit."
+        description="Status: wann ein Mini nicht verfügbar ist. Die unten je Status hinzugefügten Zeitfenster sind Sperrzeiten (z. B. sperrt „Schüler“ die üblichen Schulzeiten), keine Verfügbarkeitszeiten. Anders als die Gruppe hat der Status keinen Einfluss auf die Mindestbesetzung, sondern nur auf die Verfügbarkeit."
       />
       {error && (
         <div className="px-5 pt-4">
@@ -827,7 +1009,7 @@ function FiltertagsSection({
                     checked={editIstSchuelerArtig}
                     onChange={() => setEditIstSchuelerArtig((wert) => !wert)}
                   >
-                    schüler-artig
+                    folgt Schulferien-Regeln
                   </CheckboxChip>
                   <IconButton label="Speichern" type="submit">
                     <Check className="h-4 w-4" />
@@ -842,8 +1024,9 @@ function FiltertagsSection({
                 <Row>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-ink">{filtertag.label}</span>
-                    <Badge tone="neutral">{filtertag.key}</Badge>
-                    {filtertag.ist_schueler_artig && <Badge tone="gold">schüler-artig</Badge>}
+                    {filtertag.ist_schueler_artig && (
+                      <Badge tone="gold">folgt Schulferien-Regeln</Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     <IconButton
@@ -860,15 +1043,24 @@ function FiltertagsSection({
                   </div>
                 </Row>
                 <div className="bg-pine-tint/20 pl-4">
-                  {blocker
-                    .filter((b) => b.filtertag_id === filtertag.id)
-                    .map((b) => (
-                      <FiltertagBlockerZeile
-                        key={b.id}
-                        blocker={b}
-                        onDelete={() => handleBlockerDelete(b.id)}
-                      />
-                    ))}
+                  {WOCHENTAGE.map((wochentagName, wochentag) => {
+                    const eintraege = blocker.filter(
+                      (b) => b.filtertag_id === filtertag.id && b.wochentag === wochentag,
+                    )
+                    if (eintraege.length === 0) return null
+                    return (
+                      <div key={wochentag}>
+                        <p className="pt-2 text-xs font-medium text-ink-faint">{wochentagName}</p>
+                        {eintraege.map((b) => (
+                          <FiltertagBlockerZeile
+                            key={b.id}
+                            blocker={b}
+                            onDelete={() => handleBlockerDelete(b.id)}
+                          />
+                        ))}
+                      </div>
+                    )
+                  })}
                   <NeuerBlockerForm filtertagId={filtertag.id} onCreate={handleBlockerCreate} />
                 </div>
               </div>
@@ -877,19 +1069,6 @@ function FiltertagsSection({
         </div>
       )}
       <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-2 border-t border-line p-5">
-        <div>
-          <Label htmlFor="filtertag-neu-key" hint="technischer Schlüssel, z. B. „azubi“">
-            Key
-          </Label>
-          <Input
-            id="filtertag-neu-key"
-            placeholder="z. B. azubi"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            required
-            className="w-40"
-          />
-        </div>
         <div>
           <Label htmlFor="filtertag-neu-label">Bezeichnung</Label>
           <Input
@@ -905,7 +1084,8 @@ function FiltertagsSection({
           checked={istSchuelerArtig}
           onChange={() => setIstSchuelerArtig((wert) => !wert)}
         >
-          schüler-artig (Ferien-/Feiertagsregeln wie bei Schülern)
+          Folgt Schulferien-Regeln (Ferien und schulfreie Feiertage gelten für diesen Status als
+          frei)
         </CheckboxChip>
         <Button type="submit">
           <Plus className="h-4 w-4" />
@@ -957,9 +1137,14 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
 
   async function handleBundeslandChange(bundesland: Bundesland) {
     setError(null)
+    setAktualisiert(false)
     try {
       const aktualisiertePfarrei = await bundeslandSetzen(pfarreiId, bundesland)
       setPfarreiInfo(aktualisiertePfarrei)
+      // Das Setzen des Bundeslands stößt serverseitig direkt einen Ferien-Sync an - die Liste
+      // hier muss daher neu geladen werden, um die neuen Daten anzuzeigen.
+      const neueFerien = await ferienListe(pfarreiId)
+      setFerien(neueFerien)
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Ändern des Bundeslands'))
     }
@@ -1063,7 +1248,7 @@ function FeiertageSection({ pfarreiId }: { pfarreiId: number }) {
     <Card className="animate-rise">
       <CardHeader
         title="Gesetzliche Feiertage"
-        description={`Feiertage ${jahr}, mit Unterscheidung ob schulfrei und/oder auch für Arbeiter frei.`}
+        description={`Feiertage ${jahr}, mit Unterscheidung ob schulfrei und/oder arbeitsfrei.`}
       />
       {error && (
         <div className="px-5 pt-4">
@@ -1092,7 +1277,7 @@ function FeiertageSection({ pfarreiId }: { pfarreiId: number }) {
                   checked={f.arbeiter_frei}
                   onChange={() => handleToggle(f, 'arbeiter_frei')}
                 >
-                  auch frei für Arbeiter
+                  arbeitsfrei
                 </CheckboxChip>
               </div>
             </Row>
@@ -1135,11 +1320,11 @@ function VerfuegbarkeitSection({
     <div className="flex flex-col gap-4">
       <Alert>
         <span>
-          Drei zusammenspielende Mechanismen bestimmen, wann ein Mini verfügbar ist: <b>Ferien</b>{' '}
-          und <b>Feiertage</b> gelten pfarreiweit für alle „schüler-artigen“ Verfügbarkeits-Status
-          und <b>überschreiben</b> dabei die wöchentlichen <b>Blocker-Regeln</b> des jeweiligen
-          Verfügbarkeits-Status (z. B. blockiert „Schüler“ normalerweise Schulzeiten, aber nicht
-          während der Ferien).
+          Drei zusammenspielende Mechanismen bestimmen, wann ein Mini <b>nicht verfügbar</b> ist:{' '}
+          <b>Ferien</b> und <b>Feiertage</b> gelten pfarreiweit für alle Verfügbarkeits-Status, die
+          „Schulferien-Regeln“ folgen, und <b>heben</b> dabei die wöchentlichen{' '}
+          <b>Sperrzeiten</b> des jeweiligen Verfügbarkeits-Status auf (z. B. sperrt „Schüler“
+          normalerweise Schulzeiten, aber nicht während der Ferien).
         </span>
       </Alert>
       <div className="-mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0">
@@ -1235,9 +1420,7 @@ export function StammdatenPage() {
         {tab === 'minis' && (
           <MinisSection pfarreiId={id} gruppen={gruppen} filtertags={filtertags} />
         )}
-        {tab === 'dienst-typen' && (
-          <DienstTypenSection pfarreiId={id} gruppen={gruppen} filtertags={filtertags} />
-        )}
+        {tab === 'dienst-typen' && <DienstTypenSection pfarreiId={id} gruppen={gruppen} />}
         {tab === 'verfuegbarkeit' && (
           <VerfuegbarkeitSection
             pfarreiId={id}

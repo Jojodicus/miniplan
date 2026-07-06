@@ -22,6 +22,20 @@ def test_default_arbeiter_frei_ist_true_fuer_gesetzliche_feiertage() -> None:
     assert default_arbeiter_frei("neujahr") is True
 
 
+def test_berechne_feiertage_enthaelt_buss_und_bettag_schulfrei_in_bayern() -> None:
+    feiertage = berechne_feiertage("BY", 2025)
+    eintrag = next(f for f in feiertage if "Buß- und Bettag" in f["name"])
+    assert eintrag["datum"] == date(2025, 11, 19)
+    assert default_arbeiter_frei(eintrag["key"]) is False
+
+
+def test_berechne_feiertage_buss_und_bettag_in_sachsen_ist_voller_feiertag() -> None:
+    feiertage = berechne_feiertage("SN", 2025)
+    eintrag = next(f for f in feiertage if "Buß- und Bettag" in f["name"])
+    assert eintrag["datum"] == date(2025, 11, 19)
+    assert default_arbeiter_frei(eintrag["key"]) is True
+
+
 def test_feiertage_liste_verwendet_defaults_ohne_einstellung(
     client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei
 ) -> None:

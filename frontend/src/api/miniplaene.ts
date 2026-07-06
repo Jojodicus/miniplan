@@ -66,7 +66,7 @@ export interface VorschauDienstbedarf {
 export interface VorschauGottesdienst {
   datum: string
   uhrzeit: string
-  name: string
+  name: string | null
   notiz: string | null
   dienstbedarf: VorschauDienstbedarf[]
 }

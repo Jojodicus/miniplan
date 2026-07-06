@@ -33,7 +33,7 @@ export interface Gottesdienst {
   miniplan_id: number
   datum: string
   uhrzeit: string
-  name: string
+  name: string | null
   notiz: string | null
   dienstbedarf: Dienstbedarf[]
 }

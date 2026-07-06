@@ -69,17 +69,23 @@ export function CheckboxChip({
   id,
   checked,
   onChange,
+  disabled,
   children,
 }: {
   id: string
   checked: boolean
   onChange: () => void
+  disabled?: boolean
   children: ReactNode
 }) {
   return (
     <label
       htmlFor={id}
-      className={`inline-flex cursor-pointer select-none items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+      className={`inline-flex select-none items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+        disabled
+          ? 'cursor-not-allowed border-line text-ink-faint opacity-50'
+          : 'cursor-pointer'
+      } ${
         checked
           ? 'border-pine bg-pine-tint text-pine-dark'
           : 'border-line text-ink-soft hover:border-ink-faint'
@@ -90,6 +96,7 @@ export function CheckboxChip({
         type="checkbox"
         checked={checked}
         onChange={onChange}
+        disabled={disabled}
         className="sr-only"
       />
       {children}

@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.models.dienst_typ import DienstTyp, DienstTypGruppenAnforderung
 from app.models.gruppe import Gruppe
 from app.models.mini import Mini
 from app.models.nutzer import Nutzer
@@ -77,6 +78,38 @@ def test_gruppe_loeschen_verweigert_wenn_von_mini_verwendet(
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     response = client.delete(f"/api/pfarreien/{pfarrei.id}/gruppen/{gruppe.id}", headers=headers)
     assert response.status_code == 409
+
+
+def test_gruppe_loeschen_raeumt_nur_eigene_dienst_typ_anforderung(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    gruppe: Gruppe,
+    db_session,
+) -> None:
+    andere_gruppe = Gruppe(pfarrei_id=pfarrei.id, name="Andere Gruppe")
+    db_session.add(andere_gruppe)
+    db_session.flush()
+
+    dienst_typ = DienstTyp(pfarrei_id=pfarrei.id, name="Kerzentraeger", standard_anzahl=2)
+    dienst_typ.gruppen_anforderungen = [
+        DienstTypGruppenAnforderung(gruppe_id=gruppe.id, mindest_anzahl=1),
+        DienstTypGruppenAnforderung(gruppe_id=andere_gruppe.id, mindest_anzahl=1),
+    ]
+    db_session.add(dienst_typ)
+    db_session.commit()
+    dienst_typ_id = dienst_typ.id
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.delete(f"/api/pfarreien/{pfarrei.id}/gruppen/{gruppe.id}", headers=headers)
+    assert response.status_code == 204
+
+    response = client.get(f"/api/pfarreien/{pfarrei.id}/dienst-typen", headers=headers)
+    assert response.status_code == 200
+    [dienst_typ_json] = [d for d in response.json() if d["id"] == dienst_typ_id]
+    assert [a["gruppe"]["id"] for a in dienst_typ_json["gruppen_anforderungen"]] == [
+        andere_gruppe.id
+    ]
 
 
 def test_gruppen_zugriff_auf_fremde_pfarrei_verweigert(

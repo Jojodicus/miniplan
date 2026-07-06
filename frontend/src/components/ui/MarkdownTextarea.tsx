@@ -1,4 +1,4 @@
-import { Bold, Italic, List } from 'lucide-react'
+import { Bold, Italic, Link, List, ListOrdered } from 'lucide-react'
 import { useRef } from 'react'
 
 const textareaChrome =
@@ -10,9 +10,10 @@ interface Umschliessung {
 }
 
 /**
- * Textarea mit einer kleinen Markdown-Toolbar (fett/kursiv/Aufzählung), die Markdown-Syntax an
- * der Cursorposition einfügt bzw. die aktuelle Selektion umschließt - bewusst ohne WYSIWYG-
- * Abhängigkeit, da die Live-PDF-Vorschau bereits das tatsächliche Rendering-Ergebnis zeigt.
+ * Textarea mit einer kleinen Markdown-Toolbar (fett/kursiv/Aufzählung/nummerierte Liste/Link),
+ * die Markdown-Syntax an der Cursorposition einfügt bzw. die aktuelle Selektion umschließt -
+ * bewusst ohne WYSIWYG-Abhängigkeit, da die Live-PDF-Vorschau bereits das tatsächliche
+ * Rendering-Ergebnis zeigt.
  */
 export function MarkdownTextarea({
   id,
@@ -43,19 +44,35 @@ export function MarkdownTextarea({
     })
   }
 
-  function listeEinfuegen() {
+  function listeEinfuegen(markierung: string) {
     const el = ref.current
     if (!el) return
     const start = el.selectionStart
     const zeilenStart = value.lastIndexOf('\n', start - 1) + 1
     const praefix = start === zeilenStart ? '' : '\n'
-    const einfuegung = `${praefix}- `
+    const einfuegung = `${praefix}${markierung} `
     const neuerWert = `${value.slice(0, start)}${einfuegung}${value.slice(start)}`
     onChange(neuerWert)
     requestAnimationFrame(() => {
       el.focus()
       const position = start + einfuegung.length
       el.setSelectionRange(position, position)
+    })
+  }
+
+  function linkEinfuegen() {
+    const el = ref.current
+    if (!el) return
+    const start = el.selectionStart
+    const end = el.selectionEnd
+    const ausgewaehlt = value.slice(start, end)
+    const linktext = ausgewaehlt || 'Linktext'
+    const einfuegung = `[${linktext}](https://)`
+    const neuerWert = `${value.slice(0, start)}${einfuegung}${value.slice(end)}`
+    onChange(neuerWert)
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(start + 1, start + 1 + linktext.length)
     })
   }
 
@@ -84,10 +101,28 @@ export function MarkdownTextarea({
           type="button"
           aria-label="Aufzählung"
           title="Aufzählung"
-          onClick={listeEinfuegen}
+          onClick={() => listeEinfuegen('-')}
           className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark"
         >
           <List className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          aria-label="Nummerierte Liste"
+          title="Nummerierte Liste"
+          onClick={() => listeEinfuegen('1.')}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark"
+        >
+          <ListOrdered className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          aria-label="Link"
+          title="Link"
+          onClick={linkEinfuegen}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark"
+        >
+          <Link className="h-3.5 w-3.5" />
         </button>
       </div>
       <textarea

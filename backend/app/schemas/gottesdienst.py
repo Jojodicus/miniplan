@@ -1,6 +1,6 @@
 from datetime import date, time
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.dienstbedarf import DienstbedarfIn, DienstbedarfOut
 
@@ -8,9 +8,14 @@ from app.schemas.dienstbedarf import DienstbedarfIn, DienstbedarfOut
 class GottesdienstIn(BaseModel):
     datum: date
     uhrzeit: time
-    name: str = Field(min_length=1, max_length=255)
+    name: str | None = Field(default=None, max_length=255)
     notiz: str | None = None
     dienstbedarf: list[DienstbedarfIn] = []
+
+    @field_validator("name")
+    @classmethod
+    def _leeren_namen_zu_none(cls, wert: str | None) -> str | None:
+        return wert.strip() if wert and wert.strip() else None
 
 
 class GottesdienstOut(BaseModel):
@@ -20,6 +25,6 @@ class GottesdienstOut(BaseModel):
     miniplan_id: int
     datum: date
     uhrzeit: time
-    name: str
+    name: str | None
     notiz: str | None
     dienstbedarf: list[DienstbedarfOut]

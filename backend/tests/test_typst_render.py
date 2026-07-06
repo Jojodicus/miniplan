@@ -53,6 +53,16 @@ def test_render_mit_gottesdienst_und_dienstbedarf_liefert_pdf() -> None:
     assert pdf.startswith(b"%PDF")
 
 
+def test_render_gottesdienst_ohne_namen_liefert_pdf() -> None:
+    plan = _plan(
+        gottesdienste=[
+            VorschauGottesdienst(datum=date(2026, 7, 5), uhrzeit=time(10, 0), name=None)
+        ],
+    )
+    pdf = render_miniplan_pdf("St. Beispiel", plan)
+    assert pdf.startswith(b"%PDF")
+
+
 def test_render_mit_sonderzeichen_wird_sicher_escaped() -> None:
     plan = _plan(
         gottesdienste=[
@@ -131,6 +141,16 @@ def test_markdown_to_typst_kursiv() -> None:
 def test_markdown_to_typst_liste() -> None:
     ergebnis = markdown_to_typst("- Punkt eins\n- Punkt zwei")
     assert ergebnis == '- #"Punkt eins"\n- #"Punkt zwei"'
+
+
+def test_markdown_to_typst_nummerierte_liste() -> None:
+    ergebnis = markdown_to_typst("1. Punkt eins\n2. Punkt zwei")
+    assert ergebnis == '+ #"Punkt eins"\n+ #"Punkt zwei"'
+
+
+def test_markdown_to_typst_link() -> None:
+    ergebnis = markdown_to_typst("[Anmeldung](https://example.com/anmeldung)")
+    assert ergebnis == '#link("https://example.com/anmeldung")[#"Anmeldung"]'
 
 
 def test_markdown_to_typst_einfacher_absatz() -> None:

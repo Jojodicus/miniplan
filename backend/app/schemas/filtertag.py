@@ -2,7 +2,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class FiltertagCreate(BaseModel):
-    key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$")
     label: str = Field(min_length=1, max_length=255)
     ist_schueler_artig: bool = False
 

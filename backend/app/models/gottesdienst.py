@@ -18,7 +18,7 @@ class Gottesdienst(Base):
     miniplan_id: Mapped[int] = mapped_column(ForeignKey("miniplaene.id"))
     datum: Mapped[date] = mapped_column(Date)
     uhrzeit: Mapped[time] = mapped_column(Time)
-    name: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str | None] = mapped_column(String(255), default=None)
     notiz: Mapped[str | None] = mapped_column(Text, default=None)
 
     miniplan: Mapped["Miniplan"] = relationship(back_populates="gottesdienste")

@@ -14,7 +14,6 @@ from app.schemas.dienst_typ import (
     DienstTypUpdate,
     GruppenAnforderung,
 )
-from app.services.filtertag_validation import unbekannte_filtertag_keys
 
 router = APIRouter(prefix="/api/pfarreien/{pfarrei_id}/dienst-typen", tags=["dienst-typen"])
 require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER)
@@ -58,15 +57,6 @@ def _gruppen_anforderungen_bauen(
     ]
 
 
-def _filtertags_pruefen(pfarrei_id: int, filtertags: list[str], db: Session) -> None:
-    unbekannt = unbekannte_filtertag_keys(pfarrei_id, set(filtertags), db)
-    if unbekannt:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unbekannte Filtertags: {', '.join(sorted(unbekannt))}",
-        )
-
-
 @router.get("", response_model=list[DienstTypOut])
 def liste(
     pfarrei_id: int,
@@ -90,7 +80,6 @@ def erstellen(
     _pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
 ) -> DienstTyp:
-    _filtertags_pruefen(pfarrei_id, daten.erforderliche_filtertags, db)
     gruppen_anforderungen = _gruppen_anforderungen_bauen(
         pfarrei_id, daten.gruppen_anforderungen, db
     )
@@ -98,7 +87,6 @@ def erstellen(
         pfarrei_id=pfarrei_id,
         name=daten.name,
         standard_anzahl=daten.standard_anzahl,
-        erforderliche_filtertags=daten.erforderliche_filtertags,
         gruppen_anforderungen=gruppen_anforderungen,
         zeige_label=daten.zeige_label,
     )
@@ -125,13 +113,11 @@ def bearbeiten(
     _=Depends(require_verantwortlich),
 ) -> DienstTyp:
     dienst_typ = _get_dienst_typ_or_404(pfarrei_id, dienst_typ_id, db)
-    _filtertags_pruefen(pfarrei_id, daten.erforderliche_filtertags, db)
     gruppen_anforderungen = _gruppen_anforderungen_bauen(
         pfarrei_id, daten.gruppen_anforderungen, db
     )
     dienst_typ.name = daten.name
     dienst_typ.standard_anzahl = daten.standard_anzahl
-    dienst_typ.erforderliche_filtertags = daten.erforderliche_filtertags
     dienst_typ.gruppen_anforderungen = gruppen_anforderungen
     dienst_typ.zeige_label = daten.zeige_label
     try:

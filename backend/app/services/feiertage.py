@@ -1,6 +1,6 @@
 import re
 import unicodedata
-from datetime import date
+from datetime import date, timedelta
 from typing import TypedDict
 
 import holidays
@@ -17,27 +17,54 @@ def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", normalisiert.lower()).strip("-")
 
 
+# Eigener Key statt des von `_slug("Buß- und Bettag")` gelieferten "buss-und-bettag": Sachsen
+# bekommt seinen (gesetzlichen, arbeitsfreien) Buß- und Bettag bereits über `holidays.Germany`
+# unter genau diesem Key - ein eigener Key für den bayerischen Sonderfall verhindert, dass beide
+# über denselben Key gemeinsam in SCHULFREI_NUR_KEYS landen und Sachsens Feiertag dadurch
+# fälschlich als nicht-arbeitsfrei gilt.
+BUSS_UND_BETTAG_KEY = "buss-und-bettag-schulfrei-bayern"
+
+
+def _buss_und_bettag(jahr: int) -> date:
+    """Buß- und Bettag ist der Mittwoch vor dem 23. November (bzw. der 23. November selbst,
+    falls dieser auf einen Mittwoch fällt) - Mittwoch = weekday() 2."""
+    nov23 = date(jahr, 11, 23)
+    return nov23 - timedelta(days=(nov23.weekday() - 2) % 7)
+
+
 def berechne_feiertage(bundesland: str, jahr: int) -> list[BerechneterFeiertag]:
     feiertage = holidays.Germany(subdiv=bundesland, years=jahr, language="de")
-    return [
+    berechnete = [
         {"key": _slug(name), "name": name, "datum": datum}
         for datum, name in sorted(feiertage.items())
     ]
+    # In Bayern ist Buß- und Bettag kein gesetzlicher Feiertag (siehe Kommentar bei
+    # SCHULFREI_NUR_KEYS) und taucht daher nicht in den `holidays`-Daten auf - er ist dort rein
+    # schulkalendarisch schulfrei, wird hier also als Sonderfall ergänzt. Sachsen bekommt ihn
+    # bereits vollständig (als gesetzlichen, arbeitsfreien Feiertag) über `holidays.Germany`.
+    if bundesland == "BY":
+        berechnete.append(
+            {
+                "key": BUSS_UND_BETTAG_KEY,
+                "name": "Buß- und Bettag",
+                "datum": _buss_und_bettag(jahr),
+            }
+        )
+        berechnete.sort(key=lambda f: f["datum"])
+    return berechnete
 
 
-# Keys von Feiertagen, die die `holidays`-Bibliothek für ein Bundesland zwar als gesetzlichen
-# Feiertag listet, die aber (anders als alle übrigen von ihr gelieferten Feiertage) KEIN
-# gesetzlicher arbeitsfreier Tag sind. Dient als Erweiterungspunkt für Sonderfälle.
+# Keys von Feiertagen, die für ein Bundesland zwar in der Liste auftauchen (sei es über die
+# `holidays`-Bibliothek oder als manueller Sonderfall wie Buß- und Bettag in Bayern), die aber
+# (anders als alle übrigen gelieferten Feiertage) KEIN gesetzlicher arbeitsfreier Tag sind.
 #
-# Buß- und Bettag wurde hier bewusst NICHT aufgenommen: `holidays.Germany` listet ihn ohnehin nur
-# für Sachsen (subdiv="SN") - dort ist er aber ein vollwertiger gesetzlicher, arbeitsfreier
-# Feiertag (finanziert über einen leicht höheren Pflegeversicherungsbeitrag), keine
-# schulfrei-only-Ausnahme. In Bayern ist er gar kein gesetzlicher Feiertag und taucht in den
-# `holidays`-Daten für "BY" überhaupt nicht auf - dass er dort dennoch schulfrei ist, ist eine
-# rein schulkalendarische Entscheidung der Kultusministerien, die weder `holidays` noch andere
-# gängige Feiertags-APIs (z.B. Nager.Date) abbilden; dafür bräuchte man die Schulferien-Kalender
-# der Länder (wie hier bereits separat über `Ferienzeitraum`/`ferien_sync.py` synchronisiert).
-SCHULFREI_NUR_KEYS: set[str] = set()
+# Buß- und Bettag ist hier nur für den Bayern-Sonderfall aufgenommen: `holidays.Germany` listet
+# ihn für Sachsen (subdiv="SN") bereits selbst als vollwertigen gesetzlichen, arbeitsfreien
+# Feiertag (finanziert über einen leicht höheren Pflegeversicherungsbeitrag) - dort greift diese
+# Ausnahme also nicht, da für Sachsen kein manueller Eintrag über `_buss_und_bettag` erzeugt wird.
+# In Bayern ist er dagegen gar kein gesetzlicher Feiertag, sondern eine rein schulkalendarische
+# Entscheidung der Kultusministerien - daher schulfrei, aber nicht arbeitsfrei.
+SCHULFREI_NUR_KEYS: set[str] = {BUSS_UND_BETTAG_KEY}
 
 
 def default_arbeiter_frei(feiertag_key: str) -> bool:

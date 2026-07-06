@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
+from app.models.dienst_typ import DienstTypGruppenAnforderung
+from app.models.dienstbedarf import DienstbedarfGruppenAnforderung
 from app.models.gruppe import Gruppe
 from app.models.mini import Mini
 from app.models.nutzer import PfarreiRolle
@@ -92,5 +94,16 @@ def loeschen(
             status_code=status.HTTP_409_CONFLICT,
             detail="Gruppe wird noch von Minis verwendet",
         )
+    # Da SQLite-FK-Constraints hier nicht erzwungen werden (siehe database.py), würden ohne
+    # dieses explizite Aufräumen verwaiste Zeilen mit einer gruppe_id ins Leere zeigen - das
+    # führt dazu, dass die betroffenen DienstTyp/Dienstbedarf beim Auslesen (gruppe: GruppeOut
+    # ist ein Pflichtfeld) an der Response-Validierung scheitern und der GESAMTE Endpunkt
+    # fehlschlägt, nicht nur der betroffene Eintrag.
+    db.query(DienstTypGruppenAnforderung).filter(
+        DienstTypGruppenAnforderung.gruppe_id == gruppe_id
+    ).delete()
+    db.query(DienstbedarfGruppenAnforderung).filter(
+        DienstbedarfGruppenAnforderung.gruppe_id == gruppe_id
+    ).delete()
     db.delete(gruppe)
     db.commit()

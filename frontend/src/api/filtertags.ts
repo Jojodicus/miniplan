@@ -9,7 +9,6 @@ export interface Filtertag {
 }
 
 export interface FiltertagEingabe {
-  key: string
   label: string
   ist_schueler_artig: boolean
 }

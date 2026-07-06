@@ -20,6 +20,19 @@ async function zuStammdaten(page: import('@playwright/test').Page, pfarreiName: 
     .click()
 }
 
+// Das Datum-Feld ist ein Kalender-Popover (Button + <=Portal-Overlay>) statt eines nativen
+// <input type="date">, daher hier gezielt den Trigger-Button öffnen und den Tag im
+// Monatsraster anklicken statt `.fill()` zu verwenden. Da `jahr`/`monat` des Miniplans an
+// DateInput durchgereicht werden, öffnet sich der Kalender direkt im richtigen Monat.
+async function waehleDatum(
+  page: import('@playwright/test').Page,
+  form: import('@playwright/test').Locator,
+  tag: number,
+) {
+  await form.getByLabel('Datum').click()
+  await page.getByRole('button', { name: String(tag), exact: true }).click()
+}
+
 test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async ({ page }) => {
   await login(page)
 
@@ -67,7 +80,7 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await expect(page.getByRole('heading', { name: 'Miniplan 7/2031' })).toBeVisible()
 
   const gottesdienstForm = page.getByRole('form', { name: 'Gottesdienst anlegen' })
-  await gottesdienstForm.getByLabel('Datum').fill('2031-07-06')
+  await waehleDatum(page, gottesdienstForm, 6)
   await gottesdienstForm.getByLabel('Uhrzeit').fill('10:00')
   await gottesdienstForm.getByLabel('Name').fill('Sonntagsmesse')
   await gottesdienstForm.getByRole('button', { name: 'Gottesdienst anlegen' }).click()
@@ -101,11 +114,17 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await autosaveAbgeschlossen
   await expect(page.getByLabel('Name des Dienstes')).toHaveValue('Alle Ministranten')
 
-  const vorschauIframe = page.locator('iframe[title="Miniplan-PDF-Vorschau"]')
-  await expect(vorschauIframe).toHaveAttribute('src', /^blob:/, { timeout: 10_000 })
-  const ersteVorschauSrc = await vorschauIframe.getAttribute('src')
+  // Die PDF-Vorschau rendert seit dem Frontend-Redesign direkt über react-pdf/<canvas> statt über
+  // ein <iframe> mit Object-URL - hier daher auf das gerenderte <canvas> statt auf ein iframe-`src`
+  // prüfen.
+  const vorschauCanvas = page.locator('canvas').first()
+  await expect(vorschauCanvas).toBeVisible({ timeout: 10_000 })
 
   await page.reload()
+  // Anders als direkt nach dem Anlegen (Item 14: automatisch aufgeklappt) ist die Gottesdienst-
+  // Karte nach einem vollständigen Neuladen wieder eingeklappt - vor den weiteren Prüfungen daher
+  // erst über die Kopfzeile aufklappen.
+  await page.getByRole('button', { name: /Sonntagsmesse/ }).click()
   await expect(page.getByText('MP-Weihrauch', { exact: true }).first()).toBeVisible({
     timeout: 15_000,
   })
@@ -119,13 +138,14 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   const freitextGespeichert = page.waitForResponse(
     (resp) => resp.request().method() === 'PUT' && /\/miniplaene\/\d+$/.test(resp.url()),
   )
+  const vorschauAktualisiert = page.waitForResponse(
+    (resp) => resp.request().method() === 'POST' && /\/vorschau$/.test(resp.url()),
+  )
   await page.getByLabel('Veranstaltungen').fill('Pfarrfest am 20.07.')
   await page.getByLabel('Ankündigungen').fill('Bitte pünktlich erscheinen')
   await freitextGespeichert
-
-  await expect
-    .poll(async () => vorschauIframe.getAttribute('src'), { timeout: 10_000 })
-    .not.toBe(ersteVorschauSrc)
+  await vorschauAktualisiert
+  await expect(vorschauCanvas).toBeVisible()
 
   await page.reload()
   await expect(page.getByLabel('Veranstaltungen')).toHaveValue('Pfarrfest am 20.07.')

@@ -20,7 +20,7 @@ class VorschauDienstbedarf(BaseModel):
 class VorschauGottesdienst(BaseModel):
     datum: date
     uhrzeit: time
-    name: str
+    name: str | None = None
     notiz: str | None = None
     dienstbedarf: list[VorschauDienstbedarf] = []
 

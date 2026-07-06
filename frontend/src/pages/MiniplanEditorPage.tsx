@@ -108,7 +108,7 @@ function bedarfAusDienstTyp(dienstTyp: DienstTyp): WorkingBedarf {
     dienst_typ_name: dienstTyp.name,
     name: null,
     anzahl: dienstTyp.standard_anzahl,
-    erforderliche_filtertags: dienstTyp.erforderliche_filtertags,
+    erforderliche_filtertags: [],
     gruppen_anforderungen: dienstTyp.gruppen_anforderungen.map((a) => ({
       gruppe_id: a.gruppe.id,
       mindest_anzahl: a.mindest_anzahl,
@@ -278,7 +278,7 @@ function DienstbedarfZeile({
             <Input
               id={`${bedarf.schluessel}-anzahl`}
               type="number"
-              min={0}
+              min={1}
               value={bedarf.anzahl}
               onChange={(e) => onChange({ anzahl: Number(e.target.value) })}
               className="h-8 w-20"
@@ -351,10 +351,13 @@ function DienstbedarfZeile({
                   </Select>
                   <Input
                     type="number"
-                    min={0}
+                    min={1}
+                    max={bedarf.anzahl}
                     value={anforderung.mindest_anzahl}
                     onChange={(e) =>
-                      updateGruppenAnforderung(index, { mindest_anzahl: Number(e.target.value) })
+                      updateGruppenAnforderung(index, {
+                        mindest_anzahl: Math.min(Number(e.target.value), bedarf.anzahl),
+                      })
                     }
                     className="w-24"
                   />
@@ -381,18 +384,30 @@ function DienstbedarfZeile({
           </div>
 
           <div>
-            <Label>Manuell zugewiesene Minis</Label>
+            <Label
+              hint={
+                bedarf.mini_ids.length >= bedarf.anzahl
+                  ? `Anzahl (${bedarf.anzahl}) erreicht`
+                  : undefined
+              }
+            >
+              Manuell zugewiesene Minis
+            </Label>
             <div className="flex flex-wrap gap-2">
-              {minis.map((mini) => (
-                <CheckboxChip
-                  key={mini.id}
-                  id={`${bedarf.schluessel}-mini-${mini.id}`}
-                  checked={bedarf.mini_ids.includes(mini.id)}
-                  onChange={() => toggleMini(mini.id)}
-                >
-                  {mini.name}
-                </CheckboxChip>
-              ))}
+              {minis.map((mini) => {
+                const ausgewaehlt = bedarf.mini_ids.includes(mini.id)
+                return (
+                  <CheckboxChip
+                    key={mini.id}
+                    id={`${bedarf.schluessel}-mini-${mini.id}`}
+                    checked={ausgewaehlt}
+                    disabled={!ausgewaehlt && bedarf.mini_ids.length >= bedarf.anzahl}
+                    onChange={() => toggleMini(mini.id)}
+                  >
+                    {mini.name}
+                  </CheckboxChip>
+                )
+              })}
             </div>
           </div>
         </div>
@@ -408,27 +423,31 @@ function GottesdienstKarte({
   pfarreiId,
   miniplanId,
   jahr,
+  monat,
   gruppen,
   minis,
   dienstTypen,
   filtertags,
   onReload,
   onDraftChange,
+  defaultOffen = false,
 }: {
   gottesdienst: Gottesdienst
   pfarreiId: number
   miniplanId: number
   jahr: number
+  monat: number
   gruppen: Gruppe[]
   minis: Mini[]
   dienstTypen: DienstTyp[]
   filtertags: FiltertagDef[]
   onReload: () => void
   onDraftChange: (gottesdienstId: number, draft: GottesdienstDraft) => void
+  defaultOffen?: boolean
 }) {
   const [datum, setDatum] = useState(gottesdienst.datum)
   const [uhrzeit, setUhrzeit] = useState(gottesdienst.uhrzeit.slice(0, 5))
-  const [name, setName] = useState(gottesdienst.name)
+  const [name, setName] = useState(gottesdienst.name ?? '')
   const [notiz, setNotiz] = useState(gottesdienst.notiz ?? '')
   const [bedarfListe, setBedarfListe] = useState<WorkingBedarf[]>(
     gottesdienst.dienstbedarf.map(bedarfAusOut),
@@ -436,7 +455,7 @@ function GottesdienstKarte({
   const [neuerDienstTypId, setNeuerDienstTypId] = useState<number | ''>('')
   const [status, setStatus] = useState<SpeicherStatus>('gespeichert')
   const [versucht, setVersucht] = useState(false)
-  const [offen, setOffen] = useState(false)
+  const [offen, setOffen] = useState(defaultOffen)
   const { showToast } = useToast()
   const istErstesRendern = useRef(true)
 
@@ -544,6 +563,7 @@ function GottesdienstKarte({
                 id={`gottesdienst-${gottesdienst.id}-datum`}
                 pfarreiId={pfarreiId}
                 jahr={jahr}
+                monat={monat}
                 value={datum}
                 onChange={setDatum}
                 required
@@ -561,13 +581,15 @@ function GottesdienstKarte({
               />
             </div>
             <div>
-              <Label htmlFor={`gottesdienst-${gottesdienst.id}-name`}>Name</Label>
+              <Label htmlFor={`gottesdienst-${gottesdienst.id}-name`} hint="optional">
+                Name
+              </Label>
               <Input
                 id={`gottesdienst-${gottesdienst.id}-name`}
+                placeholder="z. B. Sonntagsmesse"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onBlur={() => setVersucht(true)}
-                required
               />
             </div>
           </div>
@@ -648,12 +670,14 @@ function NeuerGottesdienstForm({
   pfarreiId,
   miniplanId,
   jahr,
+  monat,
   onCreated,
 }: {
   pfarreiId: number
   miniplanId: number
   jahr: number
-  onCreated: () => void
+  monat: number
+  onCreated: (gottesdienstId: number) => void
 }) {
   const [datum, setDatum] = useState('')
   const [uhrzeit, setUhrzeit] = useState('')
@@ -670,7 +694,7 @@ function NeuerGottesdienstForm({
     }
     setError(null)
     try {
-      await gottesdienstErstellen(pfarreiId, miniplanId, {
+      const erstellt = await gottesdienstErstellen(pfarreiId, miniplanId, {
         datum,
         uhrzeit,
         name,
@@ -682,7 +706,7 @@ function NeuerGottesdienstForm({
       setName('')
       setNotiz('')
       setVersucht(false)
-      onCreated()
+      onCreated(erstellt.id)
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Anlegen des Gottesdienstes'))
     }
@@ -701,13 +725,14 @@ function NeuerGottesdienstForm({
         aria-label="Gottesdienst anlegen"
         className="flex flex-col gap-4 p-5"
       >
-        <div className="grid gap-4 sm:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-3">
           <div>
             <Label htmlFor="neuer-gottesdienst-datum">Datum</Label>
             <DateInput
               id="neuer-gottesdienst-datum"
               pfarreiId={pfarreiId}
               jahr={jahr}
+              monat={monat}
               value={datum}
               onChange={setDatum}
               required
@@ -725,19 +750,16 @@ function NeuerGottesdienstForm({
             />
           </div>
           <div>
-            <Label htmlFor="neuer-gottesdienst-name">Name</Label>
+            <Label htmlFor="neuer-gottesdienst-name" hint="optional">
+              Name
+            </Label>
             <Input
               id="neuer-gottesdienst-name"
               placeholder="z. B. Sonntagsmesse"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              required
             />
           </div>
-          <Button type="submit" className="self-end">
-            <Plus className="h-4 w-4" />
-            Gottesdienst anlegen
-          </Button>
         </div>
         <div>
           <Label htmlFor="neuer-gottesdienst-notiz" hint="optional">
@@ -751,6 +773,12 @@ function NeuerGottesdienstForm({
             placeholder="z. B. Bitte Kerzen mitbringen"
             className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15"
           />
+        </div>
+        <div className="flex justify-end">
+          <Button type="submit">
+            <Plus className="h-4 w-4" />
+            Gottesdienst anlegen
+          </Button>
         </div>
       </form>
     </Card>
@@ -806,7 +834,7 @@ function FreitextSection({
     <Card className="animate-rise">
       <CardHeader
         title="Veranstaltungen & Ankündigungen"
-        description="Freitextfelder (Markdown: **fett**, *kursiv*, Aufzählungen), die unterhalb des Plans angezeigt werden."
+        description="Freitextfelder (Markdown: **fett**, *kursiv*, Aufzählungen, nummerierte Listen, Links), die unterhalb des Plans angezeigt werden."
         action={<StatusAnzeige status={status} />}
       />
       <div className="flex flex-col gap-4 p-5">
@@ -905,6 +933,7 @@ export function MiniplanEditorPage() {
   const [gottesdienstDrafts, setGottesdienstDrafts] = useState<
     Record<number, GottesdienstDraft>
   >({})
+  const [neuesterGottesdienstId, setNeuesterGottesdienstId] = useState<number | null>(null)
   const [freitextDraft, setFreitextDraft] = useState<{
     veranstaltungen: string
     ankuendigungen: string
@@ -984,12 +1013,14 @@ export function MiniplanEditorPage() {
               pfarreiId={id}
               miniplanId={planId}
               jahr={miniplan.jahr}
+              monat={miniplan.monat}
               gruppen={gruppen}
               minis={minis}
               dienstTypen={dienstTypen}
               filtertags={filtertags}
               onReload={reload}
               onDraftChange={handleGottesdienstDraftChange}
+              defaultOffen={gottesdienst.id === neuesterGottesdienstId}
             />
           ))}
 
@@ -997,7 +1028,11 @@ export function MiniplanEditorPage() {
             pfarreiId={id}
             miniplanId={planId}
             jahr={miniplan.jahr}
-            onCreated={reload}
+            monat={miniplan.monat}
+            onCreated={(gottesdienstId) => {
+              setNeuesterGottesdienstId(gottesdienstId)
+              reload()
+            }}
           />
 
           <FreitextSection

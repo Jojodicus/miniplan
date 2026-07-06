@@ -64,6 +64,10 @@ def _markdown_inline_zu_typst(token: dict[str, Any]) -> str:
         return f"_{kinder}_"
     if typ == "codespan":
         return f"#{_typst_str(token.get('raw', ''))}"
+    if typ == "link":
+        kinder = "".join(_markdown_inline_zu_typst(t) for t in token.get("children", []))
+        url = token.get("attrs", {}).get("url", "")
+        return f"#link({_typst_str(url)})[{kinder}]"
     # unbekannter/unterstützter Inline-Knoten: Rohtext (falls vorhanden) sicher escapen,
     # sonst ignorieren - nie unescapte Kindinhalte roh verketten.
     if "raw" in token:
@@ -79,6 +83,9 @@ def _markdown_block_zu_typst(token: dict[str, Any]) -> list[str]:
     if typ == "blank_line":
         return []
     if typ == "list":
+        # Typst nummeriert `+ `-Einträge automatisch fortlaufend, unabhängig von der im
+        # Markdown-Quelltext getippten Zahl - passend dazu, dass die Toolbar immer "1. " einfügt.
+        praefix = "+" if token.get("attrs", {}).get("ordered") else "-"
         zeilen: list[str] = []
         for item in token.get("children", []):
             item_inhalt = "".join(
@@ -86,7 +93,7 @@ def _markdown_block_zu_typst(token: dict[str, Any]) -> list[str]:
                 for block in item.get("children", [])
                 if block.get("type") in ("block_text", "paragraph")
             )
-            zeilen.append(f"- {item_inhalt}")
+            zeilen.append(f"{praefix} {item_inhalt}")
         return ["\n".join(zeilen)]
     if typ == "heading":
         inhalt = "".join(_markdown_inline_zu_typst(t) for t in token.get("children", []))
@@ -150,7 +157,9 @@ def _build_source(
         zeilen.append('#text(style: "italic")[Keine Gottesdienste geplant.]')
 
     for gd in plan.gottesdienste:
-        gd_titel = f"{gd.datum.strftime('%d.%m.%Y')} {gd.uhrzeit.strftime('%H:%M')} Uhr – {gd.name}"
+        gd_titel = f"{gd.datum.strftime('%d.%m.%Y')} {gd.uhrzeit.strftime('%H:%M')} Uhr"
+        if gd.name:
+            gd_titel += f" – {gd.name}"
         zeilen.append("#block(above: 1em, below: 1em)[")
         zeilen.append(f'  #text(size: 12pt, weight: "bold")[#{_typst_str(gd_titel)}]')
         if gd.notiz:

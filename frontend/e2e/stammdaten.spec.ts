@@ -73,7 +73,6 @@ test('Nutzer kann Verfügbarkeits-Status anlegen und Zeitfenster hinzufügen', a
   await page.getByRole('button', { name: 'Verfügbarkeits-Status' }).click()
 
   const anlegenForm = page.locator('form').filter({ hasText: 'Anlegen' }).last()
-  await anlegenForm.getByLabel('Key').fill('azubi')
   await anlegenForm.getByLabel('Bezeichnung').fill('Azubi')
   await anlegenForm.getByRole('button', { name: 'Anlegen' }).click()
   await expect(page.getByText('Azubi', { exact: true })).toBeVisible({ timeout: 15_000 })
@@ -83,7 +82,11 @@ test('Nutzer kann Verfügbarkeits-Status anlegen und Zeitfenster hinzufügen', a
   await zeitfensterForm.getByLabel('Startzeit').fill('09:00')
   await zeitfensterForm.getByLabel('Endzeit').fill('11:00')
   await zeitfensterForm.getByRole('button', { name: 'Zeitfenster hinzufügen' }).click()
-  await expect(page.getByText('Samstag, 09:00–11:00 Uhr')).toBeVisible()
+  // Der Wochentag steht als eigene Überschrift (<p>) über der Zeitfenster-Gruppe, nicht als
+  // Teil des Textes selbst - "Samstag" kommt sonst auch als <option> in jedem Wochentag-Select
+  // vor, daher hier gezielt auf das <p>-Element eingrenzen.
+  await expect(page.locator('p', { hasText: 'Samstag' })).toBeVisible()
+  await expect(page.getByText('09:00–11:00 Uhr')).toBeVisible()
 })
 
 test('Nutzer kann Bundesland wählen und Ferienkalender aktualisieren', async ({ page }) => {
