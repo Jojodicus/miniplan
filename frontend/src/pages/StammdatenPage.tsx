@@ -1142,12 +1142,12 @@ function VerfuegbarkeitSection({
           während der Ferien).
         </span>
       </Alert>
-      <div className="flex gap-1 border-b border-line">
+      <div className="-mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0">
         {VERFUEGBARKEIT_TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setSubTab(key)}
-            className={`flex cursor-pointer items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+            className={`flex shrink-0 cursor-pointer items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
               subTab === key
                 ? 'border-pine text-pine-dark'
                 : 'border-transparent text-ink-soft hover:text-ink'
@@ -1211,12 +1211,12 @@ export function StammdatenPage() {
         <ChevronRight className="h-3.5 w-3.5" />
       </Link>
 
-      <div className="mt-6 flex gap-1 border-b border-line">
+      <div className="-mx-4 mt-6 flex gap-1 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`flex cursor-pointer items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex shrink-0 cursor-pointer items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
               tab === key
                 ? 'border-pine text-pine-dark'
                 : 'border-transparent text-ink-soft hover:text-ink'

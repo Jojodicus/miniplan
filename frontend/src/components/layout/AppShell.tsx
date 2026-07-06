@@ -2,13 +2,20 @@ import { LogOut } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  wide = false,
+}: {
+  children: React.ReactNode
+  wide?: boolean
+}) {
   const { user, logout } = useAuth()
+  const containerWidth = wide ? 'max-w-[1800px]' : 'max-w-5xl'
 
   return (
     <div className="min-h-svh">
       <header className="border-b border-line bg-white/60 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+        <div className={`mx-auto flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 ${containerWidth}`}>
           <Link to="/" className="flex items-center gap-2.5">
             <span className="flex h-8 w-8 items-center justify-center rounded-md bg-pine text-sm font-semibold text-paper">
               M
@@ -29,7 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-6 py-10">{children}</main>
+      <main className={`mx-auto px-4 py-6 sm:px-6 sm:py-10 ${containerWidth}`}>{children}</main>
     </div>
   )
 }

@@ -27,6 +27,7 @@ import {
 } from '../api/miniplaene'
 import { AppShell } from '../components/layout/AppShell'
 import { Alert } from '../components/ui/Alert'
+import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
 import { DateInput } from '../components/ui/DateInput'
@@ -34,11 +35,17 @@ import { CheckboxChip, Input, Label, Select } from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { MarkdownTextarea } from '../components/ui/MarkdownTextarea'
+import { PdfViewer } from '../components/ui/PdfViewer'
 import { TimeInput } from '../components/ui/TimeInput'
 import { useToast } from '../components/ui/Toast'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
+}
+
+function formatDatumKurz(iso: string): string {
+  const [jahr, monat, tag] = iso.split('-')
+  return `${tag}.${monat}.${jahr}`
 }
 
 let naechsterSchluessel = 0
@@ -429,6 +436,7 @@ function GottesdienstKarte({
   const [neuerDienstTypId, setNeuerDienstTypId] = useState<number | ''>('')
   const [status, setStatus] = useState<SpeicherStatus>('gespeichert')
   const [versucht, setVersucht] = useState(false)
+  const [offen, setOffen] = useState(false)
   const { showToast } = useToast()
   const istErstesRendern = useRef(true)
 
@@ -502,110 +510,136 @@ function GottesdienstKarte({
 
   return (
     <Card className="animate-rise">
-      <div className="flex flex-col gap-4 p-5">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div>
-            <Label htmlFor={`gottesdienst-${gottesdienst.id}-datum`}>Datum</Label>
-            <DateInput
-              id={`gottesdienst-${gottesdienst.id}-datum`}
-              pfarreiId={pfarreiId}
-              jahr={jahr}
-              value={datum}
-              onChange={setDatum}
-              required
-              error={versucht && !datum ? 'Datum wird benötigt' : undefined}
-            />
-          </div>
-          <div>
-            <Label htmlFor={`gottesdienst-${gottesdienst.id}-uhrzeit`}>Uhrzeit</Label>
-            <TimeInput
-              id={`gottesdienst-${gottesdienst.id}-uhrzeit`}
-              value={uhrzeit}
-              onChange={setUhrzeit}
-              required
-              error={versucht && !uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
-            />
-          </div>
-          <div>
-            <Label htmlFor={`gottesdienst-${gottesdienst.id}-name`}>Name</Label>
-            <Input
-              id={`gottesdienst-${gottesdienst.id}-name`}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onBlur={() => setVersucht(true)}
-              required
-            />
-          </div>
-        </div>
-
-        <div>
-          <Label htmlFor={`gottesdienst-${gottesdienst.id}-notiz`} hint="optional">
-            Notiz
-          </Label>
-          <textarea
-            id={`gottesdienst-${gottesdienst.id}-notiz`}
-            value={notiz}
-            onChange={(e) => setNotiz(e.target.value)}
-            rows={2}
-            placeholder="z. B. Bitte Kerzen mitbringen"
-            className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15"
+      <button
+        type="button"
+        onClick={() => setOffen((wert) => !wert)}
+        className="flex w-full cursor-pointer items-center justify-between gap-3 p-4 text-left"
+      >
+        <div className="flex min-w-0 items-center gap-2.5">
+          <ChevronDown
+            className={`h-4 w-4 shrink-0 text-ink-faint transition-transform ${offen ? 'rotate-180' : '-rotate-90'}`}
           />
-        </div>
-
-        <div className="flex flex-col gap-3">
-          {bedarfListe.map((bedarf) => (
-            <DienstbedarfZeile
-              key={bedarf.schluessel}
-              bedarf={bedarf}
-              gruppen={gruppen}
-              minis={minis}
-              filtertags={filtertags}
-              zeigeFehler={versucht}
-              onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
-              onRemove={() => removeBedarf(bedarf.schluessel)}
-            />
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-end gap-2">
-          <div>
-            <Label htmlFor={`gottesdienst-${gottesdienst.id}-dienst-typ`}>
-              Dienst-Typ hinzufügen
-            </Label>
-            <div className="flex gap-2">
-              <Select
-                id={`gottesdienst-${gottesdienst.id}-dienst-typ`}
-                value={neuerDienstTypId}
-                onChange={(e) => setNeuerDienstTypId(Number(e.target.value))}
-                disabled={dienstTypen.length === 0}
-              >
-                <option value="">Auswählen…</option>
-                {dienstTypen.map((dt) => (
-                  <option key={dt.id} value={dt.id}>
-                    {dt.name}
-                  </option>
-                ))}
-              </Select>
-              <Button type="button" variant="secondary" onClick={addDienstTyp}>
-                Hinzufügen
-              </Button>
-            </div>
+          <div className="min-w-0">
+            <span className="font-medium text-ink">{name || 'Ohne Namen'}</span>
+            <span className="ml-2 text-sm text-ink-soft">
+              {datum ? formatDatumKurz(datum) : 'kein Datum'}
+              {uhrzeit && `, ${uhrzeit} Uhr`}
+            </span>
           </div>
-          <Button type="button" variant="secondary" onClick={addFreitext}>
-            <Plus className="h-4 w-4" />
-            Freitext-Dienst hinzufügen
-          </Button>
         </div>
-
-        <div className="flex items-center justify-between border-t border-line pt-4">
-          <InlineConfirmButton
-            onConfirm={handleDelete}
-            label="Gottesdienst löschen"
-            confirmLabel="Gottesdienst wirklich löschen?"
-          />
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge tone="neutral">
+            {bedarfListe.length} {bedarfListe.length === 1 ? 'Dienst' : 'Dienste'}
+          </Badge>
           <StatusAnzeige status={status} />
         </div>
-      </div>
+      </button>
+
+      {offen && (
+        <div className="flex flex-col gap-4 border-t border-line p-5">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <Label htmlFor={`gottesdienst-${gottesdienst.id}-datum`}>Datum</Label>
+              <DateInput
+                id={`gottesdienst-${gottesdienst.id}-datum`}
+                pfarreiId={pfarreiId}
+                jahr={jahr}
+                value={datum}
+                onChange={setDatum}
+                required
+                error={versucht && !datum ? 'Datum wird benötigt' : undefined}
+              />
+            </div>
+            <div>
+              <Label htmlFor={`gottesdienst-${gottesdienst.id}-uhrzeit`}>Uhrzeit</Label>
+              <TimeInput
+                id={`gottesdienst-${gottesdienst.id}-uhrzeit`}
+                value={uhrzeit}
+                onChange={setUhrzeit}
+                required
+                error={versucht && !uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
+              />
+            </div>
+            <div>
+              <Label htmlFor={`gottesdienst-${gottesdienst.id}-name`}>Name</Label>
+              <Input
+                id={`gottesdienst-${gottesdienst.id}-name`}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={() => setVersucht(true)}
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor={`gottesdienst-${gottesdienst.id}-notiz`} hint="optional">
+              Notiz
+            </Label>
+            <textarea
+              id={`gottesdienst-${gottesdienst.id}-notiz`}
+              value={notiz}
+              onChange={(e) => setNotiz(e.target.value)}
+              rows={2}
+              placeholder="z. B. Bitte Kerzen mitbringen"
+              className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15"
+            />
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {bedarfListe.map((bedarf) => (
+              <DienstbedarfZeile
+                key={bedarf.schluessel}
+                bedarf={bedarf}
+                gruppen={gruppen}
+                minis={minis}
+                filtertags={filtertags}
+                zeigeFehler={versucht}
+                onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
+                onRemove={() => removeBedarf(bedarf.schluessel)}
+              />
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <Label htmlFor={`gottesdienst-${gottesdienst.id}-dienst-typ`}>
+                Dienst-Typ hinzufügen
+              </Label>
+              <div className="flex gap-2">
+                <Select
+                  id={`gottesdienst-${gottesdienst.id}-dienst-typ`}
+                  value={neuerDienstTypId}
+                  onChange={(e) => setNeuerDienstTypId(Number(e.target.value))}
+                  disabled={dienstTypen.length === 0}
+                >
+                  <option value="">Auswählen…</option>
+                  {dienstTypen.map((dt) => (
+                    <option key={dt.id} value={dt.id}>
+                      {dt.name}
+                    </option>
+                  ))}
+                </Select>
+                <Button type="button" variant="secondary" onClick={addDienstTyp}>
+                  Hinzufügen
+                </Button>
+              </div>
+            </div>
+            <Button type="button" variant="secondary" onClick={addFreitext}>
+              <Plus className="h-4 w-4" />
+              Freitext-Dienst hinzufügen
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between border-t border-line pt-4">
+            <InlineConfirmButton
+              onConfirm={handleDelete}
+              label="Gottesdienst löschen"
+              confirmLabel="Gottesdienst wirklich löschen?"
+            />
+          </div>
+        </div>
+      )}
     </Card>
   )
 }
@@ -808,10 +842,9 @@ function VorschauPanel({
   miniplanId: number
   eingabe: MiniplanVorschauEingabe
 }) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [pdfDaten, setPdfDaten] = useState<Uint8Array | null>(null)
   const [fehler, setFehler] = useState<string[] | null>(null)
   const [ladend, setLadend] = useState(false)
-  const blobUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
     let abgebrochen = false
@@ -820,9 +853,7 @@ function VorschauPanel({
       miniplanVorschau(pfarreiId, miniplanId, eingabe).then((ergebnis) => {
         if (abgebrochen) return
         if (ergebnis.ok) {
-          if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
-          blobUrlRef.current = ergebnis.blobUrl
-          setBlobUrl(ergebnis.blobUrl)
+          setPdfDaten(ergebnis.daten)
           setFehler(null)
         } else {
           setFehler(ergebnis.fehler)
@@ -836,20 +867,14 @@ function VorschauPanel({
     }
   }, [pfarreiId, miniplanId, eingabe])
 
-  useEffect(
-    () => () => {
-      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
-    },
-    [],
-  )
-
   return (
-    <Card className="animate-rise lg:sticky lg:top-6">
+    <Card className="animate-rise flex h-[80svh] flex-col lg:sticky lg:top-6 lg:h-[calc(100svh-3rem)]">
       <CardHeader
         title="PDF-Vorschau"
         description="Wird bei jeder Änderung live aktualisiert (kein Speichern nötig)."
+        action={ladend && <span className="text-xs text-ink-faint">Aktualisiert…</span>}
       />
-      <div className="flex flex-col gap-3 p-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-5">
         {fehler && (
           <Alert>
             <div className="flex flex-col gap-1">
@@ -860,14 +885,8 @@ function VorschauPanel({
             </div>
           </Alert>
         )}
-        {ladend && <p className="text-sm text-ink-soft">Vorschau wird aktualisiert…</p>}
-        {blobUrl && (
-          <iframe
-            title="Miniplan-PDF-Vorschau"
-            src={blobUrl}
-            className="h-[70vh] w-full rounded-lg border border-line lg:h-[calc(100vh-12rem)]"
-          />
-        )}
+        {!pdfDaten && !fehler && <p className="text-sm text-ink-soft">Vorschau wird geladen…</p>}
+        <PdfViewer data={pdfDaten} className="min-h-0 flex-1" />
       </div>
     </Card>
   )
@@ -937,14 +956,14 @@ export function MiniplanEditorPage() {
 
   if (!miniplan || !vorschauEingabe) {
     return (
-      <AppShell>
+      <AppShell wide>
         <p className="text-ink-soft">Lade Miniplan…</p>
       </AppShell>
     )
   }
 
   return (
-    <AppShell>
+    <AppShell wide>
       <Link
         to={`/pfarreien/${id}/miniplaene`}
         className="inline-flex items-center gap-1.5 text-sm text-ink-soft transition-colors hover:text-pine-dark"
@@ -956,8 +975,8 @@ export function MiniplanEditorPage() {
         Miniplan {miniplan.monat}/{miniplan.jahr}
       </h1>
 
-      <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-start">
-        <div className="flex flex-1 flex-col gap-6">
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] lg:items-start">
+        <div className="flex min-w-0 flex-col gap-6">
           {miniplan.gottesdienste.map((gottesdienst) => (
             <GottesdienstKarte
               key={gottesdienst.id}
@@ -989,7 +1008,7 @@ export function MiniplanEditorPage() {
           />
         </div>
 
-        <div className="lg:w-[480px] lg:shrink-0">
+        <div className="min-w-0">
           <VorschauPanel pfarreiId={id} miniplanId={planId} eingabe={vorschauEingabe} />
         </div>
       </div>

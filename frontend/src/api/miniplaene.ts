@@ -79,7 +79,7 @@ export interface MiniplanVorschauEingabe {
   gottesdienste: VorschauGottesdienst[]
 }
 
-export type VorschauErgebnis = { ok: true; blobUrl: string } | { ok: false; fehler: string[] }
+export type VorschauErgebnis = { ok: true; daten: Uint8Array } | { ok: false; fehler: string[] }
 
 export function gottesdienstOutZuVorschau(gd: Gottesdienst): VorschauGottesdienst {
   return {
@@ -130,6 +130,6 @@ export async function miniplanVorschau(
       : [typeof body?.detail === 'string' ? body.detail : 'Vorschau konnte nicht erstellt werden']
     return { ok: false, fehler }
   }
-  const blob = await response.blob()
-  return { ok: true, blobUrl: URL.createObjectURL(blob) }
+  const pdfBytes = new Uint8Array(await response.arrayBuffer())
+  return { ok: true, daten: pdfBytes }
 }
