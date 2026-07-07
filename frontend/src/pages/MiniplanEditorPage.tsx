@@ -311,6 +311,7 @@ function DienstbedarfZeile({
             id={`${bedarf.schluessel}-zeige-label`}
             checked={bedarf.zeige_label}
             onChange={() => onChange({ zeige_label: !bedarf.zeige_label })}
+            title="Wenn aktiviert, erscheint der Name dieses Dienstes als Beschriftung auf dem veröffentlichten PDF-Plan."
           >
             Auf dem Plan anzeigen
           </CheckboxChip>
@@ -335,13 +336,13 @@ function DienstbedarfZeile({
             <Label hint="z. B. mind. 1 aus Gruppe Obermini">Gruppen-Mindestanzahl</Label>
             <div className="flex flex-col gap-2">
               {bedarf.gruppen_anforderungen.map((anforderung, index) => (
-                <div key={index} className="flex items-center gap-2">
+                <div key={index} className="flex flex-wrap items-center gap-2">
                   <Select
                     value={anforderung.gruppe_id}
                     onChange={(e) =>
                       updateGruppenAnforderung(index, { gruppe_id: Number(e.target.value) })
                     }
-                    className="flex-1"
+                    className="min-w-[9rem] flex-1"
                   >
                     {gruppen.map((gruppe) => (
                       <option key={gruppe.id} value={gruppe.id}>
@@ -349,6 +350,7 @@ function DienstbedarfZeile({
                       </option>
                     ))}
                   </Select>
+                  <span className="shrink-0 text-sm text-ink-soft">mind.</span>
                   <Input
                     type="number"
                     min={1}
@@ -359,7 +361,7 @@ function DienstbedarfZeile({
                         mindest_anzahl: Math.min(Number(e.target.value), bedarf.anzahl),
                       })
                     }
-                    className="w-24"
+                    className="w-16 shrink-0 text-center"
                   />
                   <IconButton
                     label="Zeile entfernen"

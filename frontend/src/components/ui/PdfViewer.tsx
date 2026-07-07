@@ -74,8 +74,8 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
   if (!data) return null
 
   return (
-    <div className={`flex flex-col gap-2 ${className}`}>
-      <div className="flex items-center justify-end gap-1">
+    <div className={`relative min-h-0 ${className}`}>
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-full border border-line bg-white/85 px-1 py-1 shadow-sm backdrop-blur-sm">
         <IconButton label="Verkleinern" onClick={() => zoom(-ZOOM_STEP)} disabled={scale <= ZOOM_MIN}>
           <Minus className="h-4 w-4" />
         </IconButton>
@@ -86,7 +86,10 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
           <Plus className="h-4 w-4" />
         </IconButton>
       </div>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto rounded-lg border border-line bg-paper-dim">
+      <div
+        ref={scrollRef}
+        className="h-full min-h-0 overflow-auto rounded-lg border border-line bg-paper-dim"
+      >
         <div ref={contentRef} className="flex flex-col items-center gap-3 p-3">
           {(['a', 'b'] as const).map((slot) => {
             const slotFile = slotFiles[slot]

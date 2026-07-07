@@ -88,6 +88,61 @@ function filtertagLabel(filtertags: FiltertagDef[], key: Filtertag): string {
   return filtertags.find((f) => f.key === key)?.label ?? key
 }
 
+// Gemeinsame Chip-Auswahl für alle "genau eine Option aus einer kleinen Liste"-Felder (Gruppe,
+// Verfügbarkeits-Status), damit sie nicht mal als <select>, mal als Chips daherkommen.
+function ChipAuswahl<T extends string | number>({
+  label,
+  hint,
+  options,
+  ausgewaehlt,
+  onChange,
+  idPrefix,
+  allowNone = false,
+  noneLabel = 'Keiner',
+  emptyText,
+}: {
+  label: string
+  hint?: string
+  options: { key: T; label: string }[]
+  ausgewaehlt: T | null
+  onChange: (wert: T | null) => void
+  idPrefix: string
+  allowNone?: boolean
+  noneLabel?: string
+  emptyText?: string
+}) {
+  return (
+    <div>
+      <Label hint={hint}>{label}</Label>
+      {options.length === 0 ? (
+        <p className="text-sm text-ink-soft">{emptyText}</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {allowNone && (
+            <CheckboxChip
+              id={`${idPrefix}-keiner`}
+              checked={ausgewaehlt === null}
+              onChange={() => onChange(null)}
+            >
+              {noneLabel}
+            </CheckboxChip>
+          )}
+          {options.map((option) => (
+            <CheckboxChip
+              key={option.key}
+              id={`${idPrefix}-${option.key}`}
+              checked={ausgewaehlt === option.key}
+              onChange={() => onChange(option.key)}
+            >
+              {option.label}
+            </CheckboxChip>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FiltertagAuswahl({
   filtertags,
   ausgewaehlt,
@@ -100,33 +155,63 @@ function FiltertagAuswahl({
   idPrefix: string
 }) {
   return (
-    <div>
-      <Label hint="realistisch trifft meist nur einer zu">Verfügbarkeits-Status</Label>
-      {filtertags.length === 0 ? (
-        <p className="text-sm text-ink-soft">
-          Noch keine Verfügbarkeits-Status angelegt (Reiter „Verfügbarkeits-Status“).
-        </p>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <CheckboxChip
-            id={`${idPrefix}-keiner`}
-            checked={ausgewaehlt === null}
-            onChange={() => onChange(null)}
-          >
-            Keiner
-          </CheckboxChip>
-          {filtertags.map((filtertag) => (
-            <CheckboxChip
-              key={filtertag.key}
-              id={`${idPrefix}-${filtertag.key}`}
-              checked={ausgewaehlt === filtertag.key}
-              onChange={() => onChange(filtertag.key)}
-            >
-              {filtertag.label}
-            </CheckboxChip>
-          ))}
-        </div>
-      )}
+    <ChipAuswahl
+      label="Verfügbarkeits-Status"
+      hint="realistisch trifft meist nur einer zu"
+      options={filtertags.map((f) => ({ key: f.key, label: f.label }))}
+      ausgewaehlt={ausgewaehlt}
+      onChange={onChange}
+      idPrefix={idPrefix}
+      allowNone
+      emptyText="Noch keine Verfügbarkeits-Status angelegt (Reiter „Verfügbarkeits-Status“)."
+    />
+  )
+}
+
+function GruppenAuswahl({
+  gruppen,
+  ausgewaehlt,
+  onChange,
+  idPrefix,
+}: {
+  gruppen: Gruppe[]
+  ausgewaehlt: number | ''
+  onChange: (gruppeId: number) => void
+  idPrefix: string
+}) {
+  return (
+    <ChipAuswahl
+      label="Gruppe"
+      options={gruppen.map((g) => ({ key: g.id, label: g.name }))}
+      ausgewaehlt={ausgewaehlt === '' ? null : ausgewaehlt}
+      onChange={(wert) => {
+        if (wert !== null) onChange(wert)
+      }}
+      idPrefix={idPrefix}
+      emptyText="Noch keine Gruppen angelegt (Reiter „Gruppen“)."
+    />
+  )
+}
+
+// Optische Trennung von "neu anlegen" (Formular am Karten-Ende, dezent hervorgehoben) und
+// "bearbeiten" (Zeile expandiert inline, Akzentbalken links) - vorher waren beide kaum
+// unterscheidbar.
+function NeuAnlegenAbschnitt({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="border-t border-line bg-paper-dim/50 p-5">
+      <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-pine-dark">
+        <Plus className="h-4 w-4" />
+        Neu anlegen
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function BearbeitenAbschnitt({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="border-b border-l-4 border-line border-l-pine p-4 last:border-b-0">
+      {children}
     </div>
   )
 }
@@ -207,23 +292,27 @@ function GruppenSection({
         <div>
           {gruppen.map((gruppe) =>
             editId === gruppe.id ? (
-              <Row key={gruppe.id}>
-                <form onSubmit={handleUpdate} className="flex flex-1 items-center gap-2">
-                  <Input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    required
-                    autoFocus
-                    className="h-9"
-                  />
-                  <IconButton label="Speichern" type="submit">
+              <BearbeitenAbschnitt key={gruppe.id}>
+                <form onSubmit={handleUpdate} className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Label htmlFor={`gruppe-${gruppe.id}-edit-name`}>Name</Label>
+                    <Input
+                      id={`gruppe-${gruppe.id}-edit-name`}
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <Button type="submit" size="sm">
                     <Check className="h-4 w-4" />
-                  </IconButton>
-                  <IconButton label="Abbrechen" type="button" onClick={() => setEditId(null)}>
-                    <X className="h-4 w-4" />
-                  </IconButton>
+                    Speichern
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditId(null)}>
+                    Abbrechen
+                  </Button>
                 </form>
-              </Row>
+              </BearbeitenAbschnitt>
             ) : (
               <Row key={gruppe.id}>
                 <span className="text-sm font-medium text-ink">{gruppe.name}</span>
@@ -244,22 +333,24 @@ function GruppenSection({
           )}
         </div>
       )}
-      <form onSubmit={handleCreate} className="flex items-end gap-2 border-t border-line p-5">
-        <div className="flex-1">
-          <Label htmlFor="gruppe-neu">Neue Gruppe</Label>
-          <Input
-            id="gruppe-neu"
-            placeholder="z. B. Obermini"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-        </div>
-        <Button type="submit">
-          <Plus className="h-4 w-4" />
-          Anlegen
-        </Button>
-      </form>
+      <NeuAnlegenAbschnitt>
+        <form onSubmit={handleCreate} className="flex items-end gap-2">
+          <div className="flex-1">
+            <Label htmlFor="gruppe-neu">Name</Label>
+            <Input
+              id="gruppe-neu"
+              placeholder="z. B. Obermini"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </div>
+          <Button type="submit">
+            <Plus className="h-4 w-4" />
+            Anlegen
+          </Button>
+        </form>
+      </NeuAnlegenAbschnitt>
     </Card>
   )
 }
@@ -366,35 +457,24 @@ function MinisSection({
         <div>
           {minis.map((mini) =>
             editId === mini.id ? (
-              <div key={mini.id} className="border-b border-line p-4 last:border-b-0">
+              <BearbeitenAbschnitt key={mini.id}>
                 <form onSubmit={handleUpdate} className="flex flex-col gap-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <Label htmlFor={`mini-${mini.id}-edit-name`}>Name</Label>
-                      <Input
-                        id={`mini-${mini.id}-edit-name`}
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        required
-                        autoFocus
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor={`mini-${mini.id}-edit-gruppe`}>Gruppe</Label>
-                      <Select
-                        id={`mini-${mini.id}-edit-gruppe`}
-                        value={editGruppeId}
-                        onChange={(e) => setEditGruppeId(Number(e.target.value))}
-                        required
-                      >
-                        {gruppen.map((gruppe) => (
-                          <option key={gruppe.id} value={gruppe.id}>
-                            {gruppe.name}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
+                  <div className="sm:max-w-xs">
+                    <Label htmlFor={`mini-${mini.id}-edit-name`}>Name</Label>
+                    <Input
+                      id={`mini-${mini.id}-edit-name`}
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      required
+                      autoFocus
+                    />
                   </div>
+                  <GruppenAuswahl
+                    gruppen={gruppen}
+                    ausgewaehlt={editGruppeId}
+                    onChange={setEditGruppeId}
+                    idPrefix={`mini-${mini.id}-edit-gruppe`}
+                  />
                   <FiltertagAuswahl
                     filtertags={filtertags}
                     ausgewaehlt={editFiltertag}
@@ -416,7 +496,7 @@ function MinisSection({
                     </Button>
                   </div>
                 </form>
-              </div>
+              </BearbeitenAbschnitt>
             ) : (
               <Row key={mini.id}>
                 <div className="flex flex-wrap items-center gap-2">
@@ -447,9 +527,9 @@ function MinisSection({
           )}
         </div>
       )}
-      <form onSubmit={handleCreate} className="flex flex-col gap-4 border-t border-line p-5">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
+      <NeuAnlegenAbschnitt>
+        <form onSubmit={handleCreate} className="flex flex-col gap-4">
+          <div className="sm:max-w-xs">
             <Label htmlFor="mini-neu-name">Name</Label>
             <Input
               id="mini-neu-name"
@@ -458,34 +538,24 @@ function MinisSection({
               required
             />
           </div>
-          <div>
-            <Label htmlFor="mini-neu-gruppe">Gruppe</Label>
-            <Select
-              id="mini-neu-gruppe"
-              value={gruppeId}
-              onChange={(e) => setGruppeId(Number(e.target.value))}
-              required
-              disabled={gruppen.length === 0}
-            >
-              {gruppen.map((gruppe) => (
-                <option key={gruppe.id} value={gruppe.id}>
-                  {gruppe.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </div>
-        <FiltertagAuswahl
-          filtertags={filtertags}
-          ausgewaehlt={ausgewaehlterFiltertag}
-          onChange={setAusgewaehlterFiltertag}
-          idPrefix="mini-neu"
-        />
-        <Button type="submit" disabled={gruppen.length === 0} className="self-start">
-          <Plus className="h-4 w-4" />
-          Mini anlegen
-        </Button>
-      </form>
+          <GruppenAuswahl
+            gruppen={gruppen}
+            ausgewaehlt={gruppeId}
+            onChange={setGruppeId}
+            idPrefix="mini-neu-gruppe"
+          />
+          <FiltertagAuswahl
+            filtertags={filtertags}
+            ausgewaehlt={ausgewaehlterFiltertag}
+            onChange={setAusgewaehlterFiltertag}
+            idPrefix="mini-neu"
+          />
+          <Button type="submit" disabled={gruppen.length === 0} className="self-start">
+            <Plus className="h-4 w-4" />
+            Mini anlegen
+          </Button>
+        </form>
+      </NeuAnlegenAbschnitt>
     </Card>
   )
 }
@@ -523,12 +593,12 @@ function GruppenAnforderungenEditor({
       <Label hint="z. B. mind. 1 aus Gruppe Obermini">Gruppen-Mindestanzahl</Label>
       <div className="flex flex-col gap-2">
         {anforderungen.map((anforderung, index) => (
-          <div key={index} className="flex items-center gap-2">
+          <div key={index} className="flex flex-wrap items-center gap-2">
             <Select
               id={`${idPrefix}-gruppe-${index}`}
               value={anforderung.gruppe_id}
               onChange={(e) => updateRow(index, { gruppe_id: Number(e.target.value) })}
-              className="flex-1"
+              className="min-w-[9rem] flex-1"
             >
               {gruppen.map((gruppe) => (
                 <option key={gruppe.id} value={gruppe.id}>
@@ -536,6 +606,7 @@ function GruppenAnforderungenEditor({
                 </option>
               ))}
             </Select>
+            <span className="shrink-0 text-sm text-ink-soft">mind.</span>
             <Input
               id={`${idPrefix}-mindestanzahl-${index}`}
               type="number"
@@ -547,7 +618,7 @@ function GruppenAnforderungenEditor({
                   mindest_anzahl: Math.min(Number(e.target.value), maxAnzahl),
                 })
               }
-              className="w-24"
+              className="w-16 shrink-0 text-center"
             />
             <IconButton label="Zeile entfernen" tone="danger" onClick={() => removeRow(index)}>
               <Trash2 className="h-4 w-4" />
@@ -666,10 +737,10 @@ function DienstTypenSection({
         <div>
           {dienstTypen.map((dienstTyp) =>
             editId === dienstTyp.id ? (
-              <div key={dienstTyp.id} className="border-b border-line p-4 last:border-b-0">
+              <BearbeitenAbschnitt key={dienstTyp.id}>
                 <form onSubmit={handleUpdate} className="flex flex-col gap-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
+                  <div className="flex flex-wrap gap-4">
+                    <div className="min-w-[10rem] flex-1">
                       <Label htmlFor={`dienst-typ-${dienstTyp.id}-edit-name`}>Name</Label>
                       <Input
                         id={`dienst-typ-${dienstTyp.id}-edit-name`}
@@ -690,6 +761,7 @@ function DienstTypenSection({
                         value={editStandardAnzahl}
                         onChange={(e) => setEditStandardAnzahl(Number(e.target.value))}
                         required
+                        className="w-16 text-center"
                       />
                     </div>
                   </div>
@@ -704,6 +776,7 @@ function DienstTypenSection({
                     id={`dienst-typ-${dienstTyp.id}-edit-zeige-label`}
                     checked={editZeigeLabel}
                     onChange={() => setEditZeigeLabel((wert) => !wert)}
+                    title="Wenn aktiviert, erscheint der Name dieses Dienst-Typs als Beschriftung auf dem veröffentlichten PDF-Plan."
                   >
                     Auf dem Plan anzeigen
                   </CheckboxChip>
@@ -722,7 +795,7 @@ function DienstTypenSection({
                     </Button>
                   </div>
                 </form>
-              </div>
+              </BearbeitenAbschnitt>
             ) : (
               <Row key={dienstTyp.id}>
                 <div className="flex flex-wrap items-center gap-2">
@@ -760,48 +833,52 @@ function DienstTypenSection({
           )}
         </div>
       )}
-      <form onSubmit={handleCreate} className="flex flex-col gap-4 border-t border-line p-5">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="dienst-typ-neu-name">Name</Label>
-            <Input
-              id="dienst-typ-neu-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
+      <NeuAnlegenAbschnitt>
+        <form onSubmit={handleCreate} className="flex flex-col gap-4">
+          <div className="flex flex-wrap gap-4">
+            <div className="min-w-[10rem] flex-1">
+              <Label htmlFor="dienst-typ-neu-name">Name</Label>
+              <Input
+                id="dienst-typ-neu-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="dienst-typ-neu-anzahl">Standard-Anzahl</Label>
+              <Input
+                id="dienst-typ-neu-anzahl"
+                type="number"
+                min={1}
+                value={standardAnzahl}
+                onChange={(e) => setStandardAnzahl(Number(e.target.value))}
+                required
+                className="w-16 text-center"
+              />
+            </div>
           </div>
-          <div>
-            <Label htmlFor="dienst-typ-neu-anzahl">Standard-Anzahl</Label>
-            <Input
-              id="dienst-typ-neu-anzahl"
-              type="number"
-              min={1}
-              value={standardAnzahl}
-              onChange={(e) => setStandardAnzahl(Number(e.target.value))}
-              required
-            />
-          </div>
-        </div>
-        <GruppenAnforderungenEditor
-          gruppen={gruppen}
-          anforderungen={gruppenAnforderungen}
-          maxAnzahl={standardAnzahl}
-          onChange={setGruppenAnforderungen}
-          idPrefix="dienst-typ-neu"
-        />
-        <CheckboxChip
-          id="dienst-typ-neu-zeige-label"
-          checked={zeigeLabel}
-          onChange={() => setZeigeLabel((wert) => !wert)}
-        >
-          Auf dem Plan anzeigen
-        </CheckboxChip>
-        <Button type="submit" className="self-start">
-          <Plus className="h-4 w-4" />
-          Dienst-Typ anlegen
-        </Button>
-      </form>
+          <GruppenAnforderungenEditor
+            gruppen={gruppen}
+            anforderungen={gruppenAnforderungen}
+            maxAnzahl={standardAnzahl}
+            onChange={setGruppenAnforderungen}
+            idPrefix="dienst-typ-neu"
+          />
+          <CheckboxChip
+            id="dienst-typ-neu-zeige-label"
+            checked={zeigeLabel}
+            onChange={() => setZeigeLabel((wert) => !wert)}
+            title="Wenn aktiviert, erscheint der Name dieses Dienst-Typs als Beschriftung auf dem veröffentlichten PDF-Plan."
+          >
+            Auf dem Plan anzeigen
+          </CheckboxChip>
+          <Button type="submit" className="self-start">
+            <Plus className="h-4 w-4" />
+            Dienst-Typ anlegen
+          </Button>
+        </form>
+      </NeuAnlegenAbschnitt>
     </Card>
   )
 }

@@ -70,18 +70,21 @@ export function CheckboxChip({
   checked,
   onChange,
   disabled,
+  title,
   children,
 }: {
   id: string
   checked: boolean
   onChange: () => void
   disabled?: boolean
+  title?: string
   children: ReactNode
 }) {
   return (
     <label
       htmlFor={id}
-      className={`inline-flex select-none items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+      title={title}
+      className={`inline-flex w-fit shrink-0 select-none items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors ${
         disabled
           ? 'cursor-not-allowed border-line text-ink-faint opacity-50'
           : 'cursor-pointer'
