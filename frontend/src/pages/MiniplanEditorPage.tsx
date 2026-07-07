@@ -1,6 +1,6 @@
-import { ArrowLeft, ChevronDown, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, Copy, Plus, Search, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import type { GruppenAnforderung } from '../api/dienstTypen'
 import { dienstTypenListe, type DienstTyp } from '../api/dienstTypen'
@@ -52,20 +52,28 @@ function neuerSchluessel(): string {
 
 type SpeicherStatus = 'gespeichert' | 'speichert' | 'ungespeichert' | 'fehler'
 
-function StatusAnzeige({ status }: { status: SpeicherStatus }) {
+function StatusAnzeige({ status, className = 'text-xs' }: { status: SpeicherStatus; className?: string }) {
   const text: Record<SpeicherStatus, string> = {
     gespeichert: 'Gespeichert',
     speichert: 'Speichert…',
-    ungespeichert: 'Unvollständig',
+    ungespeichert: 'Nicht gespeichert – Angaben fehlen',
     fehler: 'Fehler beim Speichern',
   }
   const farbe: Record<SpeicherStatus, string> = {
     gespeichert: 'text-ink-faint',
     speichert: 'text-pine-dark',
-    ungespeichert: 'text-ink-faint',
+    ungespeichert: 'text-gold-dark',
     fehler: 'text-wine',
   }
-  return <span className={`text-xs ${farbe[status]}`}>{text[status]}</span>
+  return <span className={`${className} ${farbe[status]}`}>{text[status]}</span>
+}
+
+// Für die Gesamt-Anzeige neben dem Titel: der "schlechteste" Status gewinnt.
+function gesamtStatus(statusListe: SpeicherStatus[]): SpeicherStatus {
+  if (statusListe.includes('fehler')) return 'fehler'
+  if (statusListe.includes('ungespeichert')) return 'ungespeichert'
+  if (statusListe.includes('speichert')) return 'speichert'
+  return 'gespeichert'
 }
 
 interface WorkingBedarf {
@@ -187,7 +195,6 @@ function DienstbedarfZeile({
   gruppen,
   minis,
   filtertags,
-  zeigeFehler,
   onChange,
   onRemove,
 }: {
@@ -195,11 +202,11 @@ function DienstbedarfZeile({
   gruppen: Gruppe[]
   minis: Mini[]
   filtertags: FiltertagDef[]
-  zeigeFehler: boolean
   onChange: (patch: Partial<WorkingBedarf>) => void
   onRemove: () => void
 }) {
   const [erweitertOffen, setErweitertOffen] = useState(false)
+  const [miniSuche, setMiniSuche] = useState('')
 
   function addGruppenAnforderung() {
     const belegteIds = new Set(bedarf.gruppen_anforderungen.map((a) => a.gruppe_id))
@@ -262,11 +269,7 @@ function DienstbedarfZeile({
               onChange={(e) => onChange({ name: e.target.value })}
               required
               className="max-w-xs"
-              error={
-                zeigeFehler && !(bedarf.name ?? '').trim()
-                  ? 'Name darf nicht leer sein'
-                  : undefined
-              }
+              error={!(bedarf.name ?? '').trim() ? 'Name darf nicht leer sein' : undefined}
             />
           )}
           <div className="flex items-center gap-1.5">
@@ -277,7 +280,7 @@ function DienstbedarfZeile({
               min={1}
               value={bedarf.anzahl}
               onChange={(e) => onChange({ anzahl: Number(e.target.value) })}
-              className="h-8 w-20"
+              className="w-20"
             />
           </div>
         </div>
@@ -288,7 +291,7 @@ function DienstbedarfZeile({
             className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
           >
             <ChevronDown
-              className={`h-3.5 w-3.5 transition-transform ${erweitertOffen ? 'rotate-180' : ''}`}
+              className={`h-3.5 w-3.5 transition-transform ${erweitertOffen ? '' : '-rotate-90'}`}
             />
             Details
             {!erweitertOffen && anzahlEinschraenkungen > 0 && (
@@ -391,21 +394,41 @@ function DienstbedarfZeile({
             >
               Manuell zugewiesene Minis
             </Label>
+            {minis.length > 12 && (
+              <div className="relative mb-2 sm:max-w-xs">
+                <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+                <Input
+                  aria-label="Minis durchsuchen"
+                  placeholder="Suchen…"
+                  value={miniSuche}
+                  onChange={(e) => setMiniSuche(e.target.value)}
+                  className="h-8 pl-9"
+                />
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
-              {minis.map((mini) => {
-                const ausgewaehlt = bedarf.mini_ids.includes(mini.id)
-                return (
-                  <CheckboxChip
-                    key={mini.id}
-                    id={`${bedarf.schluessel}-mini-${mini.id}`}
-                    checked={ausgewaehlt}
-                    disabled={!ausgewaehlt && bedarf.mini_ids.length >= bedarf.anzahl}
-                    onChange={() => toggleMini(mini.id)}
-                  >
-                    {mini.name}
-                  </CheckboxChip>
+              {minis
+                // Bereits zugewiesene Minis bleiben trotz Suchfilter sichtbar, damit sie
+                // jederzeit abwählbar sind.
+                .filter(
+                  (mini) =>
+                    bedarf.mini_ids.includes(mini.id) ||
+                    mini.name.toLowerCase().includes(miniSuche.trim().toLowerCase()),
                 )
-              })}
+                .map((mini) => {
+                  const ausgewaehlt = bedarf.mini_ids.includes(mini.id)
+                  return (
+                    <CheckboxChip
+                      key={mini.id}
+                      id={`${bedarf.schluessel}-mini-${mini.id}`}
+                      checked={ausgewaehlt}
+                      disabled={!ausgewaehlt && bedarf.mini_ids.length >= bedarf.anzahl}
+                      onChange={() => toggleMini(mini.id)}
+                    >
+                      {mini.name}
+                    </CheckboxChip>
+                  )
+                })}
             </div>
           </div>
         </div>
@@ -415,6 +438,15 @@ function DienstbedarfZeile({
 }
 
 const AUTOSAVE_DEBOUNCE_MS = 800
+
+// Datum um ganze Tage verschieben (für "Duplizieren": gleicher Gottesdienst eine Woche später).
+function datumPlusTage(iso: string, tage: number): string {
+  const datum = new Date(`${iso}T00:00:00`)
+  datum.setDate(datum.getDate() + tage)
+  const monat = String(datum.getMonth() + 1).padStart(2, '0')
+  const tag = String(datum.getDate()).padStart(2, '0')
+  return `${datum.getFullYear()}-${monat}-${tag}`
+}
 
 function GottesdienstKarte({
   gottesdienst,
@@ -428,6 +460,8 @@ function GottesdienstKarte({
   filtertags,
   onReload,
   onDraftChange,
+  onStatusChange,
+  onDuplicated,
   defaultOffen = false,
 }: {
   gottesdienst: Gottesdienst
@@ -441,6 +475,8 @@ function GottesdienstKarte({
   filtertags: FiltertagDef[]
   onReload: () => void
   onDraftChange: (gottesdienstId: number, draft: GottesdienstDraft) => void
+  onStatusChange: (gottesdienstId: number, status: SpeicherStatus) => void
+  onDuplicated: (gottesdienstId: number) => void
   defaultOffen?: boolean
 }) {
   const [datum, setDatum] = useState(gottesdienst.datum)
@@ -451,7 +487,6 @@ function GottesdienstKarte({
     gottesdienst.dienstbedarf.map(bedarfAusOut),
   )
   const [status, setStatus] = useState<SpeicherStatus>('gespeichert')
-  const [versucht, setVersucht] = useState(false)
   const [offen, setOffen] = useState(defaultOffen)
   const { showToast } = useToast()
   const istErstesRendern = useRef(true)
@@ -478,6 +513,11 @@ function GottesdienstKarte({
     onDraftChange(gottesdienst.id, { datum, uhrzeit, name, notiz, bedarfListe })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datum, uhrzeit, name, notiz, bedarfListe])
+
+  useEffect(() => {
+    onStatusChange(gottesdienst.id, status)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status])
 
   useEffect(() => {
     if (istErstesRendern.current) {
@@ -522,32 +562,60 @@ function GottesdienstKarte({
     }
   }
 
+  // Kopiert den Gottesdienst eine Woche später - Dienste und Einschränkungen bleiben erhalten,
+  // manuell zugewiesene Minis nicht (die gelten für den konkreten Termin, nicht die Struktur).
+  async function handleDuplicate() {
+    try {
+      const erstellt = await gottesdienstErstellen(pfarreiId, miniplanId, {
+        datum: datumPlusTage(datum, 7),
+        uhrzeit,
+        name,
+        notiz: notiz.trim() ? notiz : null,
+        dienstbedarf: bedarfListe.map((bedarf) => ({ ...zuEingabe(bedarf), mini_ids: [] })),
+      })
+      showToast('Gottesdienst dupliziert (eine Woche später)')
+      onDuplicated(erstellt.id)
+    } catch (err) {
+      showToast(fehlerText(err, 'Fehler beim Duplizieren des Gottesdienstes'), 'error')
+    }
+  }
+
   return (
     <Card className="animate-rise">
-      <button
-        type="button"
-        onClick={() => setOffen((wert) => !wert)}
-        className="flex w-full cursor-pointer items-center justify-between gap-3 p-4 text-left"
-      >
-        <div className="flex min-w-0 items-center gap-2.5">
-          <ChevronDown
-            className={`h-4 w-4 shrink-0 text-ink-faint transition-transform ${offen ? 'rotate-180' : '-rotate-90'}`}
-          />
-          <div className="min-w-0">
-            <span className="font-medium text-ink">{name || 'Ohne Namen'}</span>
-            <span className="ml-2 text-sm text-ink-soft">
-              {datum ? formatDatum(datum) : 'kein Datum'}
-              {uhrzeit && `, ${uhrzeit} Uhr`}
-            </span>
+      <div className="flex items-center gap-1 pr-2">
+        <button
+          type="button"
+          onClick={() => setOffen((wert) => !wert)}
+          className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 p-4 text-left"
+        >
+          <div className="flex min-w-0 items-center gap-2.5">
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-ink-faint transition-transform ${offen ? '' : '-rotate-90'}`}
+            />
+            <div className="min-w-0">
+              <span className="font-medium text-ink">
+                {datum ? formatDatum(datum) : 'Kein Datum'}
+                {uhrzeit && `, ${uhrzeit} Uhr`}
+              </span>
+              {name && <span className="ml-2 text-sm text-ink-soft">{name}</span>}
+            </div>
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Badge tone="neutral">
-            {bedarfListe.length} {bedarfListe.length === 1 ? 'Dienst' : 'Dienste'}
-          </Badge>
-          <StatusAnzeige status={status} />
-        </div>
-      </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Badge tone="neutral">
+              {bedarfListe.length} {bedarfListe.length === 1 ? 'Dienst' : 'Dienste'}
+            </Badge>
+            {status !== 'gespeichert' && <StatusAnzeige status={status} />}
+          </div>
+        </button>
+        <IconButton
+          label="Duplizieren (eine Woche später)"
+          onClick={handleDuplicate}
+          disabled={!datum || !uhrzeit}
+          className="disabled:pointer-events-none disabled:opacity-40"
+        >
+          <Copy className="h-4 w-4" />
+        </IconButton>
+      </div>
 
       {offen && (
         <div className="flex flex-col gap-4 border-t border-line p-5">
@@ -562,7 +630,7 @@ function GottesdienstKarte({
                 value={datum}
                 onChange={setDatum}
                 required
-                error={versucht && !datum ? 'Datum wird benötigt' : undefined}
+                error={!datum ? 'Datum wird benötigt' : undefined}
               />
             </div>
             <div>
@@ -572,7 +640,7 @@ function GottesdienstKarte({
                 value={uhrzeit}
                 onChange={setUhrzeit}
                 required
-                error={versucht && !uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
+                error={!uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
               />
             </div>
             <div>
@@ -584,7 +652,6 @@ function GottesdienstKarte({
                 placeholder="z. B. Sonntagsmesse"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                onBlur={() => setVersucht(true)}
               />
             </div>
           </div>
@@ -611,7 +678,6 @@ function GottesdienstKarte({
                 gruppen={gruppen}
                 minis={minis}
                 filtertags={filtertags}
-                zeigeFehler={versucht}
                 onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
                 onRemove={() => removeBedarf(bedarf.schluessel)}
               />
@@ -777,11 +843,13 @@ function FreitextSection({
   miniplan,
   onSaved,
   onDraftChange,
+  onStatusChange,
 }: {
   pfarreiId: number
   miniplan: Miniplan
   onSaved: (miniplan: Miniplan) => void
   onDraftChange: (veranstaltungen: string, ankuendigungen: string) => void
+  onStatusChange: (status: SpeicherStatus) => void
 }) {
   const [veranstaltungen, setVeranstaltungen] = useState(miniplan.veranstaltungen ?? '')
   const [ankuendigungen, setAnkuendigungen] = useState(miniplan.ankuendigungen ?? '')
@@ -793,6 +861,11 @@ function FreitextSection({
     onDraftChange(veranstaltungen, ankuendigungen)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [veranstaltungen, ankuendigungen])
+
+  useEffect(() => {
+    onStatusChange(status)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status])
 
   useEffect(() => {
     if (istErstesRendern.current) {
@@ -821,8 +894,8 @@ function FreitextSection({
     <Card className="animate-rise">
       <CardHeader
         title="Veranstaltungen & Ankündigungen"
-        description="Freitextfelder (Markdown: **fett**, *kursiv*, Aufzählungen, nummerierte Listen, Links), die unterhalb des Plans angezeigt werden."
-        action={<StatusAnzeige status={status} />}
+        description="Erscheinen unterhalb des Plans auf dem PDF."
+        action={status !== 'gespeichert' && <StatusAnzeige status={status} />}
       />
       <div className="flex flex-col gap-4 p-5">
         <div>
@@ -860,11 +933,17 @@ function VorschauPanel({
   const [pdfDaten, setPdfDaten] = useState<Uint8Array | null>(null)
   const [fehler, setFehler] = useState<string[] | null>(null)
   const [ladend, setLadend] = useState(false)
+  // Nach jedem Autosave lädt die Seite den Plan neu, wodurch `eingabe` ein neues Objekt mit
+  // identischem Inhalt wird - der Vergleich erspart die zweite, überflüssige Typst-Kompilierung.
+  const letzteEingabe = useRef<string | null>(null)
 
   useEffect(() => {
+    const eingabeJson = JSON.stringify(eingabe)
+    if (eingabeJson === letzteEingabe.current) return
     let abgebrochen = false
     setLadend(true)
     const timer = setTimeout(() => {
+      letzteEingabe.current = eingabeJson
       miniplanVorschau(pfarreiId, miniplanId, eingabe).then((ergebnis) => {
         if (abgebrochen) return
         if (ergebnis.ok) {
@@ -924,6 +1003,8 @@ export function MiniplanEditorPage() {
     veranstaltungen: string
     ankuendigungen: string
   } | null>(null)
+  const [kartenStatus, setKartenStatus] = useState<Record<number, SpeicherStatus>>({})
+  const [freitextStatus, setFreitextStatus] = useState<SpeicherStatus>('gespeichert')
 
   const reload = useCallback(() => {
     miniplanDetail(id, planId).then(setMiniplan)
@@ -951,6 +1032,32 @@ export function MiniplanEditorPage() {
     setFreitextDraft({ veranstaltungen, ankuendigungen })
   }, [])
 
+  const handleKartenStatusChange = useCallback(
+    (gottesdienstId: number, status: SpeicherStatus) => {
+      setKartenStatus((aktuell) => ({ ...aktuell, [gottesdienstId]: status }))
+    },
+    [],
+  )
+
+  // Nur Statusmeldungen noch existierender Gottesdienste zählen (gelöschte Karten hinterlassen
+  // sonst veraltete Einträge in der Map).
+  const speicherStatus = useMemo(() => {
+    if (!miniplan) return 'gespeichert' as SpeicherStatus
+    const kartenStatusListe = miniplan.gottesdienste.map(
+      (gd) => kartenStatus[gd.id] ?? 'gespeichert',
+    )
+    return gesamtStatus([...kartenStatusListe, freitextStatus])
+  }, [miniplan, kartenStatus, freitextStatus])
+
+  useEffect(() => {
+    if (speicherStatus === 'gespeichert') return
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault()
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [speicherStatus])
+
   const vorschauEingabe = useMemo<MiniplanVorschauEingabe | null>(() => {
     if (!miniplan) return null
     return {
@@ -971,24 +1078,20 @@ export function MiniplanEditorPage() {
 
   if (!miniplan || !vorschauEingabe) {
     return (
-      <AppShell wide>
+      <AppShell wide pfarreiId={id}>
         <p className="text-ink-soft">Lade Miniplan…</p>
       </AppShell>
     )
   }
 
   return (
-    <AppShell wide>
-      <Link
-        to={`/pfarreien/${id}/miniplaene`}
-        className="inline-flex items-center gap-1.5 text-sm text-ink-soft transition-colors hover:text-pine-dark"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Zurück zu den Miniplänen
-      </Link>
-      <h1 className="mt-3 font-display text-3xl font-semibold text-ink">
-        Miniplan {monatsName(miniplan.monat)} {miniplan.jahr}
-      </h1>
+    <AppShell wide pfarreiId={id}>
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <h1 className="font-display text-3xl font-semibold text-ink">
+          Miniplan {monatsName(miniplan.monat)} {miniplan.jahr}
+        </h1>
+        <StatusAnzeige status={speicherStatus} className="text-sm" />
+      </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] lg:items-start">
         <div className="flex min-w-0 flex-col gap-6">
@@ -1006,6 +1109,11 @@ export function MiniplanEditorPage() {
               filtertags={filtertags}
               onReload={reload}
               onDraftChange={handleGottesdienstDraftChange}
+              onStatusChange={handleKartenStatusChange}
+              onDuplicated={(gottesdienstId) => {
+                setNeuesterGottesdienstId(gottesdienstId)
+                reload()
+              }}
               defaultOffen={gottesdienst.id === neuesterGottesdienstId}
             />
           ))}
@@ -1026,6 +1134,7 @@ export function MiniplanEditorPage() {
             miniplan={miniplan}
             onSaved={setMiniplan}
             onDraftChange={handleFreitextDraftChange}
+            onStatusChange={setFreitextStatus}
           />
         </div>
 

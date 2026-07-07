@@ -109,10 +109,10 @@ aus den bereits geladenen Stammdaten kennt) und liefert bei Erfolg die PDF-Bytes
 (`application/pdf`), bei einem Compile-Fehler `422` mit `{"detail": {"fehler": [...]}}`.
 
 Frontend: `MiniplanEditorPage` rendert eine `VorschauPanel`-Komponente, die bei jeder Änderung
-des geladenen `Miniplan`-Zustands debounced (500ms) `miniplanVorschau` aufruft und das
-resultierende PDF per Object-URL in einem `<iframe>` anzeigt; Compile-Fehler werden als Liste
-in einem `Alert` dargestellt. Da der Editor Änderungen erst nach Klick auf "Speichern"
-persistiert, aktualisiert sich die Vorschau entsprechend nach jedem Speichern-Vorgang.
+des Editor-Zustands (ungespeicherte Drafts eingeschlossen) debounced (500ms) `miniplanVorschau`
+aufruft und das resultierende PDF anzeigt; Compile-Fehler werden als Liste in einem `Alert`
+dargestellt. Der Editor speichert Änderungen automatisch (debounced, 800ms); der aggregierte
+Speicherstatus wird neben dem Seitentitel angezeigt.
 
 ## Befehle
 

@@ -1,7 +1,8 @@
 import {
-  ArrowLeft,
   CalendarDays,
   Check,
+  ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ClipboardList,
   Clock,
@@ -9,12 +10,13 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Trash2,
   Users,
   UserRound,
 } from 'lucide-react'
-import { useCallback, useEffect, useState, type SubmitEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState, type SubmitEvent } from 'react'
+import { useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import {
   dienstTypBearbeiten,
@@ -219,6 +221,7 @@ function GruppenSection({
     try {
       await gruppeErstellen(pfarreiId, name)
       setName('')
+      showToast('Gruppe angelegt')
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Anlegen der Gruppe'))
@@ -250,10 +253,10 @@ function GruppenSection({
   }
 
   return (
-    <Card className="animate-rise">
+    <Card>
       <CardHeader
         title="Gruppen"
-        description="Erfahrungsstufen der Ministranten (z. B. „neu“, „normal“, „Obermini“), auf die sich Mindestbesetzungen beziehen."
+        description="Erfahrungsstufen, auf die sich Mindestbesetzungen beziehen."
       />
       {error && (
         <div className="px-5 pt-4">
@@ -339,6 +342,7 @@ function MinisSection({
   filtertags: FiltertagDef[]
 }) {
   const [minis, setMinis] = useState<Mini[]>([])
+  const [suche, setSuche] = useState('')
   const [name, setName] = useState('')
   const [gruppeId, setGruppeId] = useState<number | ''>('')
   const [ausgewaehlterFiltertag, setAusgewaehlterFiltertag] = useState<Filtertag | null>(null)
@@ -375,6 +379,7 @@ function MinisSection({
       })
       setName('')
       setAusgewaehlterFiltertag(null)
+      showToast('Mini angelegt')
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Anlegen des Minis'))
@@ -413,12 +418,33 @@ function MinisSection({
     return gruppen.find((g) => g.id === id)?.name ?? '?'
   }
 
+  const sichtbareMinis = useMemo(() => {
+    const begriff = suche.trim().toLowerCase()
+    return minis
+      .filter((mini) => !begriff || mini.name.toLowerCase().includes(begriff))
+      .sort((a, b) => a.name.localeCompare(b.name, 'de'))
+  }, [minis, suche])
+
   return (
-    <Card className="animate-rise">
-      <CardHeader title="Minis" description="Die Ministranten, die im Dienstplan eingeteilt werden." />
+    <Card>
+      <CardHeader title="Minis" />
       {error && (
         <div className="px-5 pt-4">
           <Alert>{error}</Alert>
+        </div>
+      )}
+      {minis.length > 8 && (
+        <div className="border-b border-line px-5 py-3">
+          <div className="relative sm:max-w-xs">
+            <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+            <Input
+              aria-label="Minis durchsuchen"
+              placeholder="Suchen…"
+              value={suche}
+              onChange={(e) => setSuche(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
       )}
       {minis.length === 0 ? (
@@ -427,9 +453,11 @@ function MinisSection({
           title="Noch keine Minis angelegt"
           description={gruppen.length === 0 ? 'Lege zuerst eine Gruppe an.' : undefined}
         />
+      ) : sichtbareMinis.length === 0 ? (
+        <EmptyState icon={Search} title={`Kein Mini passt zu „${suche.trim()}“`} />
       ) : (
         <div>
-          {minis.map((mini) =>
+          {sichtbareMinis.map((mini) =>
             editId === mini.id ? (
               <BearbeitenAbschnitt key={mini.id}>
                 <form onSubmit={handleUpdate} className="flex flex-col gap-4">
@@ -659,6 +687,7 @@ function DienstTypenSection({
       setStandardAnzahl(1)
       setGruppenAnforderungen([])
       setZeigeLabel(false)
+      showToast('Dienst-Typ angelegt')
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Anlegen des Dienst-Typs'))
@@ -695,10 +724,10 @@ function DienstTypenSection({
   }
 
   return (
-    <Card className="animate-rise">
+    <Card>
       <CardHeader
         title="Dienst-Typen"
-        description="Arten von Diensten (z. B. Messdienst, Prozession) mit Standard-Besetzung."
+        description="Arten von Diensten mit Standard-Besetzung."
       />
       {error && (
         <div className="px-5 pt-4">
@@ -951,6 +980,7 @@ function FiltertagsSection({
   reload: () => void
 }) {
   const [blocker, setBlocker] = useState<FiltertagBlocker[]>([])
+  const [offeneSperrzeiten, setOffeneSperrzeiten] = useState<Set<number>>(new Set())
   const [label, setLabel] = useState('')
   const [istSchuelerArtig, setIstSchuelerArtig] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -975,6 +1005,7 @@ function FiltertagsSection({
       await filtertagErstellen(pfarreiId, daten)
       setLabel('')
       setIstSchuelerArtig(false)
+      showToast('Verfügbarkeits-Status angelegt')
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Anlegen des Verfügbarkeits-Status'))
@@ -1029,11 +1060,23 @@ function FiltertagsSection({
     }
   }
 
+  function toggleSperrzeiten(filtertagId: number) {
+    setOffeneSperrzeiten((offen) => {
+      const neu = new Set(offen)
+      if (neu.has(filtertagId)) {
+        neu.delete(filtertagId)
+      } else {
+        neu.add(filtertagId)
+      }
+      return neu
+    })
+  }
+
   return (
-    <Card className="animate-rise">
+    <Card>
       <CardHeader
         title="Verfügbarkeits-Status"
-        description="Wann ein Mini nicht verfügbar ist – je Status mit wöchentlichen Sperrzeiten, z. B. Schulzeiten für „Schüler“."
+        description="Wöchentliche Sperrzeiten je Status, z. B. Schulzeiten für „Schüler“."
       />
       {error && (
         <div className="px-5 pt-4">
@@ -1085,6 +1128,21 @@ function FiltertagsSection({
                     )}
                   </div>
                   <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleSperrzeiten(filtertag.id)}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
+                    >
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 transition-transform ${
+                          offeneSperrzeiten.has(filtertag.id) ? '' : '-rotate-90'
+                        }`}
+                      />
+                      Sperrzeiten
+                      <span className="rounded-full bg-pine-tint px-1.5 text-[10px] text-pine-dark">
+                        {blocker.filter((b) => b.filtertag_id === filtertag.id).length}
+                      </span>
+                    </button>
                     <IconButton
                       label="Bearbeiten"
                       onClick={() => {
@@ -1098,27 +1156,29 @@ function FiltertagsSection({
                     <InlineConfirmButton onConfirm={() => handleDelete(filtertag.id)} />
                   </div>
                 </Row>
-                <div className="bg-pine-tint/20 pl-4">
-                  {WOCHENTAGE.map((wochentagName, wochentag) => {
-                    const eintraege = blocker.filter(
-                      (b) => b.filtertag_id === filtertag.id && b.wochentag === wochentag,
-                    )
-                    if (eintraege.length === 0) return null
-                    return (
-                      <div key={wochentag}>
-                        <p className="pt-2 text-xs font-medium text-ink-faint">{wochentagName}</p>
-                        {eintraege.map((b) => (
-                          <FiltertagBlockerZeile
-                            key={b.id}
-                            blocker={b}
-                            onDelete={() => handleBlockerDelete(b.id)}
-                          />
-                        ))}
-                      </div>
-                    )
-                  })}
-                  <NeuerBlockerForm filtertagId={filtertag.id} onCreate={handleBlockerCreate} />
-                </div>
+                {offeneSperrzeiten.has(filtertag.id) && (
+                  <div className="bg-pine-tint/20 pl-4">
+                    {WOCHENTAGE.map((wochentagName, wochentag) => {
+                      const eintraege = blocker.filter(
+                        (b) => b.filtertag_id === filtertag.id && b.wochentag === wochentag,
+                      )
+                      if (eintraege.length === 0) return null
+                      return (
+                        <div key={wochentag}>
+                          <p className="pt-2 text-xs font-medium text-ink-faint">{wochentagName}</p>
+                          {eintraege.map((b) => (
+                            <FiltertagBlockerZeile
+                              key={b.id}
+                              blocker={b}
+                              onDelete={() => handleBlockerDelete(b.id)}
+                            />
+                          ))}
+                        </div>
+                      )
+                    })}
+                    <NeuerBlockerForm filtertagId={filtertag.id} onCreate={handleBlockerCreate} />
+                  </div>
+                )}
               </div>
             ),
           )}
@@ -1216,10 +1276,10 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
   }
 
   return (
-    <Card className="animate-rise">
+    <Card>
       <CardHeader
         title="Ferien"
-        description="Schulferien des laufenden Schuljahrs, automatisch abgerufen für das gewählte Bundesland."
+        description="Automatisch abgerufen für das gewählte Bundesland."
       />
       {error && (
         <div className="px-5 pt-4">
@@ -1268,7 +1328,8 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
 function FeiertageSection({ pfarreiId }: { pfarreiId: number }) {
   const [feiertage, setFeiertage] = useState<Feiertag[]>([])
   const [error, setError] = useState<string | null>(null)
-  const jahr = new Date().getFullYear()
+  // Umschaltbar, weil z. B. im Dezember bereits der Januar des Folgejahres geplant wird.
+  const [jahr, setJahr] = useState(() => new Date().getFullYear())
 
   const reload = useCallback(() => {
     feiertageListe(pfarreiId, jahr).then(setFeiertage)
@@ -1294,10 +1355,23 @@ function FeiertageSection({ pfarreiId }: { pfarreiId: number }) {
   }
 
   return (
-    <Card className="animate-rise">
+    <Card>
       <CardHeader
         title="Gesetzliche Feiertage"
-        description={`Feiertage ${jahr}, mit Unterscheidung ob schulfrei und/oder arbeitsfrei.`}
+        description="Mit Unterscheidung ob schulfrei und/oder arbeitsfrei."
+        action={
+          <div className="flex items-center gap-1">
+            <IconButton label="Vorheriges Jahr" onClick={() => setJahr((j) => j - 1)}>
+              <ChevronLeft className="h-4 w-4" />
+            </IconButton>
+            <span className="w-12 text-center text-sm font-medium tabular-nums text-ink">
+              {jahr}
+            </span>
+            <IconButton label="Nächstes Jahr" onClick={() => setJahr((j) => j + 1)}>
+              <ChevronRight className="h-4 w-4" />
+            </IconButton>
+          </div>
+        }
       />
       {error && (
         <div className="px-5 pt-4">
@@ -1367,11 +1441,7 @@ function VerfuegbarkeitSection({
 
   return (
     <div className="flex flex-col gap-4">
-      <Alert tone="info">
-        Während der Ferien und an schulfreien Feiertagen gelten die Sperrzeiten von
-        Verfügbarkeits-Status, die Schulferien-Regeln folgen, nicht.
-      </Alert>
-      <TabBar tabs={VERFUEGBARKEIT_TABS} active={subTab} onChange={setSubTab} />
+      <TabBar tabs={VERFUEGBARKEIT_TABS} active={subTab} onChange={setSubTab} variant="pills" />
       {subTab === 'status' && (
         <FiltertagsSection pfarreiId={pfarreiId} filtertags={filtertags} reload={reloadFiltertags} />
       )}
@@ -1405,22 +1475,8 @@ export function StammdatenPage() {
   }, [reloadFiltertags])
 
   return (
-    <AppShell>
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1.5 text-sm text-ink-soft transition-colors hover:text-pine-dark"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Zurück zur Übersicht
-      </Link>
-      <h1 className="mt-3 font-display text-3xl font-semibold text-ink">Stammdaten</h1>
-      <Link
-        to={`/pfarreien/${id}/miniplaene`}
-        className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-transparent px-3 text-sm font-medium text-ink transition-colors duration-150 hover:border-pine hover:text-pine-dark"
-      >
-        Zu den Miniplänen
-        <ChevronRight className="h-3.5 w-3.5" />
-      </Link>
+    <AppShell pfarreiId={id}>
+      <h1 className="font-display text-3xl font-semibold text-ink">Stammdaten</h1>
 
       <TabBar tabs={TABS} active={tab} onChange={setTab} className="mt-6" />
 
