@@ -16,9 +16,6 @@ export function DashboardPage() {
     <AppShell>
       <div className="animate-rise">
         <h1 className="font-display text-3xl font-semibold text-ink">Meine Pfarreien</h1>
-        <p className="mt-1 text-ink-soft">
-          Wähle eine Pfarrei, um Gruppen, Ministranten und Dienst-Typen zu verwalten.
-        </p>
 
         <div className="mt-8">
           {pfarreien && pfarreien.length === 0 && (
@@ -61,7 +58,7 @@ export function DashboardPage() {
                   >
                     <span className="flex items-center gap-1.5">
                       <CalendarRange className="h-3.5 w-3.5" />
-                      Miniplaene
+                      Minipläne
                     </span>
                     <ChevronRight className="h-3.5 w-3.5 text-ink-faint transition-transform group-hover:translate-x-0.5 group-hover:text-pine-dark" />
                   </Link>

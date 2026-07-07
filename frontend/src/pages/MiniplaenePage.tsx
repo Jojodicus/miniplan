@@ -12,33 +12,16 @@ import { AppShell } from '../components/layout/AppShell'
 import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
-import { Card, CardHeader } from '../components/ui/Card'
+import { Card } from '../components/ui/Card'
+import { NeuAnlegenAbschnitt } from '../components/ui/CardSections'
 import { EmptyState } from '../components/ui/EmptyState'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { Input, Label, Select } from '../components/ui/FormField'
 import { useToast } from '../components/ui/Toast'
+import { MONATE, monatsName } from '../lib/datum'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
-}
-
-const MONATE = [
-  'Januar',
-  'Februar',
-  'März',
-  'April',
-  'Mai',
-  'Juni',
-  'Juli',
-  'August',
-  'September',
-  'Oktober',
-  'November',
-  'Dezember',
-]
-
-function monatsName(monat: number): string {
-  return MONATE[monat - 1] ?? String(monat)
 }
 
 export function MiniplaenePage() {
@@ -92,10 +75,7 @@ export function MiniplaenePage() {
         <ArrowLeft className="h-3.5 w-3.5" />
         Zurück zur Übersicht
       </Link>
-      <h1 className="mt-3 font-display text-3xl font-semibold text-ink">Miniplaene</h1>
-      <p className="mt-1 text-ink-soft">
-        Monatliche Dienstpläne dieser Pfarrei anlegen und bearbeiten.
-      </p>
+      <h1 className="mt-3 font-display text-3xl font-semibold text-ink">Minipläne</h1>
       <Link
         to={`/pfarreien/${id}/stammdaten`}
         className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-transparent px-3 text-sm font-medium text-ink transition-colors duration-150 hover:border-pine hover:text-pine-dark"
@@ -105,14 +85,13 @@ export function MiniplaenePage() {
       </Link>
 
       <Card className="mt-6 animate-rise">
-        <CardHeader title="Miniplaene" description="Alle Dienstpläne dieser Pfarrei." />
         {error && (
           <div className="px-5 pt-4">
             <Alert>{error}</Alert>
           </div>
         )}
         {miniplaene.length === 0 ? (
-          <EmptyState icon={CalendarRange} title="Noch keine Miniplaene angelegt" />
+          <EmptyState icon={CalendarRange} title="Noch keine Minipläne angelegt" />
         ) : (
           <div>
             {miniplaene.map((miniplan) => (
@@ -134,11 +113,12 @@ export function MiniplaenePage() {
             ))}
           </div>
         )}
-        <form
-          onSubmit={handleCreate}
-          className="flex items-end gap-2 border-t border-line p-5"
-          aria-label="Miniplan anlegen"
-        >
+        <NeuAnlegenAbschnitt>
+          <form
+            onSubmit={handleCreate}
+            className="flex flex-wrap items-end gap-2"
+            aria-label="Miniplan anlegen"
+          >
           <div>
             <Label htmlFor="miniplan-neu-monat">Monat</Label>
             <Select
@@ -164,11 +144,12 @@ export function MiniplaenePage() {
               required
             />
           </div>
-          <Button type="submit">
-            <Plus className="h-4 w-4" />
-            Miniplan anlegen
-          </Button>
-        </form>
+            <Button type="submit">
+              <Plus className="h-4 w-4" />
+              Miniplan anlegen
+            </Button>
+          </form>
+        </NeuAnlegenAbschnitt>
       </Card>
     </AppShell>
   )

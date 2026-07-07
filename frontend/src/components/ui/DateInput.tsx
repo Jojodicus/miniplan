@@ -2,31 +2,13 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { feiertageListe, type Feiertag } from '../../api/feiertage'
+import { formatDatum, MONATE } from '../../lib/datum'
 import { IconButton } from './IconButton'
 
 const WOCHENTAGE_KURZ = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
-const MONATSNAMEN = [
-  'Januar',
-  'Februar',
-  'März',
-  'April',
-  'Mai',
-  'Juni',
-  'Juli',
-  'August',
-  'September',
-  'Oktober',
-  'November',
-  'Dezember',
-]
 
 function formatIso(jahr: number, monat: number, tag: number): string {
   return `${jahr}-${String(monat + 1).padStart(2, '0')}-${String(tag).padStart(2, '0')}`
-}
-
-function formatAnzeige(iso: string): string {
-  const [jahr, monat, tag] = iso.split('-')
-  return `${tag}.${monat}.${jahr}`
 }
 
 // Montag = 0 ... Sonntag = 6, damit die Woche wie im deutschen Kalender mit Montag beginnt
@@ -181,11 +163,11 @@ export function DateInput({
                 : ''
         } ${value ? 'text-ink' : 'text-ink-faint'}`}
       >
-        {value ? formatAnzeige(value) : 'Datum wählen'}
+        {value ? formatDatum(value) : 'Datum wählen'}
       </button>
       {(feiertag || istSonntag) && (
         <p
-          className={`mt-1 text-xs ${feiertag ? 'text-[#7a5a20]' : 'text-wine'}`}
+          className={`mt-1 text-xs ${feiertag ? 'text-gold-dark' : 'text-wine'}`}
           title={feiertag?.name}
         >
           {feiertag ? `Feiertag: ${feiertag.name}` : 'Sonntag'}
@@ -205,7 +187,7 @@ export function DateInput({
                 <ChevronLeft className="h-4 w-4" />
               </IconButton>
               <span className="text-sm font-medium text-ink">
-                {MONATSNAMEN[ansichtMonat]} {ansichtJahr}
+                {MONATE[ansichtMonat]} {ansichtJahr}
               </span>
               <IconButton label="Nächster Monat" onClick={() => monatWechseln(1)}>
                 <ChevronRight className="h-4 w-4" />
@@ -236,7 +218,7 @@ export function DateInput({
                       istAusgewaehlt
                         ? 'bg-pine font-medium text-paper'
                         : tagFeiertag
-                          ? 'bg-gold/15 text-[#7a5a20] hover:bg-gold/25'
+                          ? 'bg-gold/15 text-gold-dark hover:bg-gold/25'
                           : tagIstSonntag
                             ? 'text-wine hover:bg-wine-tint'
                             : 'text-ink hover:bg-pine-tint'

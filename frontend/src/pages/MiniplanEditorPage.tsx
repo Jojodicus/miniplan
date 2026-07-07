@@ -38,14 +38,10 @@ import { MarkdownTextarea } from '../components/ui/MarkdownTextarea'
 import { PdfViewer } from '../components/ui/PdfViewer'
 import { TimeInput } from '../components/ui/TimeInput'
 import { useToast } from '../components/ui/Toast'
+import { formatDatum, monatsName } from '../lib/datum'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
-}
-
-function formatDatumKurz(iso: string): string {
-  const [jahr, monat, tag] = iso.split('-')
-  return `${tag}.${monat}.${jahr}`
 }
 
 let naechsterSchluessel = 0
@@ -60,7 +56,7 @@ function StatusAnzeige({ status }: { status: SpeicherStatus }) {
   const text: Record<SpeicherStatus, string> = {
     gespeichert: 'Gespeichert',
     speichert: 'Speichert…',
-    ungespeichert: 'Änderungen unvollständig',
+    ungespeichert: 'Unvollständig',
     fehler: 'Fehler beim Speichern',
   }
   const farbe: Record<SpeicherStatus, string> = {
@@ -311,7 +307,7 @@ function DienstbedarfZeile({
             id={`${bedarf.schluessel}-zeige-label`}
             checked={bedarf.zeige_label}
             onChange={() => onChange({ zeige_label: !bedarf.zeige_label })}
-            title="Wenn aktiviert, erscheint der Name dieses Dienstes als Beschriftung auf dem veröffentlichten PDF-Plan."
+            title="Name erscheint als Beschriftung auf dem PDF-Plan."
           >
             Auf dem Plan anzeigen
           </CheckboxChip>
@@ -454,7 +450,6 @@ function GottesdienstKarte({
   const [bedarfListe, setBedarfListe] = useState<WorkingBedarf[]>(
     gottesdienst.dienstbedarf.map(bedarfAusOut),
   )
-  const [neuerDienstTypId, setNeuerDienstTypId] = useState<number | ''>('')
   const [status, setStatus] = useState<SpeicherStatus>('gespeichert')
   const [versucht, setVersucht] = useState(false)
   const [offen, setOffen] = useState(defaultOffen)
@@ -471,9 +466,7 @@ function GottesdienstKarte({
     setBedarfListe((liste) => liste.filter((b) => b.schluessel !== schluessel))
   }
 
-  function addDienstTyp() {
-    const dienstTyp = dienstTypen.find((dt) => dt.id === neuerDienstTypId)
-    if (!dienstTyp) return
+  function addDienstTyp(dienstTyp: DienstTyp) {
     setBedarfListe((liste) => [...liste, bedarfAusDienstTyp(dienstTyp)])
   }
 
@@ -543,7 +536,7 @@ function GottesdienstKarte({
           <div className="min-w-0">
             <span className="font-medium text-ink">{name || 'Ohne Namen'}</span>
             <span className="ml-2 text-sm text-ink-soft">
-              {datum ? formatDatumKurz(datum) : 'kein Datum'}
+              {datum ? formatDatum(datum) : 'kein Datum'}
               {uhrzeit && `, ${uhrzeit} Uhr`}
             </span>
           </div>
@@ -625,34 +618,26 @@ function GottesdienstKarte({
             ))}
           </div>
 
-          <div className="flex flex-wrap items-end gap-2">
-            <div>
-              <Label htmlFor={`gottesdienst-${gottesdienst.id}-dienst-typ`}>
-                Dienst-Typ hinzufügen
-              </Label>
-              <div className="flex gap-2">
-                <Select
-                  id={`gottesdienst-${gottesdienst.id}-dienst-typ`}
-                  value={neuerDienstTypId}
-                  onChange={(e) => setNeuerDienstTypId(Number(e.target.value))}
-                  disabled={dienstTypen.length === 0}
+          <div>
+            <Label>Dienst hinzufügen</Label>
+            <div className="flex flex-wrap gap-2">
+              {dienstTypen.map((dt) => (
+                <Button
+                  key={dt.id}
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => addDienstTyp(dt)}
                 >
-                  <option value="">Auswählen…</option>
-                  {dienstTypen.map((dt) => (
-                    <option key={dt.id} value={dt.id}>
-                      {dt.name}
-                    </option>
-                  ))}
-                </Select>
-                <Button type="button" variant="secondary" onClick={addDienstTyp}>
-                  Hinzufügen
+                  <Plus className="h-3.5 w-3.5" />
+                  {dt.name}
                 </Button>
-              </div>
+              ))}
+              <Button type="button" variant="secondary" size="sm" onClick={addFreitext}>
+                <Plus className="h-3.5 w-3.5" />
+                Freitext-Dienst
+              </Button>
             </div>
-            <Button type="button" variant="secondary" onClick={addFreitext}>
-              <Plus className="h-4 w-4" />
-              Freitext-Dienst hinzufügen
-            </Button>
           </div>
 
           <div className="flex items-center justify-between border-t border-line pt-4">
@@ -901,7 +886,6 @@ function VorschauPanel({
     <Card className="animate-rise flex h-[80svh] flex-col lg:sticky lg:top-6 lg:h-[calc(100svh-3rem)]">
       <CardHeader
         title="PDF-Vorschau"
-        description="Wird bei jeder Änderung live aktualisiert (kein Speichern nötig)."
         action={ladend && <span className="text-xs text-ink-faint">Aktualisiert…</span>}
       />
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-5">
@@ -1003,7 +987,7 @@ export function MiniplanEditorPage() {
         Zurück zu den Miniplänen
       </Link>
       <h1 className="mt-3 font-display text-3xl font-semibold text-ink">
-        Miniplan {miniplan.monat}/{miniplan.jahr}
+        Miniplan {monatsName(miniplan.monat)} {miniplan.jahr}
       </h1>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] lg:items-start">

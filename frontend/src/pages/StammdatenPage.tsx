@@ -12,7 +12,6 @@ import {
   Trash2,
   Users,
   UserRound,
-  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useState, type SubmitEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -74,11 +73,18 @@ import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
+import {
+  BearbeitenAbschnitt,
+  NeuAnlegenAbschnitt,
+  Row,
+} from '../components/ui/CardSections'
 import { EmptyState } from '../components/ui/EmptyState'
 import { CheckboxChip, Input, Label, Select } from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
+import { TabBar } from '../components/ui/TabBar'
 import { useToast } from '../components/ui/Toast'
+import { formatDatum } from '../lib/datum'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -157,7 +163,6 @@ function FiltertagAuswahl({
   return (
     <ChipAuswahl
       label="Verfügbarkeits-Status"
-      hint="realistisch trifft meist nur einer zu"
       options={filtertags.map((f) => ({ key: f.key, label: f.label }))}
       ausgewaehlt={ausgewaehlt}
       onChange={onChange}
@@ -190,37 +195,6 @@ function GruppenAuswahl({
       idPrefix={idPrefix}
       emptyText="Noch keine Gruppen angelegt (Reiter „Gruppen“)."
     />
-  )
-}
-
-// Optische Trennung von "neu anlegen" (Formular am Karten-Ende, dezent hervorgehoben) und
-// "bearbeiten" (Zeile expandiert inline, Akzentbalken links) - vorher waren beide kaum
-// unterscheidbar.
-function NeuAnlegenAbschnitt({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="border-t border-line bg-paper-dim/50 p-5">
-      <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-pine-dark">
-        <Plus className="h-4 w-4" />
-        Neu anlegen
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function BearbeitenAbschnitt({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="border-b border-l-4 border-line border-l-pine p-4 last:border-b-0">
-      {children}
-    </div>
-  )
-}
-
-function Row({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 last:border-b-0">
-      {children}
-    </div>
   )
 }
 
@@ -279,7 +253,7 @@ function GruppenSection({
     <Card className="animate-rise">
       <CardHeader
         title="Gruppen"
-        description="Gruppe: Erfahrungsstufe für Mindestbesetzung (Altersstufen oder Untergruppen der Ministranten, z. B. „neu“, „normal“, „Obermini“)."
+        description="Erfahrungsstufen der Ministranten (z. B. „neu“, „normal“, „Obermini“), auf die sich Mindestbesetzungen beziehen."
       />
       {error && (
         <div className="px-5 pt-4">
@@ -776,7 +750,7 @@ function DienstTypenSection({
                     id={`dienst-typ-${dienstTyp.id}-edit-zeige-label`}
                     checked={editZeigeLabel}
                     onChange={() => setEditZeigeLabel((wert) => !wert)}
-                    title="Wenn aktiviert, erscheint der Name dieses Dienst-Typs als Beschriftung auf dem veröffentlichten PDF-Plan."
+                    title="Name erscheint als Beschriftung auf dem PDF-Plan."
                   >
                     Auf dem Plan anzeigen
                   </CheckboxChip>
@@ -869,7 +843,7 @@ function DienstTypenSection({
             id="dienst-typ-neu-zeige-label"
             checked={zeigeLabel}
             onChange={() => setZeigeLabel((wert) => !wert)}
-            title="Wenn aktiviert, erscheint der Name dieses Dienst-Typs als Beschriftung auf dem veröffentlichten PDF-Plan."
+            title="Name erscheint als Beschriftung auf dem PDF-Plan."
           >
             Auf dem Plan anzeigen
           </CheckboxChip>
@@ -1059,7 +1033,7 @@ function FiltertagsSection({
     <Card className="animate-rise">
       <CardHeader
         title="Verfügbarkeits-Status"
-        description="Status: wann ein Mini nicht verfügbar ist. Die unten je Status hinzugefügten Zeitfenster sind Sperrzeiten (z. B. sperrt „Schüler“ die üblichen Schulzeiten), keine Verfügbarkeitszeiten. Anders als die Gruppe hat der Status keinen Einfluss auf die Mindestbesetzung, sondern nur auf die Verfügbarkeit."
+        description="Wann ein Mini nicht verfügbar ist – je Status mit wöchentlichen Sperrzeiten, z. B. Schulzeiten für „Schüler“."
       />
       {error && (
         <div className="px-5 pt-4">
@@ -1072,30 +1046,35 @@ function FiltertagsSection({
         <div>
           {filtertags.map((filtertag) =>
             editId === filtertag.id ? (
-              <Row key={filtertag.id}>
-                <form onSubmit={handleUpdate} className="flex flex-1 flex-wrap items-center gap-2">
-                  <Input
-                    value={editLabel}
-                    onChange={(e) => setEditLabel(e.target.value)}
-                    required
-                    autoFocus
-                    className="h-9"
-                  />
+              <BearbeitenAbschnitt key={filtertag.id}>
+                <form onSubmit={handleUpdate} className="flex flex-wrap items-end gap-2">
+                  <div className="min-w-[10rem] flex-1">
+                    <Label htmlFor={`filtertag-${filtertag.id}-edit-label`}>Bezeichnung</Label>
+                    <Input
+                      id={`filtertag-${filtertag.id}-edit-label`}
+                      value={editLabel}
+                      onChange={(e) => setEditLabel(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                  </div>
                   <CheckboxChip
                     id={`filtertag-${filtertag.id}-edit-schueler-artig`}
                     checked={editIstSchuelerArtig}
                     onChange={() => setEditIstSchuelerArtig((wert) => !wert)}
+                    title="Ferien und schulfreie Feiertage gelten für diesen Status als frei."
                   >
                     folgt Schulferien-Regeln
                   </CheckboxChip>
-                  <IconButton label="Speichern" type="submit">
+                  <Button type="submit" size="sm">
                     <Check className="h-4 w-4" />
-                  </IconButton>
-                  <IconButton label="Abbrechen" type="button" onClick={() => setEditId(null)}>
-                    <X className="h-4 w-4" />
-                  </IconButton>
+                    Speichern
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditId(null)}>
+                    Abbrechen
+                  </Button>
                 </form>
-              </Row>
+              </BearbeitenAbschnitt>
             ) : (
               <div key={filtertag.id} className="border-b border-line last:border-b-0">
                 <Row>
@@ -1145,30 +1124,32 @@ function FiltertagsSection({
           )}
         </div>
       )}
-      <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-2 border-t border-line p-5">
-        <div>
-          <Label htmlFor="filtertag-neu-label">Bezeichnung</Label>
-          <Input
-            id="filtertag-neu-label"
-            placeholder="z. B. Azubi"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            required
-          />
-        </div>
-        <CheckboxChip
-          id="filtertag-neu-schueler-artig"
-          checked={istSchuelerArtig}
-          onChange={() => setIstSchuelerArtig((wert) => !wert)}
-        >
-          Folgt Schulferien-Regeln (Ferien und schulfreie Feiertage gelten für diesen Status als
-          frei)
-        </CheckboxChip>
-        <Button type="submit">
-          <Plus className="h-4 w-4" />
-          Anlegen
-        </Button>
-      </form>
+      <NeuAnlegenAbschnitt>
+        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[10rem] flex-1">
+            <Label htmlFor="filtertag-neu-label">Bezeichnung</Label>
+            <Input
+              id="filtertag-neu-label"
+              placeholder="z. B. Azubi"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              required
+            />
+          </div>
+          <CheckboxChip
+            id="filtertag-neu-schueler-artig"
+            checked={istSchuelerArtig}
+            onChange={() => setIstSchuelerArtig((wert) => !wert)}
+            title="Ferien und schulfreie Feiertage gelten für diesen Status als frei."
+          >
+            folgt Schulferien-Regeln
+          </CheckboxChip>
+          <Button type="submit">
+            <Plus className="h-4 w-4" />
+            Anlegen
+          </Button>
+        </form>
+      </NeuAnlegenAbschnitt>
     </Card>
   )
 }
@@ -1190,11 +1171,6 @@ const BUNDESLAND_NAMEN: Record<Bundesland, string> = {
   ST: 'Sachsen-Anhalt',
   SH: 'Schleswig-Holstein',
   TH: 'Thüringen',
-}
-
-function formatDatum(iso: string): string {
-  const [jahr, monat, tag] = iso.split('-')
-  return `${tag}.${monat}.${jahr}`
 }
 
 function FerienSection({ pfarreiId }: { pfarreiId: number }) {
@@ -1272,11 +1248,7 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
         {aktualisiert && <span className="text-sm text-ink-soft">Ferienkalender aktualisiert.</span>}
       </div>
       {ferien.length === 0 ? (
-        <EmptyState
-          icon={CalendarDays}
-          title="Noch keine Ferien geladen"
-          description='Auf "Jetzt aktualisieren" klicken, um den Ferienkalender zu laden.'
-        />
+        <EmptyState icon={CalendarDays} title="Noch keine Ferien geladen" />
       ) : (
         <div>
           {ferien.map((f) => (
@@ -1395,31 +1367,11 @@ function VerfuegbarkeitSection({
 
   return (
     <div className="flex flex-col gap-4">
-      <Alert>
-        <span>
-          Drei zusammenspielende Mechanismen bestimmen, wann ein Mini <b>nicht verfügbar</b> ist:{' '}
-          <b>Ferien</b> und <b>Feiertage</b> gelten pfarreiweit für alle Verfügbarkeits-Status, die
-          „Schulferien-Regeln“ folgen, und <b>heben</b> dabei die wöchentlichen{' '}
-          <b>Sperrzeiten</b> des jeweiligen Verfügbarkeits-Status auf (z. B. sperrt „Schüler“
-          normalerweise Schulzeiten, aber nicht während der Ferien).
-        </span>
+      <Alert tone="info">
+        Während der Ferien und an schulfreien Feiertagen gelten die Sperrzeiten von
+        Verfügbarkeits-Status, die Schulferien-Regeln folgen, nicht.
       </Alert>
-      <div className="-mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0">
-        {VERFUEGBARKEIT_TABS.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setSubTab(key)}
-            className={`flex shrink-0 cursor-pointer items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
-              subTab === key
-                ? 'border-pine text-pine-dark'
-                : 'border-transparent text-ink-soft hover:text-ink'
-            }`}
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </button>
-        ))}
-      </div>
+      <TabBar tabs={VERFUEGBARKEIT_TABS} active={subTab} onChange={setSubTab} />
       {subTab === 'status' && (
         <FiltertagsSection pfarreiId={pfarreiId} filtertags={filtertags} reload={reloadFiltertags} />
       )}
@@ -1462,9 +1414,6 @@ export function StammdatenPage() {
         Zurück zur Übersicht
       </Link>
       <h1 className="mt-3 font-display text-3xl font-semibold text-ink">Stammdaten</h1>
-      <p className="mt-1 text-ink-soft">
-        Gruppen, Minis und Dienst-Typen dieser Pfarrei verwalten.
-      </p>
       <Link
         to={`/pfarreien/${id}/miniplaene`}
         className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-transparent px-3 text-sm font-medium text-ink transition-colors duration-150 hover:border-pine hover:text-pine-dark"
@@ -1473,22 +1422,7 @@ export function StammdatenPage() {
         <ChevronRight className="h-3.5 w-3.5" />
       </Link>
 
-      <div className="-mx-4 mt-6 flex gap-1 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0">
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`flex shrink-0 cursor-pointer items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
-              tab === key
-                ? 'border-pine text-pine-dark'
-                : 'border-transparent text-ink-soft hover:text-ink'
-            }`}
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </button>
-        ))}
-      </div>
+      <TabBar tabs={TABS} active={tab} onChange={setTab} className="mt-6" />
 
       <div className="mt-6">
         {tab === 'gruppen' && (

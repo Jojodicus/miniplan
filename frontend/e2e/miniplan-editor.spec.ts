@@ -8,7 +8,7 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page).toHaveURL('http://localhost:8100/')
 }
 
-// Der Pfarrei-Name auf dem Dashboard ist selbst kein Link (nur die "Stammdaten"/"Miniplaene"-
+// Der Pfarrei-Name auf dem Dashboard ist selbst kein Link (nur die "Stammdaten"/"Minipläne"-
 // Kacheln darunter sind Links) - daher hier gezielt die Karte der Pfarrei anhand des Namens
 // finden und darin auf "Stammdaten" navigieren.
 async function zuStammdaten(page: import('@playwright/test').Page, pfarreiName: string) {
@@ -40,7 +40,7 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await expect(page).toHaveURL(/\/stammdaten$/)
 
   await page.getByRole('button', { name: 'Gruppen' }).click()
-  await page.getByLabel('Neue Gruppe').fill('MP-Obermini')
+  await page.getByLabel('Name').fill('MP-Obermini')
   await page.getByRole('button', { name: 'Anlegen' }).click()
   // Großzügigere Timeouts für Assertions direkt nach einem Backend-Roundtrip: die e2e-Umgebung
   // teilt einen einzelnen Docker-Container/eine einzelne SQLite-DB über alle parallel laufenden
@@ -77,7 +77,7 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await miniplanForm.getByLabel('Jahr').fill('2031')
   await miniplanForm.getByRole('button', { name: 'Miniplan anlegen' }).click()
   await expect(page).toHaveURL(/\/miniplaene\/\d+$/)
-  await expect(page.getByRole('heading', { name: 'Miniplan 7/2031' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Miniplan Juli 2031' })).toBeVisible()
 
   const gottesdienstForm = page.getByRole('form', { name: 'Gottesdienst anlegen' })
   await waehleDatum(page, gottesdienstForm, 6)
@@ -86,8 +86,8 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await gottesdienstForm.getByRole('button', { name: 'Gottesdienst anlegen' }).click()
   await expect(page.getByLabel('Name', { exact: true }).nth(0)).toHaveValue('Sonntagsmesse')
 
-  await page.getByLabel('Dienst-Typ hinzufügen').selectOption({ label: 'MP-Weihrauch' })
-  await page.getByRole('button', { name: 'Hinzufügen', exact: true }).click()
+  // Dienst-Typen werden per One-Click-Button hinzugefügt (statt Select + "Hinzufügen").
+  await page.getByRole('button', { name: 'MP-Weihrauch', exact: true }).click()
   await expect(page.getByText('MP-Weihrauch', { exact: true }).first()).toBeVisible({
     timeout: 15_000,
   })
@@ -95,7 +95,7 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   const anzahlFelder = page.locator('input[type="number"]')
   await anzahlFelder.first().fill('3')
 
-  await page.getByRole('button', { name: 'Freitext-Dienst hinzufügen' }).click()
+  await page.getByRole('button', { name: 'Freitext-Dienst' }).click()
   await page.getByLabel('Name des Dienstes').fill('Alle Ministranten')
 
   // Details-Bereich (Filtertags/Gruppen-Mindestanzahl/manuelle Zuweisung/Plan-Anzeige) ist

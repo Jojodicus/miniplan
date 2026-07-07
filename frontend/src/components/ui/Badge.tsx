@@ -4,7 +4,7 @@ type Tone = 'pine' | 'gold' | 'wine' | 'neutral'
 
 const tones: Record<Tone, string> = {
   pine: 'bg-pine-tint text-pine-dark',
-  gold: 'bg-gold-tint text-[#7a5a20]',
+  gold: 'bg-gold-tint text-gold-dark',
   wine: 'bg-wine-tint text-wine',
   neutral: 'bg-paper-dim text-ink-soft',
 }

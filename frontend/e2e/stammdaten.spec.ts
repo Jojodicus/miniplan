@@ -8,7 +8,7 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page).toHaveURL('http://localhost:8100/')
 }
 
-// Der Pfarrei-Name auf dem Dashboard ist selbst kein Link (nur die "Stammdaten"/"Miniplaene"-
+// Der Pfarrei-Name auf dem Dashboard ist selbst kein Link (nur die "Stammdaten"/"Minipläne"-
 // Kacheln darunter sind Links) - daher hier gezielt die Karte der Pfarrei anhand des Namens
 // finden und darin auf "Stammdaten" navigieren.
 async function zuStammdaten(page: import('@playwright/test').Page, pfarreiName: string) {
@@ -32,7 +32,7 @@ test('Nutzer kann Gruppe, Mini und Dienst-Typ mit Gruppen-Mindestanzahl anlegen'
   // Normal/Obermini, DienstTypen Sonntagsmesse/Weihrauch/Wochentagsmesse, Filtertags
   // grundschueler/schueler/arbeiter) - daher hier bewusst andere Namen verwenden.
   await page.getByRole('button', { name: 'Gruppen' }).click()
-  await page.getByLabel('Neue Gruppe').fill('Sondergruppe')
+  await page.getByLabel('Name').fill('Sondergruppe')
   await page.getByRole('button', { name: 'Anlegen' }).click()
   // Großzügigere Timeouts für Assertions direkt nach einem Backend-Roundtrip: die e2e-Umgebung
   // teilt einen einzelnen Docker-Container/eine einzelne SQLite-DB über alle parallel laufenden
@@ -112,7 +112,7 @@ test('Löschen einer Gruppe erfordert Inline-Bestätigung statt eines Browser-Di
   await expect(page).toHaveURL(/\/stammdaten$/)
 
   await page.getByRole('button', { name: 'Gruppen' }).click()
-  await page.getByLabel('Neue Gruppe').fill('LöschGruppe')
+  await page.getByLabel('Name').fill('LöschGruppe')
   await page.getByRole('button', { name: 'Anlegen' }).click()
   // Die Gruppen-Liste dieser Pfarrei ist über alle parallel laufenden e2e-Tests hinweg geteilt -
   // ein globales `.last()` auf den "Löschen"-Button wäre eine Race-Condition, sobald ein anderer
