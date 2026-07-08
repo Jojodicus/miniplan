@@ -49,6 +49,39 @@ export function miniplanLoeschen(pfarreiId: number, miniplanId: number): Promise
   return api.delete<void>(`/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}`)
 }
 
+export function miniplanStatusAendern(
+  pfarreiId: number,
+  miniplanId: number,
+  status: MiniplanStatus,
+): Promise<Miniplan> {
+  return api.post<Miniplan>(`/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}/status`, {
+    status,
+  })
+}
+
+export async function miniplanPdfHerunterladen(
+  pfarreiId: number,
+  miniplan: Miniplan,
+): Promise<void> {
+  const response = await fetch(
+    `/api/pfarreien/${pfarreiId}/miniplaene/${miniplan.id}/pdf`,
+    { credentials: 'same-origin' },
+  )
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(
+      typeof body?.detail === 'string' ? body.detail : 'PDF konnte nicht heruntergeladen werden',
+    )
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `miniplan-${miniplan.jahr}-${String(miniplan.monat).padStart(2, '0')}.pdf`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 export interface VorschauGruppenAnforderung {
   gruppe_name: string
   mindest_anzahl: number

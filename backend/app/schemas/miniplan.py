@@ -14,6 +14,10 @@ class MiniplanUpdate(BaseModel):
     ankuendigungen: str | None = None
 
 
+class MiniplanStatusUpdate(BaseModel):
+    status: MiniplanStatus
+
+
 class MiniplanOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

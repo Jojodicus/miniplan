@@ -129,3 +129,88 @@ def test_miniplaene_liste_unbekannte_pfarrei(client: TestClient, admin_user: Nut
     headers = auth_headers(client, "admin@example.com", "geheim123")
     response = client.get("/api/pfarreien/999/miniplaene", headers=headers)
     assert response.status_code == 404
+
+
+def test_miniplan_abschliessen_und_wieder_oeffnen(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, db_session
+) -> None:
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=1, jahr=2027)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/status",
+        json={"status": "abgeschlossen"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "abgeschlossen"
+
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/status",
+        json={"status": "in_bearbeitung"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "in_bearbeitung"
+
+
+def test_miniplan_status_aendern_erfordert_verantwortlich(
+    client: TestClient, betrachter_user: Nutzer, pfarrei: Pfarrei, db_session
+) -> None:
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=2, jahr=2027)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+
+    headers = auth_headers(client, "betrachter@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/status",
+        json={"status": "abgeschlossen"},
+        headers=headers,
+    )
+    assert response.status_code == 403
+
+
+def test_miniplan_pdf_download_erfordert_abgeschlossen(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, db_session
+) -> None:
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=3, jahr=2027)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.get(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/pdf", headers=headers
+    )
+    assert response.status_code == 409
+
+
+def test_miniplan_pdf_download_liefert_pdf_fuer_betrachter(
+    client: TestClient, verantwortlicher_user: Nutzer, betrachter_user: Nutzer, pfarrei: Pfarrei, db_session
+) -> None:
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=4, jahr=2027, status="abgeschlossen")
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+
+    headers = auth_headers(client, "betrachter@example.com", "geheim123")
+    response = client.get(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/pdf", headers=headers
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content[:4] == b"%PDF"
+
+
+def test_miniplan_pdf_download_unbekannter_plan(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei
+) -> None:
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.get(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/999/pdf", headers=headers
+    )
+    assert response.status_code == 404

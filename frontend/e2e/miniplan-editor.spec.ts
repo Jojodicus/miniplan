@@ -151,3 +151,32 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await expect(page.getByLabel('Veranstaltungen')).toHaveValue('Pfarrfest am 20.07.')
   await expect(page.getByLabel('Ankündigungen')).toHaveValue('Bitte pünktlich erscheinen')
 })
+
+test('Nutzer kann Miniplan abschließen und das finale PDF herunterladen', async ({ page }) => {
+  await login(page)
+
+  await zuStammdaten(page, 'St. Beispiel')
+  await page.getByRole('link', { name: 'Minipläne' }).click()
+  await expect(page).toHaveURL(/\/miniplaene$/)
+
+  const miniplanForm = page.getByRole('form', { name: 'Miniplan anlegen' })
+  await miniplanForm.getByLabel('Monat').selectOption('8')
+  await miniplanForm.getByLabel('Jahr').fill('2032')
+  await miniplanForm.getByRole('button', { name: 'Miniplan anlegen' }).click()
+  await expect(page).toHaveURL(/\/miniplaene\/\d+$/)
+  await expect(page.getByRole('heading', { name: 'Miniplan August 2032' })).toBeVisible()
+
+  await expect(page.getByText('In Bearbeitung')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'PDF herunterladen' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Plan abschließen' }).click()
+  await expect(page.getByText('Abgeschlossen', { exact: true })).toBeVisible({ timeout: 10_000 })
+
+  const downloadEvent = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'PDF herunterladen' }).click()
+  const download = await downloadEvent
+  expect(download.suggestedFilename()).toBe('miniplan-2032-08.pdf')
+
+  await page.getByRole('button', { name: 'Wieder öffnen' }).click()
+  await expect(page.getByText('In Bearbeitung')).toBeVisible({ timeout: 10_000 })
+})

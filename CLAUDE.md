@@ -82,10 +82,11 @@ Rollen-Autorisierung: `app/deps.py` stellt `require_admin` (nur globale Admins),
 `RequirePfarreiRolle(*rollen)` (Admins oder Nutzer mit passender Rolle in der per Pfad-Parameter
 `pfarrei_id` übergebenen Pfarrei) sowie `get_pfarrei` (lädt die Pfarrei zum Pfad-Parameter
 `pfarrei_id` oder liefert 404) als FastAPI-Dependencies bereit. Die Stammdaten-Endpunkte
-(`/api/pfarreien/{pfarrei_id}/gruppen`, `/minis`, `/dienst-typen`) sowie die Miniplan-Endpunkte
-(`/miniplaene`, `/miniplaene/{id}/gottesdienste`) erfordern `pfarrei_verantwortlicher` (oder
-globalen Admin) der jeweiligen Pfarrei. `GET /api/pfarreien/mine` liefert die Pfarreien des
-eingeloggten Nutzers (Admins: alle) für die Übersichtsseite.
+(`/api/pfarreien/{pfarrei_id}/gruppen`, `/minis`, `/dienst-typen`) sowie die meisten
+Miniplan-Endpunkte (`/miniplaene`, `/miniplaene/{id}/gottesdienste`, `/miniplaene/{id}/status`)
+erfordern `pfarrei_verantwortlicher` (oder globalen Admin) der jeweiligen Pfarrei; der PDF-Download
+(`GET /miniplaene/{id}/pdf`) ist zusätzlich für `betrachter` freigegeben. `GET /api/pfarreien/mine`
+liefert die Pfarreien des eingeloggten Nutzers (Admins: alle) für die Übersichtsseite.
 
 Gottesdienste werden mit ihrem vollständigen Dienstbedarf als verschachtelte Liste angelegt/
 aktualisiert (`PUT /gottesdienste/{id}` ersetzt die komplette Dienstbedarf-Liste, analog zum
@@ -113,6 +114,15 @@ des Editor-Zustands (ungespeicherte Drafts eingeschlossen) debounced (500ms) `mi
 aufruft und das resultierende PDF anzeigt; Compile-Fehler werden als Liste in einem `Alert`
 dargestellt. Der Editor speichert Änderungen automatisch (debounced, 800ms); der aggregierte
 Speicherstatus wird neben dem Seitentitel angezeigt.
+
+Für den Status-Übergang `in_bearbeitung` → `abgeschlossen` (und zurück) gibt es
+`POST /api/pfarreien/{pfarrei_id}/miniplaene/{miniplan_id}/status`. Das finale PDF wird über
+`GET /api/pfarreien/{pfarrei_id}/miniplaene/{miniplan_id}/pdf` erzeugt – dieser Endpunkt liest
+(anders als `/vorschau`) den gespeicherten Planstand aus der DB, wandelt ihn über
+`schemas/miniplan_vorschau.miniplan_zu_vorschau` in dieselbe `MiniplanVorschauIn`-Struktur um und
+rendert damit über `render_miniplan_pdf`; er liefert nur bei Status `abgeschlossen` ein PDF
+(sonst `409`). `MiniplanEditorPage` zeigt dazu einen Abschließen-/Wieder-öffnen-Button sowie,
+sobald abgeschlossen, einen Download-Button.
 
 ## Befehle
 

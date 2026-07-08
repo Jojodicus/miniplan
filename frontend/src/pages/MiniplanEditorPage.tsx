@@ -1,4 +1,4 @@
-import { ChevronDown, Copy, Plus, Search, Trash2 } from 'lucide-react'
+import { ChevronDown, Copy, Download, Plus, Search, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
@@ -19,6 +19,8 @@ import {
   gottesdienstOutZuVorschau,
   miniplanAktualisieren,
   miniplanDetail,
+  miniplanPdfHerunterladen,
+  miniplanStatusAendern,
   miniplanVorschau,
   type Miniplan,
   type MiniplanVorschauEingabe,
@@ -1005,10 +1007,38 @@ export function MiniplanEditorPage() {
   } | null>(null)
   const [kartenStatus, setKartenStatus] = useState<Record<number, SpeicherStatus>>({})
   const [freitextStatus, setFreitextStatus] = useState<SpeicherStatus>('gespeichert')
+  const [statusWirdGeaendert, setStatusWirdGeaendert] = useState(false)
+  const [downloadFehler, setDownloadFehler] = useState<string | null>(null)
+  const { showToast } = useToast()
 
   const reload = useCallback(() => {
     miniplanDetail(id, planId).then(setMiniplan)
   }, [id, planId])
+
+  async function handleStatusWechsel(neuerStatus: 'abgeschlossen' | 'in_bearbeitung') {
+    setStatusWirdGeaendert(true)
+    try {
+      const aktualisiert = await miniplanStatusAendern(id, planId, neuerStatus)
+      setMiniplan(aktualisiert)
+      showToast(
+        neuerStatus === 'abgeschlossen' ? 'Miniplan abgeschlossen' : 'Miniplan wieder geöffnet',
+      )
+    } catch (err) {
+      showToast(fehlerText(err, 'Fehler beim Ändern des Status'), 'error')
+    } finally {
+      setStatusWirdGeaendert(false)
+    }
+  }
+
+  async function handleDownload() {
+    if (!miniplan) return
+    setDownloadFehler(null)
+    try {
+      await miniplanPdfHerunterladen(id, miniplan)
+    } catch (err) {
+      setDownloadFehler(err instanceof Error ? err.message : 'PDF konnte nicht heruntergeladen werden')
+    }
+  }
 
   useEffect(() => {
     reload()
@@ -1086,12 +1116,49 @@ export function MiniplanEditorPage() {
 
   return (
     <AppShell wide pfarreiId={id}>
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h1 className="font-display text-3xl font-semibold text-ink">
-          Miniplan {monatsName(miniplan.monat)} {miniplan.jahr}
-        </h1>
-        <StatusAnzeige status={speicherStatus} className="text-sm" />
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <h1 className="font-display text-3xl font-semibold text-ink">
+            Miniplan {monatsName(miniplan.monat)} {miniplan.jahr}
+          </h1>
+          <Badge tone={miniplan.status === 'abgeschlossen' ? 'pine' : 'neutral'}>
+            {miniplan.status === 'abgeschlossen' ? 'Abgeschlossen' : 'In Bearbeitung'}
+          </Badge>
+          <StatusAnzeige status={speicherStatus} className="text-sm" />
+        </div>
+        <div className="flex items-center gap-2">
+          {miniplan.status === 'abgeschlossen' ? (
+            <>
+              <Button variant="secondary" size="sm" onClick={handleDownload}>
+                <Download className="h-4 w-4" />
+                PDF herunterladen
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={statusWirdGeaendert}
+                onClick={() => handleStatusWechsel('in_bearbeitung')}
+              >
+                Wieder öffnen
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={statusWirdGeaendert}
+              onClick={() => handleStatusWechsel('abgeschlossen')}
+            >
+              Plan abschließen
+            </Button>
+          )}
+        </div>
       </div>
+      {downloadFehler && (
+        <div className="mt-4">
+          <Alert>{downloadFehler}</Alert>
+        </div>
+      )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] lg:items-start">
         <div className="flex min-w-0 flex-col gap-6">

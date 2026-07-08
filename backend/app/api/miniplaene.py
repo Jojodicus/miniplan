@@ -5,15 +5,16 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
 from app.models.filtertag import Filtertag
-from app.models.miniplan import Miniplan
+from app.models.miniplan import Miniplan, MiniplanStatus
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
-from app.schemas.miniplan import MiniplanCreate, MiniplanOut, MiniplanUpdate
-from app.schemas.miniplan_vorschau import MiniplanVorschauIn
+from app.schemas.miniplan import MiniplanCreate, MiniplanOut, MiniplanStatusUpdate, MiniplanUpdate
+from app.schemas.miniplan_vorschau import MiniplanVorschauIn, miniplan_zu_vorschau
 from app.services.typst_render import TypstCompileError, render_miniplan_pdf
 
 router = APIRouter(prefix="/api/pfarreien/{pfarrei_id}/miniplaene", tags=["miniplaene"])
 require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER)
+require_lesend = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER, PfarreiRolle.BETRACHTER)
 
 
 def _get_miniplan_or_404(pfarrei_id: int, miniplan_id: int, db: Session) -> Miniplan:
@@ -92,6 +93,57 @@ def bearbeiten(
     db.commit()
     db.refresh(miniplan)
     return miniplan
+
+
+@router.post("/{miniplan_id}/status", response_model=MiniplanOut)
+def status_aendern(
+    pfarrei_id: int,
+    miniplan_id: int,
+    daten: MiniplanStatusUpdate,
+    db: Session = Depends(get_db),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Miniplan:
+    miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    miniplan.status = daten.status
+    db.commit()
+    db.refresh(miniplan)
+    return miniplan
+
+
+@router.get("/{miniplan_id}/pdf")
+def pdf_herunterladen(
+    pfarrei_id: int,
+    miniplan_id: int,
+    db: Session = Depends(get_db),
+    pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_lesend),
+) -> Response:
+    miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    if miniplan.status != MiniplanStatus.ABGESCHLOSSEN:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Nur abgeschlossene Minipläne können heruntergeladen werden",
+        )
+    filtertag_labels = {
+        f.key: f.label
+        for f in db.query(Filtertag).filter(Filtertag.pfarrei_id == pfarrei_id).all()
+    }
+    try:
+        pdf_bytes = render_miniplan_pdf(
+            pfarrei.name, miniplan_zu_vorschau(miniplan), filtertag_labels
+        )
+    except TypstCompileError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"fehler": exc.errors},
+        ) from exc
+    dateiname = f"miniplan-{miniplan.jahr}-{miniplan.monat:02d}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{dateiname}"'},
+    )
 
 
 @router.post("/{miniplan_id}/vorschau")
