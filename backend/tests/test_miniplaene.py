@@ -1,5 +1,11 @@
+from datetime import date, time
+
 from fastapi.testclient import TestClient
 
+from app.models.dienstbedarf import Dienstbedarf
+from app.models.gottesdienst import Gottesdienst
+from app.models.gruppe import Gruppe
+from app.models.mini import Mini
 from app.models.miniplan import Miniplan
 from app.models.nutzer import Nutzer
 from app.models.pfarrei import Pfarrei
@@ -214,3 +220,47 @@ def test_miniplan_pdf_download_unbekannter_plan(
         f"/api/pfarreien/{pfarrei.id}/miniplaene/999/pdf", headers=headers
     )
     assert response.status_code == 404
+
+
+def test_miniplan_fuellen_besetzt_freie_stellen(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe, db_session
+) -> None:
+    minis = [
+        Mini(pfarrei_id=pfarrei.id, gruppe_id=gruppe.id, name=f"Mini {i}") for i in range(2)
+    ]
+    db_session.add_all(minis)
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=5, jahr=2027)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+    bedarf = Dienstbedarf(name="Kreuz", anzahl=2)
+    gottesdienst = Gottesdienst(
+        miniplan_id=miniplan.id, datum=date(2027, 5, 2), uhrzeit=time(10, 0), dienstbedarf=[bedarf]
+    )
+    db_session.add(gottesdienst)
+    db_session.commit()
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/fuellen", headers=headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    zugewiesene_minis = body["gottesdienste"][0]["dienstbedarf"][0]["zugewiesene_minis"]
+    assert len(zugewiesene_minis) == 2
+    assert {m["name"] for m in zugewiesene_minis} == {"Mini 0", "Mini 1"}
+
+
+def test_miniplan_fuellen_erfordert_verantwortlich(
+    client: TestClient, betrachter_user: Nutzer, pfarrei: Pfarrei, db_session
+) -> None:
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=6, jahr=2027)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+
+    headers = auth_headers(client, "betrachter@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/fuellen", headers=headers
+    )
+    assert response.status_code == 403

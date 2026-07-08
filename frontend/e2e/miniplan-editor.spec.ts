@@ -180,3 +180,72 @@ test('Nutzer kann Miniplan abschließen und das finale PDF herunterladen', async
   await page.getByRole('button', { name: 'Wieder öffnen' }).click()
   await expect(page.getByText('In Bearbeitung')).toBeVisible({ timeout: 10_000 })
 })
+
+test('Füllen-Button teilt Minis automatisch einem Dienstbedarf zu', async ({ page }) => {
+  await login(page)
+
+  await zuStammdaten(page, 'St. Beispiel')
+  await expect(page).toHaveURL(/\/stammdaten$/)
+
+  await page.getByRole('tab', { name: 'Gruppen' }).click()
+  await page.getByLabel('Name').fill('FT-Gruppe')
+  await page.getByRole('button', { name: 'Anlegen' }).click()
+  await expect(page.getByText('FT-Gruppe', { exact: true })).toBeVisible({ timeout: 15_000 })
+
+  await page.getByRole('tab', { name: 'Minis' }).click()
+  const miniForm = page.locator('form').filter({ hasText: 'Mini anlegen' })
+  for (const name of ['FT-Mini-A', 'FT-Mini-B']) {
+    await miniForm.getByLabel('Name').fill(name)
+    await miniForm.getByLabel('FT-Gruppe', { exact: true }).click({ force: true })
+    await miniForm.getByRole('button', { name: 'Mini anlegen' }).click()
+    await expect(page.getByText(name, { exact: true })).toBeVisible({ timeout: 15_000 })
+  }
+
+  await page.getByRole('link', { name: 'Minipläne' }).click()
+  await expect(page).toHaveURL(/\/miniplaene$/)
+
+  const miniplanForm = page.getByRole('form', { name: 'Miniplan anlegen' })
+  await miniplanForm.getByLabel('Monat').selectOption('9')
+  await miniplanForm.getByLabel('Jahr').fill('2033')
+  await miniplanForm.getByRole('button', { name: 'Miniplan anlegen' }).click()
+  await expect(page).toHaveURL(/\/miniplaene\/\d+$/)
+  await expect(page.getByRole('heading', { name: 'Miniplan September 2033' })).toBeVisible()
+
+  const gottesdienstForm = page.getByRole('form', { name: 'Gottesdienst anlegen' })
+  await waehleDatum(page, gottesdienstForm, 4)
+  await gottesdienstForm.getByLabel('Uhrzeit').fill('10:00')
+  await gottesdienstForm.getByLabel('Name').fill('Sonntagsmesse')
+  await gottesdienstForm.getByRole('button', { name: 'Gottesdienst anlegen' }).click()
+  await expect(page.getByLabel('Name', { exact: true }).nth(0)).toHaveValue('Sonntagsmesse')
+
+  await page.getByRole('button', { name: 'Freitext-Dienst' }).click()
+  await page.getByLabel('Name des Dienstes').fill('Sammeldienst')
+  await page.locator('input[type="number"]').first().fill('2')
+
+  // Die geteilte Pfarrei "St. Beispiel" enthält auch Minis anderer, parallel laufender Tests -
+  // eine Gruppen-Mindestanzahl "mind. 2 aus FT-Gruppe" macht die Zuteilung deterministisch
+  // testbar, da FT-Gruppe nur die beiden hier angelegten Minis enthält.
+  await page.getByRole('button', { name: 'Details' }).click()
+  await page.getByRole('button', { name: 'Zeile hinzufügen' }).click()
+  await page.locator('select').selectOption({ label: 'FT-Gruppe' })
+  await page.locator('input[type="number"]').nth(1).fill('2')
+
+  const autosaveAbgeschlossen = page.waitForResponse(
+    (resp) => resp.request().method() === 'PUT' && /\/gottesdienste\/\d+$/.test(resp.url()),
+  )
+  await autosaveAbgeschlossen
+
+  const fuellenAbgeschlossen = page.waitForResponse(
+    (resp) => resp.request().method() === 'POST' && /\/fuellen$/.test(resp.url()),
+  )
+  await page.getByRole('button', { name: 'Füllen' }).click()
+  await fuellenAbgeschlossen
+  await expect(page.getByText('Miniplan automatisch befüllt')).toBeVisible()
+
+  // Die Karte bleibt nach dem Anlegen (und dem Füllen-bedingten Remount, siehe
+  // `zuteilungsRevision` im Editor) automatisch aufgeklappt - nur der "Details"-Bereich
+  // (Filtertags/Gruppen/manuelle Zuweisung) ist eingeklappt und muss geöffnet werden.
+  await page.getByRole('button', { name: 'Details' }).click()
+  await expect(page.getByLabel('FT-Mini-A')).toBeChecked({ timeout: 10_000 })
+  await expect(page.getByLabel('FT-Mini-B')).toBeChecked()
+})

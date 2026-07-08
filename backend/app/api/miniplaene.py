@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
+from app.models.dienstbedarf import DienstbedarfZuweisung
 from app.models.filtertag import Filtertag
 from app.models.miniplan import Miniplan, MiniplanStatus
 from app.models.nutzer import PfarreiRolle
@@ -11,6 +12,7 @@ from app.models.pfarrei import Pfarrei
 from app.schemas.miniplan import MiniplanCreate, MiniplanOut, MiniplanStatusUpdate, MiniplanUpdate
 from app.schemas.miniplan_vorschau import MiniplanVorschauIn, miniplan_zu_vorschau
 from app.services.typst_render import TypstCompileError, render_miniplan_pdf
+from app.services.zuteilung import zuteilung_vorschlagen
 
 router = APIRouter(prefix="/api/pfarreien/{pfarrei_id}/miniplaene", tags=["miniplaene"])
 require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER)
@@ -106,6 +108,28 @@ def status_aendern(
 ) -> Miniplan:
     miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
     miniplan.status = daten.status
+    db.commit()
+    db.refresh(miniplan)
+    return miniplan
+
+
+@router.post("/{miniplan_id}/fuellen", response_model=MiniplanOut)
+def fuellen(
+    pfarrei_id: int,
+    miniplan_id: int,
+    db: Session = Depends(get_db),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Miniplan:
+    miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    vorschlag = zuteilung_vorschlagen(db, pfarrei_id, miniplan)
+    for gottesdienst in miniplan.gottesdienste:
+        for bedarf in gottesdienst.dienstbedarf:
+            fixierte = [z for z in bedarf.zuweisungen if z.manuell_fixiert]
+            bedarf.zuweisungen = fixierte + [
+                DienstbedarfZuweisung(mini_id=mini_id, manuell_fixiert=False)
+                for mini_id in vorschlag.get(bedarf.id, [])
+            ]
     db.commit()
     db.refresh(miniplan)
     return miniplan

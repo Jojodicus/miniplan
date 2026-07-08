@@ -49,6 +49,10 @@ export function miniplanLoeschen(pfarreiId: number, miniplanId: number): Promise
   return api.delete<void>(`/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}`)
 }
 
+export function miniplanFuellen(pfarreiId: number, miniplanId: number): Promise<Miniplan> {
+  return api.post<Miniplan>(`/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}/fuellen`)
+}
+
 export function miniplanStatusAendern(
   pfarreiId: number,
   miniplanId: number,

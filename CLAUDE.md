@@ -31,7 +31,7 @@ backend/
     rate_limit.py In-Memory-Rate-Limit pro Client-IP für den Login-Endpoint (gilt nur pro
                   Prozess, siehe Deployment-Hinweis dort)
     services/     Business-Logik jenseits reiner CRUD-Operationen (Feiertags-/Ferien-Sync,
-                  Verfügbarkeitsprüfung, Typst-PDF-Rendering)
+                  Verfügbarkeitsprüfung, Typst-PDF-Rendering, automatische Zuteilung)
     cli.py        Kommandozeilen-Nutzer-/Pfarrei-Erstellung
     main.py       FastAPI-App, Security-Header-Middleware, `/api/health`, Router-Registrierung,
                   Static-File-Ausliefertung inkl. SPA-Fallback (client-seitige Routen wie /login
@@ -62,10 +62,16 @@ docker-compose.e2e.yml  isolierte Variante für Playwright-E2E-Tests (eigener Po
   (`pfarrei_verantwortlicher`, `betrachter`); ein Nutzer kann in mehreren Pfarreien unterschiedliche
   Rollen haben. Admins sind global und benötigen keinen Eintrag hier.
 - **Gruppe**: pro Pfarrei, Name (z.B. "neu", "normal", "Obermini")
-- **Mini**: gehört zu einer Pfarrei + einer Gruppe, Name, Basis-Filtertags (`Filtertag`-Enum:
-  `grundschueler`, `schueler`, `arbeiter`, als JSON-Liste gespeichert)
-- **DienstTyp**: pro Pfarrei, Name, Standard-Anzahl, erforderliche Filtertags (JSON-Liste),
-  erlaubte Gruppen (m:n-Beziehung zu `Gruppe`; leer = alle Gruppen erlaubt)
+- **Filtertag**: pro Pfarrei frei definierbarer Verfügbarkeits-Status für Minis (Key, Label,
+  `ist_schueler_artig`-Flag für Ferien-/Feiertags-Regeln); Standardsatz beim Anlegen einer Pfarrei:
+  `grundschueler`, `schueler`, `arbeiter` (siehe `services/stammdaten_seed.py`)
+- **FiltertagBlocker**: pro Pfarrei + Filtertag ein wiederkehrendes Zeitfenster (Wochentag,
+  Start-/Endzeit), in dem Minis mit diesem Status nicht verfügbar sind (z.B. Schulzeit); Ferien und
+  Feiertage (`Ferienzeitraum`, `FeiertagEinstellung`) setzen diese Sperre für den jeweiligen Tag
+  außer Kraft (siehe `services/verfuegbarkeit.py`)
+- **Mini**: gehört zu einer Pfarrei + einer Gruppe, Name, Filtertags (JSON-Liste von
+  `Filtertag.key`-Werten dieser Pfarrei)
+- **DienstTyp**: pro Pfarrei, Name, Standard-Anzahl, Gruppen-Mindestanzahl-Anforderungen
 - **Miniplan**: pro Pfarrei, Monat/Jahr (eindeutig je Pfarrei), Status (`in_bearbeitung` /
   `abgeschlossen`), Freitextfelder `veranstaltungen`/`ankuendigungen`; enthält eine Liste von
   `Gottesdienst`en
@@ -73,10 +79,11 @@ docker-compose.e2e.yml  isolierte Variante für Playwright-E2E-Tests (eigener Po
   `Dienstbedarf`-Einträgen
 - **Dienstbedarf**: gehört zu einem Gottesdienst, entweder von einem `DienstTyp` abgeleitet
   (`dienst_typ_id` gesetzt) oder ein freier Text-Dienst (`name` gesetzt) – bei Ableitung werden
-  Anzahl, erforderliche Filtertags und Gruppen-Anforderungen als eigene, unabhängig editierbare
-  Kopie übernommen (keine Live-Verknüpfung zum `DienstTyp`); zusätzlich eine Liste manuell
-  zugewiesener Minis (`manuell_fixiert`, damit ein späterer Zuteilungsalgorithmus diese Zuweisungen
-  nicht überschreibt)
+  Anzahl und Gruppen-Anforderungen als eigene, unabhängig editierbare Kopie übernommen (keine
+  Live-Verknüpfung zum `DienstTyp`); zusätzlich erforderliche Filtertags (JSON-Liste von
+  `Filtertag.key`-Werten – ein zugewiesener Mini muss mindestens einen davon besitzen, leer =
+  keine Einschränkung) und eine Liste zugewiesener Minis (`manuell_fixiert`: von Hand zugewiesen,
+  bleibt beim automatischen Füllen unangetastet; sonst vom Zuteilungsalgorithmus vergeben)
 
 Rollen-Autorisierung: `app/deps.py` stellt `require_admin` (nur globale Admins),
 `RequirePfarreiRolle(*rollen)` (Admins oder Nutzer mit passender Rolle in der per Pfad-Parameter
@@ -123,6 +130,34 @@ Für den Status-Übergang `in_bearbeitung` → `abgeschlossen` (und zurück) gib
 rendert damit über `render_miniplan_pdf`; er liefert nur bei Status `abgeschlossen` ein PDF
 (sonst `409`). `MiniplanEditorPage` zeigt dazu einen Abschließen-/Wieder-öffnen-Button sowie,
 sobald abgeschlossen, einen Download-Button.
+
+## Automatische Zuteilung ("Füllen")
+
+`app/services/zuteilung.py` (`zuteilung_vorschlagen(db, pfarrei_id, miniplan)`) schlägt für jede
+noch nicht besetzte Stelle eines Dienstbedarfs (aus dessen `anzahl` abgeleitet) einen Mini vor.
+Manuell fixierte Zuweisungen (`manuell_fixiert=True`) werden nie verändert, fließen aber in
+Fairness- und Belegungs-Berechnung ein. Harte Constraints werden nie verletzt – bleibt dafür kein
+passender Mini übrig, bleibt die Stelle unbesetzt:
+
+- Gruppen-Mindestanzahl eines Dienstbedarfs (die entsprechende Anzahl an Stellen wird vorab auf
+  die jeweilige Gruppe festgelegt)
+- erforderliche Filtertags des Dienstbedarfs (Mini muss mindestens einen davon besitzen)
+- Verfügbarkeit laut `services/verfuegbarkeit.ist_blockiert` für jeden Filtertag des Minis zu
+  Datum/Uhrzeit des Gottesdienstes
+- kein Mini doppelt innerhalb desselben Gottesdienstes
+
+Darüber hinaus optimiert eine simulierte Abkühlung (Swap- und Ersatz-Züge zwischen freien Stellen,
+Badness-Funktion aus Varianz der Diensthäufigkeit + Strafe für zu dicht aufeinanderfolgende
+Termine desselben Minis) die Zuteilung; der jeweils beste gefundene Zustand wird gemerkt und am
+Ende wiederhergestellt (die Abkühlung selbst akzeptiert zwischenzeitlich auch verschlechternde
+Züge). `POST /api/pfarreien/{pfarrei_id}/miniplaene/{miniplan_id}/fuellen` wendet den Vorschlag an:
+alle nicht fixierten Zuweisungen werden ersetzt (erneutes Füllen ist also ein vollständiger
+Neu-Lauf über alle freien Stellen, nicht nur über seit dem letzten Lauf leere).
+
+Frontend: Der "Füllen"-Button in `MiniplanEditorPage` löst den Endpoint aus und lädt den Miniplan
+neu. Da jede `GottesdienstKarte` ihren Dienstbedarf nur beim ersten Rendern aus den Props in
+eigenen State übernimmt, erzwingt ein Revisions-Zähler im `key`-Prop der Karten nach dem Füllen
+einen Remount, damit die neuen Zuweisungen sichtbar werden.
 
 ## Befehle
 

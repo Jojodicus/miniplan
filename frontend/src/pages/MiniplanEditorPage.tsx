@@ -1,4 +1,4 @@
-import { ChevronDown, Copy, Download, Plus, Search, Trash2 } from 'lucide-react'
+import { ChevronDown, Copy, Download, Plus, Search, Trash2, Wand2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
@@ -19,6 +19,7 @@ import {
   gottesdienstOutZuVorschau,
   miniplanAktualisieren,
   miniplanDetail,
+  miniplanFuellen,
   miniplanPdfHerunterladen,
   miniplanStatusAendern,
   miniplanVorschau,
@@ -1009,11 +1010,31 @@ export function MiniplanEditorPage() {
   const [freitextStatus, setFreitextStatus] = useState<SpeicherStatus>('gespeichert')
   const [statusWirdGeaendert, setStatusWirdGeaendert] = useState(false)
   const [downloadFehler, setDownloadFehler] = useState<string | null>(null)
+  const [fuelltGerade, setFuelltGerade] = useState(false)
+  // Jede Gottesdienst-Karte hält ihren Dienstbedarf in eigenem State (nur beim ersten Rendern aus
+  // den Props übernommen) - nach "Füllen" ändert sich der Bedarf serverseitig, ohne dass die
+  // Karten das von selbst bemerken. Ein Revisions-Zähler im Karten-`key` erzwingt daher einen
+  // Remount mit den frisch geladenen Zuweisungen.
+  const [zuteilungsRevision, setZuteilungsRevision] = useState(0)
   const { showToast } = useToast()
 
   const reload = useCallback(() => {
     miniplanDetail(id, planId).then(setMiniplan)
   }, [id, planId])
+
+  async function handleFuellen() {
+    setFuelltGerade(true)
+    try {
+      const aktualisiert = await miniplanFuellen(id, planId)
+      setMiniplan(aktualisiert)
+      setZuteilungsRevision((revision) => revision + 1)
+      showToast('Miniplan automatisch befüllt')
+    } catch (err) {
+      showToast(fehlerText(err, 'Fehler beim automatischen Befüllen'), 'error')
+    } finally {
+      setFuelltGerade(false)
+    }
+  }
 
   async function handleStatusWechsel(neuerStatus: 'abgeschlossen' | 'in_bearbeitung') {
     setStatusWirdGeaendert(true)
@@ -1127,6 +1148,15 @@ export function MiniplanEditorPage() {
           <StatusAnzeige status={speicherStatus} className="text-sm" />
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={fuelltGerade || miniplan.gottesdienste.length === 0}
+            onClick={handleFuellen}
+          >
+            <Wand2 className="h-4 w-4" />
+            {fuelltGerade ? 'Befüllt…' : 'Füllen'}
+          </Button>
           {miniplan.status === 'abgeschlossen' ? (
             <>
               <Button variant="secondary" size="sm" onClick={handleDownload}>
@@ -1164,7 +1194,7 @@ export function MiniplanEditorPage() {
         <div className="flex min-w-0 flex-col gap-6">
           {miniplan.gottesdienste.map((gottesdienst) => (
             <GottesdienstKarte
-              key={gottesdienst.id}
+              key={`${gottesdienst.id}-${zuteilungsRevision}`}
               gottesdienst={gottesdienst}
               pfarreiId={id}
               miniplanId={planId}
