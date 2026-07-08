@@ -39,7 +39,7 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await zuStammdaten(page, 'St. Beispiel')
   await expect(page).toHaveURL(/\/stammdaten$/)
 
-  await page.getByRole('button', { name: 'Gruppen' }).click()
+  await page.getByRole('tab', { name: 'Gruppen' }).click()
   await page.getByLabel('Name').fill('MP-Obermini')
   await page.getByRole('button', { name: 'Anlegen' }).click()
   // Großzügigere Timeouts für Assertions direkt nach einem Backend-Roundtrip: die e2e-Umgebung
@@ -47,7 +47,7 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   // Playwright-Worker hinweg, wodurch Anfragen unter Last spürbar langsamer werden können.
   await expect(page.getByText('MP-Obermini', { exact: true })).toBeVisible({ timeout: 15_000 })
 
-  await page.getByRole('button', { name: 'Minis' }).click()
+  await page.getByRole('tab', { name: 'Minis' }).click()
   const miniForm = page.locator('form').filter({ hasText: 'Mini anlegen' })
   await miniForm.getByLabel('Name').fill('MP-Mini')
   // Die Gruppen-Liste dieser Pfarrei ist über alle parallel laufenden e2e-Tests hinweg geteilt und
@@ -55,11 +55,11 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   // (fremdbestimmten) Liste, was zu einer Race Condition führen kann, falls diese Default-Gruppe
   // gerade von einem anderen Test gelöscht wird. Daher hier bewusst die selbst angelegte
   // "MP-Obermini" explizit auswählen.
-  await miniForm.getByLabel('Gruppe').selectOption({ label: 'MP-Obermini' })
+  await miniForm.getByLabel('MP-Obermini', { exact: true }).click({ force: true })
   await miniForm.getByRole('button', { name: 'Mini anlegen' }).click()
   await expect(page.getByText('MP-Mini')).toBeVisible({ timeout: 15_000 })
 
-  await page.getByRole('button', { name: 'Dienst-Typen' }).click()
+  await page.getByRole('tab', { name: 'Dienst-Typen' }).click()
   const dienstTypForm = page.locator('form').filter({ hasText: 'Dienst-Typ anlegen' })
   await dienstTypForm.getByLabel('Name').fill('MP-Weihrauch')
   await dienstTypForm.getByLabel('Standard-Anzahl').fill('2')
@@ -69,7 +69,7 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await dienstTypForm.getByRole('button', { name: 'Dienst-Typ anlegen' }).click()
   await expect(page.getByText('mind. 1× MP-Obermini')).toBeVisible({ timeout: 15_000 })
 
-  await page.getByRole('link', { name: 'Zu den Miniplänen' }).click()
+  await page.getByRole('link', { name: 'Minipläne' }).click()
   await expect(page).toHaveURL(/\/miniplaene$/)
 
   const miniplanForm = page.getByRole('form', { name: 'Miniplan anlegen' })

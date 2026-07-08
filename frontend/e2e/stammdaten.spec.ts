@@ -31,7 +31,7 @@ test('Nutzer kann Gruppe, Mini und Dienst-Typ mit Gruppen-Mindestanzahl anlegen'
   // "St. Beispiel" wird per `create-pfarrei` mit Default-Stammdaten geseedet (Gruppen Neu/
   // Normal/Obermini, DienstTypen Sonntagsmesse/Weihrauch/Wochentagsmesse, Filtertags
   // grundschueler/schueler/arbeiter) - daher hier bewusst andere Namen verwenden.
-  await page.getByRole('button', { name: 'Gruppen' }).click()
+  await page.getByRole('tab', { name: 'Gruppen' }).click()
   await page.getByLabel('Name').fill('Sondergruppe')
   await page.getByRole('button', { name: 'Anlegen' }).click()
   // Großzügigere Timeouts für Assertions direkt nach einem Backend-Roundtrip: die e2e-Umgebung
@@ -39,7 +39,7 @@ test('Nutzer kann Gruppe, Mini und Dienst-Typ mit Gruppen-Mindestanzahl anlegen'
   // Playwright-Worker hinweg, wodurch Anfragen unter Last spürbar langsamer werden können.
   await expect(page.getByText('Sondergruppe', { exact: true })).toBeVisible({ timeout: 15_000 })
 
-  await page.getByRole('button', { name: 'Minis' }).click()
+  await page.getByRole('tab', { name: 'Minis' }).click()
   const miniForm = page.locator('form').filter({ hasText: 'Mini anlegen' })
   await miniForm.getByLabel('Name').fill('Max Muster')
   // Die Gruppen-Liste dieser Pfarrei ist über alle parallel laufenden e2e-Tests hinweg geteilt und
@@ -47,12 +47,12 @@ test('Nutzer kann Gruppe, Mini und Dienst-Typ mit Gruppen-Mindestanzahl anlegen'
   // Auswahl standardmäßig einfach die erste Gruppe der (fremdbestimmten) Liste, was zu einer Race
   // Condition führen kann, falls diese Default-Gruppe gerade von einem anderen Test gelöscht wird.
   // Daher hier bewusst die selbst angelegte "Sondergruppe" explizit auswählen.
-  await miniForm.getByLabel('Gruppe').selectOption({ label: 'Sondergruppe' })
+  await miniForm.getByLabel('Sondergruppe', { exact: true }).click({ force: true })
   await miniForm.getByLabel('Schüler', { exact: true }).click({ force: true })
   await miniForm.getByRole('button', { name: 'Mini anlegen' }).click()
   await expect(page.getByText('Max Muster')).toBeVisible({ timeout: 15_000 })
 
-  await page.getByRole('button', { name: 'Dienst-Typen' }).click()
+  await page.getByRole('tab', { name: 'Dienst-Typen' }).click()
   const dienstTypForm = page.locator('form').filter({ hasText: 'Dienst-Typ anlegen' })
   await dienstTypForm.getByLabel('Name').fill('Kreuz tragen')
   await dienstTypForm.getByLabel('Standard-Anzahl').fill('2')
@@ -69,13 +69,19 @@ test('Nutzer kann Verfügbarkeits-Status anlegen und Zeitfenster hinzufügen', a
   await zuStammdaten(page, 'St. Beispiel')
   await expect(page).toHaveURL(/\/stammdaten$/)
 
-  await page.getByRole('button', { name: 'Verfügbarkeit', exact: true }).click()
-  await page.getByRole('button', { name: 'Verfügbarkeits-Status' }).click()
+  await page.getByRole('tab', { name: 'Verfügbarkeit', exact: true }).click()
+  await page.getByRole('tab', { name: 'Verfügbarkeits-Status' }).click()
 
   const anlegenForm = page.locator('form').filter({ hasText: 'Anlegen' }).last()
   await anlegenForm.getByLabel('Bezeichnung').fill('Azubi')
   await anlegenForm.getByRole('button', { name: 'Anlegen' }).click()
   await expect(page.getByText('Azubi', { exact: true })).toBeVisible({ timeout: 15_000 })
+
+  // Die Sperrzeiten-Sektion ist standardmäßig eingeklappt und muss erst über den Toggle in der
+  // Zeile des neu angelegten Verfügbarkeits-Status geöffnet werden, bevor das Zeitfenster-Formular
+  // sichtbar ist.
+  const azubiZeile = page.getByText('Azubi', { exact: true }).locator('xpath=../..')
+  await azubiZeile.getByRole('button', { name: 'Sperrzeiten' }).click()
 
   const zeitfensterForm = page.locator('form').filter({ hasText: 'Zeitfenster hinzufügen' }).last()
   await zeitfensterForm.getByLabel('Wochentag').selectOption('5')
@@ -95,8 +101,8 @@ test('Nutzer kann Bundesland wählen und Ferienkalender aktualisieren', async ({
   await zuStammdaten(page, 'St. Beispiel')
   await expect(page).toHaveURL(/\/stammdaten$/)
 
-  await page.getByRole('button', { name: 'Verfügbarkeit', exact: true }).click()
-  await page.getByRole('button', { name: 'Ferien' }).click()
+  await page.getByRole('tab', { name: 'Verfügbarkeit', exact: true }).click()
+  await page.getByRole('tab', { name: 'Ferien' }).click()
   await expect(page.getByLabel('Bundesland')).toHaveValue('BY')
   await page.getByRole('button', { name: 'Jetzt aktualisieren' }).click()
   await expect(page.getByText('Ferienkalender aktualisiert.')).toBeVisible({ timeout: 15000 })
@@ -111,7 +117,7 @@ test('Löschen einer Gruppe erfordert Inline-Bestätigung statt eines Browser-Di
   await zuStammdaten(page, 'St. Beispiel')
   await expect(page).toHaveURL(/\/stammdaten$/)
 
-  await page.getByRole('button', { name: 'Gruppen' }).click()
+  await page.getByRole('tab', { name: 'Gruppen' }).click()
   await page.getByLabel('Name').fill('LöschGruppe')
   await page.getByRole('button', { name: 'Anlegen' }).click()
   // Die Gruppen-Liste dieser Pfarrei ist über alle parallel laufenden e2e-Tests hinweg geteilt -
@@ -147,8 +153,8 @@ test('Nutzer kann Feiertags-Einstellung für Fronleichnam umschalten', async ({ 
   await zuStammdaten(page, 'St. Beispiel')
   await expect(page).toHaveURL(/\/stammdaten$/)
 
-  await page.getByRole('button', { name: 'Verfügbarkeit', exact: true }).click()
-  await page.getByRole('button', { name: 'Feiertage' }).click()
+  await page.getByRole('tab', { name: 'Verfügbarkeit', exact: true }).click()
+  await page.getByRole('tab', { name: 'Feiertage' }).click()
   await expect(page.getByText('Fronleichnam', { exact: false })).toBeVisible()
   const arbeiterFreiCheckbox = page.locator('#feiertag-fronleichnam-arbeiterfrei')
   // Fronleichnam ist ein gesetzlicher, arbeitsfreier Feiertag - ohne explizite Einstellung ist
