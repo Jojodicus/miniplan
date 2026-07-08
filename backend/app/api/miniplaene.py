@@ -4,11 +4,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
-from app.models.dienstbedarf import DienstbedarfZuweisung
+from app.models.dienstbedarf import Dienstbedarf, DienstbedarfZuweisung
 from app.models.filtertag import Filtertag
+from app.models.gottesdienst import Gottesdienst
 from app.models.miniplan import Miniplan, MiniplanStatus
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
+from app.schemas.dienstbedarf import ZuweisungFixierungIn, ZuweisungTauschenIn
 from app.schemas.miniplan import MiniplanCreate, MiniplanOut, MiniplanStatusUpdate, MiniplanUpdate
 from app.schemas.miniplan_vorschau import MiniplanVorschauIn, miniplan_zu_vorschau
 from app.services.typst_render import TypstCompileError, render_miniplan_pdf
@@ -30,6 +32,37 @@ def _get_miniplan_or_404(pfarrei_id: int, miniplan_id: int, db: Session) -> Mini
             status_code=status.HTTP_404_NOT_FOUND, detail="Miniplan nicht gefunden"
         )
     return miniplan
+
+
+def _get_zuweisung_or_404(miniplan_id: int, zuweisung_id: int, db: Session) -> DienstbedarfZuweisung:
+    zuweisung = (
+        db.query(DienstbedarfZuweisung)
+        .join(Dienstbedarf, DienstbedarfZuweisung.dienstbedarf_id == Dienstbedarf.id)
+        .join(Gottesdienst, Dienstbedarf.gottesdienst_id == Gottesdienst.id)
+        .filter(DienstbedarfZuweisung.id == zuweisung_id, Gottesdienst.miniplan_id == miniplan_id)
+        .first()
+    )
+    if zuweisung is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Zuweisung nicht gefunden"
+        )
+    return zuweisung
+
+
+def _mini_bereits_im_gottesdienst(
+    db: Session, gottesdienst_id: int, mini_id: int, ausser_zuweisung_id: int
+) -> bool:
+    return (
+        db.query(DienstbedarfZuweisung)
+        .join(Dienstbedarf, DienstbedarfZuweisung.dienstbedarf_id == Dienstbedarf.id)
+        .filter(
+            Dienstbedarf.gottesdienst_id == gottesdienst_id,
+            DienstbedarfZuweisung.mini_id == mini_id,
+            DienstbedarfZuweisung.id != ausser_zuweisung_id,
+        )
+        .first()
+        is not None
+    )
 
 
 @router.get("", response_model=list[MiniplanOut])
@@ -123,13 +156,107 @@ def fuellen(
 ) -> Miniplan:
     miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
     vorschlag = zuteilung_vorschlagen(db, pfarrei_id, miniplan)
+    # Erst alle nicht fixierten Zuweisungen löschen und flushen, bevor die neu vorgeschlagenen
+    # eingefügt werden: bei einem erneuten Füllen-Lauf kann derselbe Mini wieder demselben
+    # Dienstbedarf zugewiesen werden (z.B. weil er der einzige passende Kandidat bleibt) - ohne
+    # den Flush dazwischen könnte SQLAlchemy die neue Zeile einfügen, bevor die alte (gleiche
+    # `dienstbedarf_id`+`mini_id`) gelöscht ist, und den Unique-Constraint verletzen.
     for gottesdienst in miniplan.gottesdienste:
         for bedarf in gottesdienst.dienstbedarf:
-            fixierte = [z for z in bedarf.zuweisungen if z.manuell_fixiert]
-            bedarf.zuweisungen = fixierte + [
-                DienstbedarfZuweisung(mini_id=mini_id, manuell_fixiert=False)
-                for mini_id in vorschlag.get(bedarf.id, [])
-            ]
+            for zuweisung in bedarf.zuweisungen:
+                if not zuweisung.manuell_fixiert:
+                    db.delete(zuweisung)
+    db.flush()
+    for gottesdienst in miniplan.gottesdienste:
+        for bedarf in gottesdienst.dienstbedarf:
+            for mini_id in vorschlag.get(bedarf.id, []):
+                db.add(
+                    DienstbedarfZuweisung(
+                        dienstbedarf_id=bedarf.id, mini_id=mini_id, manuell_fixiert=False
+                    )
+                )
+    db.commit()
+    db.refresh(miniplan)
+    return miniplan
+
+
+@router.post("/{miniplan_id}/zuweisungen/tauschen", response_model=MiniplanOut)
+def zuweisungen_tauschen(
+    pfarrei_id: int,
+    miniplan_id: int,
+    daten: ZuweisungTauschenIn,
+    db: Session = Depends(get_db),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Miniplan:
+    miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    if daten.zuweisung_id_a == daten.zuweisung_id_b:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Zuweisungen müssen unterschiedlich sein",
+        )
+    zuweisung_a = _get_zuweisung_or_404(miniplan_id, daten.zuweisung_id_a, db)
+    zuweisung_b = _get_zuweisung_or_404(miniplan_id, daten.zuweisung_id_b, db)
+
+    gottesdienst_a_id = zuweisung_a.dienstbedarf.gottesdienst_id
+    gottesdienst_b_id = zuweisung_b.dienstbedarf.gottesdienst_id
+    if _mini_bereits_im_gottesdienst(db, gottesdienst_a_id, zuweisung_b.mini_id, zuweisung_a.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Der Mini ist in diesem Gottesdienst bereits eingeteilt",
+        )
+    if _mini_bereits_im_gottesdienst(db, gottesdienst_b_id, zuweisung_a.mini_id, zuweisung_b.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Der Mini ist in diesem Gottesdienst bereits eingeteilt",
+        )
+
+    # Nicht per In-Place-Update tauschen: der Unique-Constraint (dienstbedarf_id, mini_id) kann
+    # dabei transient verletzt werden, wenn beide Zuweisungen zum selben Dienstbedarf gehören.
+    # Löschen + Neuanlegen in einem Flush umgeht das zuverlässig. Die Fixierung bleibt an der
+    # Stelle (Zeile) hängen, nicht am Mini - wer wohin gehört, tauscht, wer davon fixiert war
+    # bleibt es an der jeweiligen Stelle.
+    dienstbedarf_a_id, mini_b_id, fixiert_a = (
+        zuweisung_a.dienstbedarf_id,
+        zuweisung_b.mini_id,
+        zuweisung_a.manuell_fixiert,
+    )
+    dienstbedarf_b_id, mini_a_id, fixiert_b = (
+        zuweisung_b.dienstbedarf_id,
+        zuweisung_a.mini_id,
+        zuweisung_b.manuell_fixiert,
+    )
+    db.delete(zuweisung_a)
+    db.delete(zuweisung_b)
+    db.flush()
+    db.add(
+        DienstbedarfZuweisung(
+            dienstbedarf_id=dienstbedarf_a_id, mini_id=mini_b_id, manuell_fixiert=fixiert_a
+        )
+    )
+    db.add(
+        DienstbedarfZuweisung(
+            dienstbedarf_id=dienstbedarf_b_id, mini_id=mini_a_id, manuell_fixiert=fixiert_b
+        )
+    )
+    db.commit()
+    db.refresh(miniplan)
+    return miniplan
+
+
+@router.post("/{miniplan_id}/zuweisungen/{zuweisung_id}/fixierung", response_model=MiniplanOut)
+def zuweisung_fixierung_setzen(
+    pfarrei_id: int,
+    miniplan_id: int,
+    zuweisung_id: int,
+    daten: ZuweisungFixierungIn,
+    db: Session = Depends(get_db),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Miniplan:
+    miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    zuweisung = _get_zuweisung_or_404(miniplan_id, zuweisung_id, db)
+    zuweisung.manuell_fixiert = daten.manuell_fixiert
     db.commit()
     db.refresh(miniplan)
     return miniplan

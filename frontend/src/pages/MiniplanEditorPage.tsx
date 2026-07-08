@@ -1,5 +1,14 @@
-import { ChevronDown, Copy, Download, Plus, Search, Trash2, Wand2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
+import {
+  DndContext,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { ChevronDown, Copy, Download, Plus, Search, Trash2, Wand2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SubmitEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import type { GruppenAnforderung } from '../api/dienstTypen'
@@ -11,6 +20,7 @@ import {
   gottesdienstLoeschen,
   type Dienstbedarf,
   type DienstbedarfEingabe,
+  type DienstbedarfZuweisung,
   type Gottesdienst,
 } from '../api/gottesdienste'
 import { gruppenListe, type Gruppe } from '../api/gruppen'
@@ -23,6 +33,8 @@ import {
   miniplanPdfHerunterladen,
   miniplanStatusAendern,
   miniplanVorschau,
+  miniplanZuweisungFixieren,
+  miniplanZuweisungenTauschen,
   type Miniplan,
   type MiniplanVorschauEingabe,
   type VorschauDienstbedarf,
@@ -81,19 +93,24 @@ function gesamtStatus(statusListe: SpeicherStatus[]): SpeicherStatus {
 
 interface WorkingBedarf {
   schluessel: string
+  // null für noch nie gespeicherten Bedarf (frisch hinzugefügter Dienst-Typ/Freitext) - erst nach
+  // dem ersten Speichern existiert eine echte Dienstbedarf-Zeile, auf die sich Drag-Ziele/
+  // Zuweisungs-IDs beziehen können.
+  dienstbedarfId: number | null
   dienst_typ_id: number | null
   dienst_typ_name: string | null
   name: string | null
   anzahl: number
   erforderliche_filtertags: Filtertag[]
   gruppen_anforderungen: GruppenAnforderung[]
-  mini_ids: number[]
+  fixierteMiniIds: number[]
   zeige_label: boolean
 }
 
 function bedarfAusOut(bedarf: Dienstbedarf): WorkingBedarf {
   return {
     schluessel: `bestehend-${bedarf.id}`,
+    dienstbedarfId: bedarf.id,
     dienst_typ_id: bedarf.dienst_typ?.id ?? null,
     dienst_typ_name: bedarf.dienst_typ?.name ?? null,
     name: bedarf.name,
@@ -103,7 +120,7 @@ function bedarfAusOut(bedarf: Dienstbedarf): WorkingBedarf {
       gruppe_id: a.gruppe.id,
       mindest_anzahl: a.mindest_anzahl,
     })),
-    mini_ids: bedarf.zugewiesene_minis.map((m) => m.id),
+    fixierteMiniIds: bedarf.zuweisungen.filter((z) => z.manuell_fixiert).map((z) => z.mini.id),
     zeige_label: bedarf.zeige_label,
   }
 }
@@ -111,6 +128,7 @@ function bedarfAusOut(bedarf: Dienstbedarf): WorkingBedarf {
 function bedarfAusDienstTyp(dienstTyp: DienstTyp): WorkingBedarf {
   return {
     schluessel: neuerSchluessel(),
+    dienstbedarfId: null,
     dienst_typ_id: dienstTyp.id,
     dienst_typ_name: dienstTyp.name,
     name: null,
@@ -120,7 +138,7 @@ function bedarfAusDienstTyp(dienstTyp: DienstTyp): WorkingBedarf {
       gruppe_id: a.gruppe.id,
       mindest_anzahl: a.mindest_anzahl,
     })),
-    mini_ids: [],
+    fixierteMiniIds: [],
     zeige_label: dienstTyp.zeige_label,
   }
 }
@@ -128,25 +146,27 @@ function bedarfAusDienstTyp(dienstTyp: DienstTyp): WorkingBedarf {
 function bedarfFreitext(): WorkingBedarf {
   return {
     schluessel: neuerSchluessel(),
+    dienstbedarfId: null,
     dienst_typ_id: null,
     dienst_typ_name: null,
     name: '',
     anzahl: 1,
     erforderliche_filtertags: [],
     gruppen_anforderungen: [],
-    mini_ids: [],
+    fixierteMiniIds: [],
     zeige_label: true,
   }
 }
 
-function zuEingabe(bedarf: WorkingBedarf): DienstbedarfEingabe {
+function zuEingabe(bedarf: WorkingBedarf, autoMiniIds: number[]): DienstbedarfEingabe {
   return {
     dienst_typ_id: bedarf.dienst_typ_id,
     name: bedarf.dienst_typ_id === null ? bedarf.name : null,
     anzahl: bedarf.anzahl,
     erforderliche_filtertags: bedarf.erforderliche_filtertags,
     gruppen_anforderungen: bedarf.gruppen_anforderungen,
-    mini_ids: bedarf.mini_ids,
+    fixierte_mini_ids: bedarf.fixierteMiniIds,
+    auto_mini_ids: autoMiniIds,
     zeige_label: bedarf.zeige_label,
   }
 }
@@ -155,6 +175,7 @@ function bedarfZuVorschau(
   bedarf: WorkingBedarf,
   gruppen: Gruppe[],
   minis: Mini[],
+  autoZuweisungen: DienstbedarfZuweisung[],
 ): VorschauDienstbedarf {
   return {
     name: bedarf.dienst_typ_name ?? bedarf.name ?? '',
@@ -164,9 +185,12 @@ function bedarfZuVorschau(
       gruppe_name: gruppen.find((g) => g.id === a.gruppe_id)?.name ?? '',
       mindest_anzahl: a.mindest_anzahl,
     })),
-    zugewiesene_minis: bedarf.mini_ids
-      .map((id) => minis.find((m) => m.id === id)?.name)
-      .filter((name): name is string => Boolean(name)),
+    zugewiesene_minis: [
+      ...bedarf.fixierteMiniIds
+        .map((id) => minis.find((m) => m.id === id)?.name)
+        .filter((name): name is string => Boolean(name)),
+      ...autoZuweisungen.map((z) => z.mini.name),
+    ],
     zeige_label: bedarf.zeige_label,
   }
 }
@@ -177,6 +201,9 @@ interface GottesdienstDraft {
   name: string
   notiz: string
   bedarfListe: WorkingBedarf[]
+  // Serverstand der Zuweisungen je Bedarf-Schlüssel (für automatisch zugewiesene Minis, die nicht
+  // Teil des editierbaren Drafts sind, aber trotzdem in der Vorschau auftauchen sollen).
+  serverZuweisungenBySchluessel: Record<string, DienstbedarfZuweisung[]>
 }
 
 function draftZuVorschau(
@@ -189,8 +216,123 @@ function draftZuVorschau(
     uhrzeit: draft.uhrzeit ? `${draft.uhrzeit}:00` : '',
     name: draft.name,
     notiz: draft.notiz.trim() ? draft.notiz : null,
-    dienstbedarf: draft.bedarfListe.map((b) => bedarfZuVorschau(b, gruppen, minis)),
+    dienstbedarf: draft.bedarfListe.map((b) =>
+      bedarfZuVorschau(
+        b,
+        gruppen,
+        minis,
+        (draft.serverZuweisungenBySchluessel[b.schluessel] ?? []).filter(
+          (z) => !z.manuell_fixiert,
+        ),
+      ),
+    ),
   }
+}
+
+// Payload, das ein Zuweisungs-Chip beim Ziehen mitgibt und das ein Drop-Ziel (anderer Chip oder
+// Fest-/Automatisch-Bereich) über `event.active.data.current`/`event.over.data.current` liest -
+// dnd-kit reicht das über den gemeinsamen DndContext ohne Prop-Drilling durch, daher braucht das
+// Tauschen/Fixieren über Gottesdienst-Kartengrenzen hinweg keinen gehobenen State.
+export interface ZuweisungDragData {
+  zuweisungId: number
+  dienstbedarfId: number
+  manuellFixiert: boolean
+}
+
+export interface ZuweisungContainerDropData {
+  containerType: 'fest' | 'auto'
+  dienstbedarfId: number
+}
+
+function ZuweisungsChip({
+  name,
+  tone,
+  dienstbedarfId,
+  zuweisung,
+  onRemove,
+}: {
+  name: string
+  tone: 'fest' | 'auto'
+  dienstbedarfId: number | null
+  zuweisung: DienstbedarfZuweisung | null
+  onRemove?: () => void
+}) {
+  const dragData: ZuweisungDragData | undefined =
+    zuweisung && dienstbedarfId !== null
+      ? { zuweisungId: zuweisung.id, dienstbedarfId, manuellFixiert: zuweisung.manuell_fixiert }
+      : undefined
+  const dragId = zuweisung ? `zuweisung-${zuweisung.id}` : undefined
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
+    id: dragId ?? 'zuweisung-unbekannt',
+    data: dragData,
+    disabled: !dragData,
+  })
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: dragId ?? 'zuweisung-unbekannt-drop',
+    data: dragData,
+    disabled: !dragData,
+  })
+
+  return (
+    <span
+      ref={(node) => {
+        setDragRef(node)
+        setDropRef(node)
+      }}
+      {...(dragData ? { ...listeners, ...attributes } : {})}
+      className={`inline-flex w-fit shrink-0 select-none items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+        tone === 'auto'
+          ? 'border-dashed border-gold-dark/50 bg-gold-tint text-gold-dark'
+          : 'border-pine bg-pine-tint text-pine-dark'
+      } ${dragData ? 'cursor-grab active:cursor-grabbing' : ''} ${isDragging ? 'opacity-40' : ''} ${
+        isOver ? 'ring-2 ring-pine' : ''
+      }`}
+    >
+      {name}
+      {onRemove && (
+        <button
+          type="button"
+          aria-label={`${name} entfernen`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onRemove}
+          className="cursor-pointer text-current opacity-60 hover:opacity-100"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </span>
+  )
+}
+
+function ZuweisungsContainer({
+  dienstbedarfId,
+  containerType,
+  children,
+}: {
+  dienstbedarfId: number | null
+  containerType: 'fest' | 'auto'
+  children: ReactNode
+}) {
+  const id = `container-${containerType}-${dienstbedarfId ?? 'neu'}`
+  const { setNodeRef, isOver } = useDroppable({
+    id,
+    data:
+      dienstbedarfId !== null
+        ? ({ containerType, dienstbedarfId } satisfies ZuweisungContainerDropData)
+        : undefined,
+    disabled: dienstbedarfId === null,
+  })
+  return (
+    <div
+      ref={setNodeRef}
+      data-testid={`zuweisung-container-${containerType}`}
+      className={`flex min-h-10 flex-wrap items-center gap-2 rounded-md p-1.5 transition-colors ${
+        isOver ? 'bg-pine-tint/60' : ''
+      }`}
+    >
+      {children}
+    </div>
+  )
 }
 
 function DienstbedarfZeile({
@@ -198,6 +340,8 @@ function DienstbedarfZeile({
   gruppen,
   minis,
   filtertags,
+  serverZuweisungen,
+  dienstbedarfId,
   onChange,
   onRemove,
 }: {
@@ -205,6 +349,8 @@ function DienstbedarfZeile({
   gruppen: Gruppe[]
   minis: Mini[]
   filtertags: FiltertagDef[]
+  serverZuweisungen: DienstbedarfZuweisung[]
+  dienstbedarfId: number | null
   onChange: (patch: Partial<WorkingBedarf>) => void
   onRemove: () => void
 }) {
@@ -247,16 +393,22 @@ function DienstbedarfZeile({
 
   function toggleMini(miniId: number) {
     onChange({
-      mini_ids: bedarf.mini_ids.includes(miniId)
-        ? bedarf.mini_ids.filter((id) => id !== miniId)
-        : [...bedarf.mini_ids, miniId],
+      fixierteMiniIds: bedarf.fixierteMiniIds.includes(miniId)
+        ? bedarf.fixierteMiniIds.filter((id) => id !== miniId)
+        : [...bedarf.fixierteMiniIds, miniId],
     })
   }
+
+  const autoZuweisungen = serverZuweisungen.filter((z) => !z.manuell_fixiert)
+  const belegteMiniIds = new Set([
+    ...bedarf.fixierteMiniIds,
+    ...autoZuweisungen.map((z) => z.mini.id),
+  ])
 
   const anzahlEinschraenkungen =
     bedarf.erforderliche_filtertags.length +
     bedarf.gruppen_anforderungen.length +
-    bedarf.mini_ids.length
+    bedarf.fixierteMiniIds.length
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line p-3">
@@ -390,13 +542,57 @@ function DienstbedarfZeile({
           <div>
             <Label
               hint={
-                bedarf.mini_ids.length >= bedarf.anzahl
-                  ? `Anzahl (${bedarf.anzahl}) erreicht`
-                  : undefined
+                belegteMiniIds.size >= bedarf.anzahl ? `Anzahl (${bedarf.anzahl}) erreicht` : undefined
               }
             >
-              Manuell zugewiesene Minis
+              Fest zugewiesen
             </Label>
+            <ZuweisungsContainer dienstbedarfId={dienstbedarfId} containerType="fest">
+              {bedarf.fixierteMiniIds.length === 0 && (
+                <span className="text-xs text-ink-faint">
+                  Niemand fest zugewiesen – unten hinzufügen oder hierher ziehen.
+                </span>
+              )}
+              {bedarf.fixierteMiniIds.map((miniId) => {
+                const mini = minis.find((m) => m.id === miniId)
+                if (!mini) return null
+                const zuweisung =
+                  serverZuweisungen.find((z) => z.manuell_fixiert && z.mini.id === miniId) ?? null
+                return (
+                  <ZuweisungsChip
+                    key={miniId}
+                    name={mini.name}
+                    tone="fest"
+                    dienstbedarfId={dienstbedarfId}
+                    zuweisung={zuweisung}
+                    onRemove={() => toggleMini(miniId)}
+                  />
+                )
+              })}
+            </ZuweisungsContainer>
+          </div>
+
+          {autoZuweisungen.length > 0 && (
+            <div>
+              <Label hint="von Füllen zugeteilt – zum Fixieren hierher ziehen">
+                Automatisch zugewiesen
+              </Label>
+              <ZuweisungsContainer dienstbedarfId={dienstbedarfId} containerType="auto">
+                {autoZuweisungen.map((zuweisung) => (
+                  <ZuweisungsChip
+                    key={zuweisung.id}
+                    name={zuweisung.mini.name}
+                    tone="auto"
+                    dienstbedarfId={dienstbedarfId}
+                    zuweisung={zuweisung}
+                  />
+                ))}
+              </ZuweisungsContainer>
+            </div>
+          )}
+
+          <div>
+            <Label>Mini hinzufügen</Label>
             {minis.length > 12 && (
               <div className="relative mb-2 sm:max-w-xs">
                 <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-faint" />
@@ -411,27 +607,22 @@ function DienstbedarfZeile({
             )}
             <div className="flex flex-wrap gap-2">
               {minis
-                // Bereits zugewiesene Minis bleiben trotz Suchfilter sichtbar, damit sie
-                // jederzeit abwählbar sind.
                 .filter(
                   (mini) =>
-                    bedarf.mini_ids.includes(mini.id) ||
+                    !belegteMiniIds.has(mini.id) &&
                     mini.name.toLowerCase().includes(miniSuche.trim().toLowerCase()),
                 )
-                .map((mini) => {
-                  const ausgewaehlt = bedarf.mini_ids.includes(mini.id)
-                  return (
-                    <CheckboxChip
-                      key={mini.id}
-                      id={`${bedarf.schluessel}-mini-${mini.id}`}
-                      checked={ausgewaehlt}
-                      disabled={!ausgewaehlt && bedarf.mini_ids.length >= bedarf.anzahl}
-                      onChange={() => toggleMini(mini.id)}
-                    >
-                      {mini.name}
-                    </CheckboxChip>
-                  )
-                })}
+                .map((mini) => (
+                  <CheckboxChip
+                    key={mini.id}
+                    id={`${bedarf.schluessel}-mini-${mini.id}`}
+                    checked={false}
+                    disabled={belegteMiniIds.size >= bedarf.anzahl}
+                    onChange={() => toggleMini(mini.id)}
+                  >
+                    {mini.name}
+                  </CheckboxChip>
+                ))}
             </div>
           </div>
         </div>
@@ -489,6 +680,21 @@ function GottesdienstKarte({
   const [bedarfListe, setBedarfListe] = useState<WorkingBedarf[]>(
     gottesdienst.dienstbedarf.map(bedarfAusOut),
   )
+  // Serverstand der Zuweisungen je Bedarf-Schlüssel - getrennt von `bedarfListe`, damit
+  // Auffrischen nach einem Speichern (siehe unten) nicht den Autosave-Effekt erneut auslöst, der
+  // an `bedarfListe` hängt. Wird beim Mount aus den Props befüllt und nach jedem erfolgreichen
+  // Speichern aus der Server-Antwort aktualisiert (Index-Zuordnung, da die Dienstbedarf-Liste in
+  // derselben Reihenfolge gesendet/zurückgegeben wird).
+  const [serverZuweisungenMap, setServerZuweisungenMap] = useState<
+    Record<string, DienstbedarfZuweisung[]>
+  >(() => Object.fromEntries(gottesdienst.dienstbedarf.map((b) => [`bestehend-${b.id}`, b.zuweisungen])))
+  // Ein neu hinzugefügter Dienst-Typ/Freitext-Bedarf hat zunächst `dienstbedarfId: null` (noch
+  // keine echte Dienstbedarf-Zeile). Ohne diese Karte bliebe seine `dienstbedarfId` nach dem
+  // ersten Speichern für immer `null`, da `WorkingBedarf` sonst nie aktualisiert wird (siehe
+  // `serverZuweisungenMap`) - die zugewiesenen Minis wären dann nie zieh-/tauschbar.
+  const [dienstbedarfIdMap, setDienstbedarfIdMap] = useState<Record<string, number>>(() =>
+    Object.fromEntries(gottesdienst.dienstbedarf.map((b) => [`bestehend-${b.id}`, b.id])),
+  )
   const [status, setStatus] = useState<SpeicherStatus>('gespeichert')
   const [offen, setOffen] = useState(defaultOffen)
   const { showToast } = useToast()
@@ -513,9 +719,16 @@ function GottesdienstKarte({
   }
 
   useEffect(() => {
-    onDraftChange(gottesdienst.id, { datum, uhrzeit, name, notiz, bedarfListe })
+    onDraftChange(gottesdienst.id, {
+      datum,
+      uhrzeit,
+      name,
+      notiz,
+      bedarfListe,
+      serverZuweisungenBySchluessel: serverZuweisungenMap,
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datum, uhrzeit, name, notiz, bedarfListe])
+  }, [datum, uhrzeit, name, notiz, bedarfListe, serverZuweisungenMap])
 
   useEffect(() => {
     onStatusChange(gottesdienst.id, status)
@@ -537,14 +750,39 @@ function GottesdienstKarte({
     setStatus('speichert')
     const timer = setTimeout(async () => {
       try {
-        await gottesdienstBearbeiten(pfarreiId, miniplanId, gottesdienst.id, {
+        const gespeichert = await gottesdienstBearbeiten(pfarreiId, miniplanId, gottesdienst.id, {
           datum,
           uhrzeit,
           name,
           notiz: notiz.trim() ? notiz : null,
-          dienstbedarf: bedarfListe.map(zuEingabe),
+          dienstbedarf: bedarfListe.map((bedarf) =>
+            zuEingabe(
+              bedarf,
+              (serverZuweisungenMap[bedarf.schluessel] ?? [])
+                .filter((z) => !z.manuell_fixiert)
+                .map((z) => z.mini.id),
+            ),
+          ),
         })
         setStatus('gespeichert')
+        // Server-Zuweisungen (v.a. neu vergebene Zuweisungs-IDs für gerade erst fixierte Minis,
+        // damit sie sofort ziehbar sind) anhand der Positions-Reihenfolge auffrischen - separat
+        // von `bedarfListe`, damit das hier keinen erneuten Autosave-Lauf auslöst.
+        setServerZuweisungenMap((karte) => {
+          const aktualisiert = { ...karte }
+          bedarfListe.forEach((bedarf, index) => {
+            aktualisiert[bedarf.schluessel] = gespeichert.dienstbedarf[index]?.zuweisungen ?? []
+          })
+          return aktualisiert
+        })
+        setDienstbedarfIdMap((karte) => {
+          const aktualisiert = { ...karte }
+          bedarfListe.forEach((bedarf, index) => {
+            const id = gespeichert.dienstbedarf[index]?.id
+            if (id !== undefined) aktualisiert[bedarf.schluessel] = id
+          })
+          return aktualisiert
+        })
         onReload()
       } catch (err) {
         setStatus('fehler')
@@ -574,7 +812,11 @@ function GottesdienstKarte({
         uhrzeit,
         name,
         notiz: notiz.trim() ? notiz : null,
-        dienstbedarf: bedarfListe.map((bedarf) => ({ ...zuEingabe(bedarf), mini_ids: [] })),
+        dienstbedarf: bedarfListe.map((bedarf) => ({
+          ...zuEingabe(bedarf, []),
+          fixierte_mini_ids: [],
+          auto_mini_ids: [],
+        })),
       })
       showToast('Gottesdienst dupliziert (eine Woche später)')
       onDuplicated(erstellt.id)
@@ -681,6 +923,8 @@ function GottesdienstKarte({
                 gruppen={gruppen}
                 minis={minis}
                 filtertags={filtertags}
+                serverZuweisungen={serverZuweisungenMap[bedarf.schluessel] ?? []}
+                dienstbedarfId={dienstbedarfIdMap[bedarf.schluessel] ?? bedarf.dienstbedarfId}
                 onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
                 onRemove={() => removeBedarf(bedarf.schluessel)}
               />
@@ -1017,23 +1261,63 @@ export function MiniplanEditorPage() {
   // Remount mit den frisch geladenen Zuweisungen.
   const [zuteilungsRevision, setZuteilungsRevision] = useState(0)
   const { showToast } = useToast()
+  const dndSensoren = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  )
 
   const reload = useCallback(() => {
     miniplanDetail(id, planId).then(setMiniplan)
   }, [id, planId])
 
+  // Von "Füllen" und den Drag-Aktionen (Tauschen/Fixieren) gemeinsam genutzt: alle drei ändern
+  // Zuweisungen serverseitig, ohne dass die betroffenen Karten das selbst bemerken (siehe
+  // `zuteilungsRevision`), daher nach jeder dieser Aktionen denselben Refresh anstoßen.
+  function refreshNachMutation(aktualisiert: Miniplan) {
+    setMiniplan(aktualisiert)
+    setZuteilungsRevision((revision) => revision + 1)
+  }
+
   async function handleFuellen() {
     setFuelltGerade(true)
     try {
       const aktualisiert = await miniplanFuellen(id, planId)
-      setMiniplan(aktualisiert)
-      setZuteilungsRevision((revision) => revision + 1)
+      refreshNachMutation(aktualisiert)
       showToast('Miniplan automatisch befüllt')
     } catch (err) {
       showToast(fehlerText(err, 'Fehler beim automatischen Befüllen'), 'error')
     } finally {
       setFuelltGerade(false)
     }
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const aktivDaten = event.active.data.current as ZuweisungDragData | undefined
+    const zielDaten = event.over?.data.current as
+      | ZuweisungDragData
+      | ZuweisungContainerDropData
+      | undefined
+    if (!aktivDaten || !zielDaten) return
+
+    if ('zuweisungId' in zielDaten) {
+      if (zielDaten.zuweisungId === aktivDaten.zuweisungId) return
+      miniplanZuweisungenTauschen(id, planId, aktivDaten.zuweisungId, zielDaten.zuweisungId)
+        .then((aktualisiert) => {
+          refreshNachMutation(aktualisiert)
+          showToast('Zuweisungen getauscht')
+        })
+        .catch((err) => showToast(fehlerText(err, 'Fehler beim Tauschen'), 'error'))
+      return
+    }
+
+    if (zielDaten.dienstbedarfId !== aktivDaten.dienstbedarfId) return
+    const sollFixiert = zielDaten.containerType === 'fest'
+    if (sollFixiert === aktivDaten.manuellFixiert) return
+    miniplanZuweisungFixieren(id, planId, aktivDaten.zuweisungId, sollFixiert)
+      .then((aktualisiert) => {
+        refreshNachMutation(aktualisiert)
+        showToast(sollFixiert ? 'Zuweisung fixiert' : 'Fixierung aufgehoben')
+      })
+      .catch((err) => showToast(fehlerText(err, 'Fehler beim Fixieren'), 'error'))
   }
 
   async function handleStatusWechsel(neuerStatus: 'abgeschlossen' | 'in_bearbeitung') {
@@ -1191,6 +1475,7 @@ export function MiniplanEditorPage() {
       )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] lg:items-start">
+        <DndContext sensors={dndSensoren} onDragEnd={handleDragEnd}>
         <div className="flex min-w-0 flex-col gap-6">
           {miniplan.gottesdienste.map((gottesdienst) => (
             <GottesdienstKarte
@@ -1234,6 +1519,7 @@ export function MiniplanEditorPage() {
             onStatusChange={setFreitextStatus}
           />
         </div>
+        </DndContext>
 
         <div className="min-w-0">
           <VorschauPanel pfarreiId={id} miniplanId={planId} eingabe={vorschauEingabe} />

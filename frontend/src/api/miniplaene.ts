@@ -53,6 +53,30 @@ export function miniplanFuellen(pfarreiId: number, miniplanId: number): Promise<
   return api.post<Miniplan>(`/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}/fuellen`)
 }
 
+export function miniplanZuweisungenTauschen(
+  pfarreiId: number,
+  miniplanId: number,
+  zuweisungIdA: number,
+  zuweisungIdB: number,
+): Promise<Miniplan> {
+  return api.post<Miniplan>(
+    `/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}/zuweisungen/tauschen`,
+    { zuweisung_id_a: zuweisungIdA, zuweisung_id_b: zuweisungIdB },
+  )
+}
+
+export function miniplanZuweisungFixieren(
+  pfarreiId: number,
+  miniplanId: number,
+  zuweisungId: number,
+  manuellFixiert: boolean,
+): Promise<Miniplan> {
+  return api.post<Miniplan>(
+    `/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}/zuweisungen/${zuweisungId}/fixierung`,
+    { manuell_fixiert: manuellFixiert },
+  )
+}
+
 export function miniplanStatusAendern(
   pfarreiId: number,
   miniplanId: number,
@@ -132,7 +156,7 @@ export function gottesdienstOutZuVorschau(gd: Gottesdienst): VorschauGottesdiens
         gruppe_name: a.gruppe.name,
         mindest_anzahl: a.mindest_anzahl,
       })),
-      zugewiesene_minis: bedarf.zugewiesene_minis.map((m) => m.name),
+      zugewiesene_minis: bedarf.zuweisungen.map((z) => z.mini.name),
       zeige_label: bedarf.zeige_label,
     })),
   }

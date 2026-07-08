@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app import rate_limit
 from app.models.nutzer import Nutzer
 from app.security import ACCESS_TOKEN_COOKIE_NAME
 
@@ -79,7 +80,7 @@ def test_logout_entfernt_cookie(client: TestClient, admin_user: Nutzer) -> None:
 def test_login_wird_nach_zu_vielen_versuchen_rate_limitiert(
     client: TestClient, admin_user: Nutzer
 ) -> None:
-    for _ in range(10):
+    for _ in range(rate_limit._MAX_ATTEMPTS):
         response = client.post(
             "/api/auth/login", json={"email": "admin@example.com", "password": "falsch"}
         )

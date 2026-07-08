@@ -68,7 +68,7 @@ def test_gottesdienst_anlegen_mit_dienstbedarf_aus_dienst_typ(
                     "anzahl": 2,
                     "erforderliche_filtertags": ["arbeiter"],
                     "gruppen_anforderungen": [{"gruppe_id": gruppe.id, "mindest_anzahl": 1}],
-                    "mini_ids": [mini.id],
+                    "fixierte_mini_ids": [mini.id],
                     "zeige_label": True,
                 }
             ],
@@ -86,7 +86,8 @@ def test_gottesdienst_anlegen_mit_dienstbedarf_aus_dienst_typ(
     assert bedarf["erforderliche_filtertags"] == ["arbeiter"]
     assert bedarf["zeige_label"] is True
     assert [a["gruppe"]["id"] for a in bedarf["gruppen_anforderungen"]] == [gruppe.id]
-    assert [m["id"] for m in bedarf["zugewiesene_minis"]] == [mini.id]
+    assert [z["mini"]["id"] for z in bedarf["zuweisungen"]] == [mini.id]
+    assert [z["manuell_fixiert"] for z in bedarf["zuweisungen"]] == [True]
 
 
 def test_gottesdienst_anlegen_mit_unbekanntem_filtertag_abgelehnt(
@@ -216,7 +217,7 @@ def test_dienstbedarf_mehr_minis_als_anzahl_abgelehnt(
                     "name": "Kreuz",
                     "anzahl": 1,
                     "erforderliche_filtertags": [],
-                    "mini_ids": [mini_1.id, mini_2.id],
+                    "fixierte_mini_ids": [mini_1.id, mini_2.id],
                 }
             ],
         },
@@ -286,7 +287,7 @@ def test_dienstbedarf_mit_fremdem_mini_abgelehnt(
                     "name": "Kreuz",
                     "anzahl": 1,
                     "erforderliche_filtertags": [],
-                    "mini_ids": [fremder_mini.id],
+                    "fixierte_mini_ids": [fremder_mini.id],
                 }
             ],
         },

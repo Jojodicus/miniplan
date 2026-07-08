@@ -7,6 +7,12 @@ export interface DienstTypSummary {
   name: string
 }
 
+export interface DienstbedarfZuweisung {
+  id: number
+  mini: Mini
+  manuell_fixiert: boolean
+}
+
 export interface Dienstbedarf {
   id: number
   dienst_typ: DienstTypSummary | null
@@ -14,7 +20,7 @@ export interface Dienstbedarf {
   anzahl: number
   erforderliche_filtertags: Filtertag[]
   gruppen_anforderungen: GruppenAnforderungOut[]
-  zugewiesene_minis: Mini[]
+  zuweisungen: DienstbedarfZuweisung[]
   zeige_label: boolean
 }
 
@@ -24,7 +30,8 @@ export interface DienstbedarfEingabe {
   anzahl: number
   erforderliche_filtertags: Filtertag[]
   gruppen_anforderungen: GruppenAnforderung[]
-  mini_ids: number[]
+  fixierte_mini_ids: number[]
+  auto_mini_ids: number[]
   zeige_label: boolean
 }
 

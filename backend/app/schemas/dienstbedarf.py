@@ -10,7 +10,11 @@ class DienstbedarfIn(BaseModel):
     anzahl: int = Field(ge=1)
     erforderliche_filtertags: list[str] = []
     gruppen_anforderungen: list[GruppenAnforderung] = []
-    mini_ids: list[int] = []
+    fixierte_mini_ids: list[int] = []
+    # Automatisch (nicht manuell) zugewiesene Minis werden vom Frontend hier unverändert
+    # durchgereicht (nicht über die Checkbox-Auswahl editierbar) - so überleben sie ein Speichern
+    # anderer Felder desselben Dienstbedarfs, statt beim nächsten PUT verloren zu gehen.
+    auto_mini_ids: list[int] = []
     zeige_label: bool = True
 
     @model_validator(mode="after")
@@ -29,7 +33,11 @@ class DienstbedarfIn(BaseModel):
             raise ValueError(
                 "Die Summe der Mindestanzahlen darf die Anzahl nicht überschreiten"
             )
-        if len(self.mini_ids) > self.anzahl:
+        if set(self.fixierte_mini_ids) & set(self.auto_mini_ids):
+            raise ValueError(
+                "Ein Mini kann nicht gleichzeitig fest und automatisch zugewiesen sein"
+            )
+        if len(self.fixierte_mini_ids) + len(self.auto_mini_ids) > self.anzahl:
             raise ValueError(
                 "Es dürfen nicht mehr Minis zugewiesen werden als die Anzahl vorgibt"
             )
@@ -43,6 +51,14 @@ class DienstTypSummary(BaseModel):
     name: str
 
 
+class DienstbedarfZuweisungOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    mini: MiniOut
+    manuell_fixiert: bool
+
+
 class DienstbedarfOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -52,5 +68,14 @@ class DienstbedarfOut(BaseModel):
     anzahl: int
     erforderliche_filtertags: list[str]
     gruppen_anforderungen: list[GruppenAnforderungOut]
-    zugewiesene_minis: list[MiniOut]
+    zuweisungen: list[DienstbedarfZuweisungOut]
     zeige_label: bool
+
+
+class ZuweisungTauschenIn(BaseModel):
+    zuweisung_id_a: int
+    zuweisung_id_b: int
+
+
+class ZuweisungFixierungIn(BaseModel):
+    manuell_fixiert: bool

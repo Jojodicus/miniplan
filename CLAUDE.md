@@ -7,7 +7,8 @@ und Token-basiertem Self-Service für Ministranten.
 ## Stack
 
 - **Backend:** Python (FastAPI), SQLAlchemy + Alembic, SQLite
-- **Frontend:** React + Vite (TypeScript), react-router-dom, Paketmanager pnpm
+- **Frontend:** React + Vite (TypeScript), react-router-dom, `@dnd-kit/core` (Drag-and-Drop),
+  Paketmanager pnpm
 - **Auth:** Username/Passwort + JWT (im httpOnly-Cookie, alternativ per `Authorization: Bearer`-Header)
 - **Deployment:** ein Docker-Container (Frontend-Build wird vom Backend als Static Files
   ausgeliefert), Typst-Binary im Image
@@ -82,8 +83,10 @@ docker-compose.e2e.yml  isolierte Variante für Playwright-E2E-Tests (eigener Po
   Anzahl und Gruppen-Anforderungen als eigene, unabhängig editierbare Kopie übernommen (keine
   Live-Verknüpfung zum `DienstTyp`); zusätzlich erforderliche Filtertags (JSON-Liste von
   `Filtertag.key`-Werten – ein zugewiesener Mini muss mindestens einen davon besitzen, leer =
-  keine Einschränkung) und eine Liste zugewiesener Minis (`manuell_fixiert`: von Hand zugewiesen,
-  bleibt beim automatischen Füllen unangetastet; sonst vom Zuteilungsalgorithmus vergeben)
+  keine Einschränkung) und eine Liste von `Dienstbedarf.zuweisungen` (`DienstbedarfZuweisung`:
+  Mini + `manuell_fixiert`-Flag – von Hand zugewiesen/fixiert bleibt beim automatischen Füllen
+  unangetastet, sonst vom Zuteilungsalgorithmus vergeben; die API gibt beide Arten zusammen in
+  `DienstbedarfOut.zuweisungen` aus, das Frontend trennt sie nach dem Flag)
 
 Rollen-Autorisierung: `app/deps.py` stellt `require_admin` (nur globale Admins),
 `RequirePfarreiRolle(*rollen)` (Admins oder Nutzer mit passender Rolle in der per Pfad-Parameter
@@ -154,10 +157,38 @@ Züge). `POST /api/pfarreien/{pfarrei_id}/miniplaene/{miniplan_id}/fuellen` wend
 alle nicht fixierten Zuweisungen werden ersetzt (erneutes Füllen ist also ein vollständiger
 Neu-Lauf über alle freien Stellen, nicht nur über seit dem letzten Lauf leere).
 
+Manuelle und automatische Zuweisungen lassen sich zusätzlich per Drag-and-Drop verändern (zwei
+weitere Endpunkte, gleiche Rolle wie `fuellen`):
+
+- `POST .../miniplaene/{id}/zuweisungen/tauschen` (Body `{zuweisung_id_a, zuweisung_id_b}`)
+  tauscht die Minis zweier `DienstbedarfZuweisung`-Zeilen (auch über verschiedene Gottesdienste/
+  Dienstbedarf hinweg) – das `manuell_fixiert`-Flag bleibt dabei an der Zeile/Stelle hängen, nicht
+  am Mini. Aus Unique-Constraint-Gründen (`dienstbedarf_id`, `mini_id`) werden dafür beide Zeilen
+  gelöscht und mit vertauschten Minis neu angelegt, nicht per In-Place-Update getauscht.
+- `POST .../miniplaene/{id}/zuweisungen/{zuweisung_id}/fixierung` (Body `{manuell_fixiert}`) setzt
+  das Flag einer einzelnen Zeile.
+
+Aus demselben Grund löscht auch `fuellen` die zu ersetzenden Zeilen zuerst und flusht, bevor die
+neuen eingefügt werden (ein erneuter Lauf kann denselben Mini wieder derselben Stelle zuteilen).
+
 Frontend: Der "Füllen"-Button in `MiniplanEditorPage` löst den Endpoint aus und lädt den Miniplan
 neu. Da jede `GottesdienstKarte` ihren Dienstbedarf nur beim ersten Rendern aus den Props in
-eigenen State übernimmt, erzwingt ein Revisions-Zähler im `key`-Prop der Karten nach dem Füllen
-einen Remount, damit die neuen Zuweisungen sichtbar werden.
+eigenen State übernimmt, erzwingt ein Revisions-Zähler im `key`-Prop der Karten nach jeder dieser
+drei Mutationen (Füllen, Tauschen, Fixieren) einen Remount, damit die neuen Zuweisungen sichtbar
+werden (Helper `refreshNachMutation`).
+
+Pro Dienstbedarf zeigt der Editor zwei Bereiche: "Fest zugewiesen" (durchsuchbare Checkbox-Chip-
+Liste wie bisher, treibt `fixierte_mini_ids`) und "Automatisch zugewiesen" (nur sichtbar wenn
+vorhanden, reine Anzeige aus dem Server-Stand, nicht Teil des editierbaren Drafts – sonst würde ein
+Autosave für ein anderes Feld automatisch zugewiesene Minis fälschlich als fest zugewiesen
+zurückschreiben). Ein einziger `DndContext` umschließt alle Gottesdienst-Karten; jeder Zuweisungs-
+Chip ist gleichzeitig Drag-Quelle und Drop-Ziel (Drop auf einen anderen Chip = Tauschen), die
+beiden Bereiche sind zusätzlich je Dienstbedarf eigene Drop-Ziele (Drop auf die Fläche statt auf
+einen Chip = Fixierung setzen/aufheben für die gezogene Zeile). Damit ein frisch zu einer Karte
+hinzugefügter Dienst-Typ/Freitext-Bedarf nach dem ersten Speichern eine echte `dienstbedarfId` für
+diese Drag-Ziele bekommt (initial `null`), pflegt `GottesdienstKarte` dafür eine eigene, von
+`bedarfListe` getrennte Map (`dienstbedarfIdMap`, analog `serverZuweisungenMap`) – eine Aktualisierung
+direkt in `bedarfListe` würde sonst den Autosave-Effekt erneut auslösen.
 
 ## Befehle
 

@@ -83,7 +83,9 @@ def _dienstbedarf_bauen(
             detail="Eine oder mehrere Gruppen gehören nicht zu dieser Pfarrei",
         )
 
-    mini_ids = {mini_id for e in eintraege for mini_id in e.mini_ids}
+    mini_ids = {
+        mini_id for e in eintraege for mini_id in (*e.fixierte_mini_ids, *e.auto_mini_ids)
+    }
     minis_by_id = {
         m.id: m
         for m in db.query(Mini).filter(Mini.id.in_(mini_ids), Mini.pfarrei_id == pfarrei_id).all()
@@ -120,8 +122,16 @@ def _dienstbedarf_bauen(
                     for a in eintrag.gruppen_anforderungen
                 ],
                 zuweisungen=[
-                    DienstbedarfZuweisung(mini_id=mini_id, mini=minis_by_id[mini_id])
-                    for mini_id in eintrag.mini_ids
+                    DienstbedarfZuweisung(
+                        mini_id=mini_id, mini=minis_by_id[mini_id], manuell_fixiert=True
+                    )
+                    for mini_id in eintrag.fixierte_mini_ids
+                ]
+                + [
+                    DienstbedarfZuweisung(
+                        mini_id=mini_id, mini=minis_by_id[mini_id], manuell_fixiert=False
+                    )
+                    for mini_id in eintrag.auto_mini_ids
                 ],
             )
         )

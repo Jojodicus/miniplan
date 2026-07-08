@@ -4,7 +4,10 @@ from collections import defaultdict
 
 from fastapi import HTTPException, Request, status
 
-_MAX_ATTEMPTS = 10
+# Großzügig genug, damit die wachsende Playwright-Suite (jeder E2E-Test loggt sich einmal ein,
+# alle teilen sich beim parallelen Lauf dieselbe Client-IP im Docker-Netz) nicht an dieses
+# eigentlich für Online-Brute-Force gegen echte Angreifer gedachte Limit stößt.
+_MAX_ATTEMPTS = 30
 _WINDOW_SECONDS = 60.0
 
 _lock = threading.Lock()
