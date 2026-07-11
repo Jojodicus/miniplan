@@ -7,6 +7,7 @@ from app.database import SessionLocal
 from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.security import hash_password
+from app.services.demo_seed import seed_demo_daten
 from app.services.stammdaten_seed import seed_default_stammdaten
 
 
@@ -72,6 +73,19 @@ def create_pfarrei(name: str) -> None:
         db.close()
 
 
+def seed_demo(pfarrei: str) -> None:
+    db = SessionLocal()
+    try:
+        pfarrei_obj = db.query(Pfarrei).filter(Pfarrei.name == pfarrei).first()
+        if pfarrei_obj is None:
+            print(f"Fehler: Pfarrei '{pfarrei}' existiert nicht.", file=sys.stderr)
+            raise SystemExit(1)
+        seed_demo_daten(db, pfarrei_obj)
+        print(f"Beispieldaten für Pfarrei '{pfarrei}' angelegt.")
+    finally:
+        db.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -91,6 +105,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     create_pfarrei_parser.add_argument("--name", required=True)
 
+    seed_demo_parser = subparsers.add_parser(
+        "seed-demo", help="Legt Beispiel-Minis und einen Beispiel-Miniplan für eine Pfarrei an"
+    )
+    seed_demo_parser.add_argument("--pfarrei", required=True)
+
     return parser
 
 
@@ -102,6 +121,8 @@ def main(argv: list[str] | None = None) -> None:
         create_user(args.email, args.password, args.role, args.pfarrei)
     elif args.command == "create-pfarrei":
         create_pfarrei(args.name)
+    elif args.command == "seed-demo":
+        seed_demo(args.pfarrei)
 
 
 if __name__ == "__main__":

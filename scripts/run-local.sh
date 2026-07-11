@@ -38,6 +38,9 @@ if [ "$ready" != true ]; then
   exit 1
 fi
 
+echo "Lege Beispieldaten an (Minis, Miniplan Juli 2026) ..."
+"${compose[@]}" exec -T miniplan-e2e python -m app.cli seed-demo --pfarrei "St. Beispiel"
+
 echo "Miniplan läuft: $base_url"
 echo "Login: admin@example.com / geheim123"
 echo "Zum Beenden Ctrl+C drücken."
