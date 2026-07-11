@@ -79,3 +79,11 @@ class ZuweisungTauschenIn(BaseModel):
 
 class ZuweisungFixierungIn(BaseModel):
     manuell_fixiert: bool
+
+
+class ZuweisungenLeerenIn(BaseModel):
+    # Nur automatisch (nicht manuell fixierte) Zuweisungen werden gelöscht. Ohne Einschränkung
+    # betrifft das den ganzen Plan; mit `gottesdienst_id` nur diesen Gottesdienst, mit
+    # `dienstbedarf_id` nur diesen einen Dienstbedarf.
+    gottesdienst_id: int | None = None
+    dienstbedarf_id: int | None = None

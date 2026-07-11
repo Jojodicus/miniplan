@@ -65,6 +65,22 @@ export function miniplanZuweisungenTauschen(
   )
 }
 
+// Entfernt automatisch zugewiesene (nicht fixierte) Minis. Ohne Argumente für den ganzen Plan,
+// mit `gottesdienstId`/`dienstbedarfId` gezielt für einen Gottesdienst bzw. Dienstbedarf.
+export function miniplanZuweisungenLeeren(
+  pfarreiId: number,
+  miniplanId: number,
+  bereich: { gottesdienstId?: number; dienstbedarfId?: number } = {},
+): Promise<Miniplan> {
+  return api.post<Miniplan>(
+    `/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}/zuweisungen/leeren`,
+    {
+      gottesdienst_id: bereich.gottesdienstId ?? null,
+      dienstbedarf_id: bereich.dienstbedarfId ?? null,
+    },
+  )
+}
+
 export function miniplanZuweisungFixieren(
   pfarreiId: number,
   miniplanId: number,

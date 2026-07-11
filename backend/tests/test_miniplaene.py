@@ -468,3 +468,93 @@ def test_miniplan_fixierung_uebersteht_erneutes_fuellen(
     treffer = [z for z in zuweisungen_danach if z["mini"]["id"] == ziel["mini"]["id"]]
     assert len(treffer) == 1
     assert treffer[0]["manuell_fixiert"] is True
+
+
+def _plan_mit_auto_und_fixierter_zuweisung(db_session, pfarrei: Pfarrei, gruppe: Gruppe):
+    # Ein Dienstbedarf (anzahl 2) mit einer automatischen (nicht fixierten) und einer manuell
+    # fixierten Zuweisung, um das gezielte Leeren nur der automatischen zu prüfen.
+    mini_auto = Mini(pfarrei_id=pfarrei.id, gruppe_id=gruppe.id, name="Auto Mini")
+    mini_fix = Mini(pfarrei_id=pfarrei.id, gruppe_id=gruppe.id, name="Fix Mini")
+    db_session.add_all([mini_auto, mini_fix])
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=9, jahr=2029)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+    bedarf = Dienstbedarf(
+        name="Kreuz",
+        anzahl=2,
+        zuweisungen=[
+            DienstbedarfZuweisung(mini_id=mini_auto.id, manuell_fixiert=False),
+            DienstbedarfZuweisung(mini_id=mini_fix.id, manuell_fixiert=True),
+        ],
+    )
+    gottesdienst = Gottesdienst(
+        miniplan_id=miniplan.id, datum=date(2029, 9, 2), uhrzeit=time(10, 0), dienstbedarf=[bedarf]
+    )
+    db_session.add(gottesdienst)
+    db_session.commit()
+    db_session.refresh(miniplan)
+    return miniplan, mini_auto, mini_fix
+
+
+def test_zuweisungen_leeren_entfernt_nur_automatische(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe, db_session
+) -> None:
+    miniplan, _mini_auto, mini_fix = _plan_mit_auto_und_fixierter_zuweisung(
+        db_session, pfarrei, gruppe
+    )
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/zuweisungen/leeren",
+        json={},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    zuweisungen = response.json()["gottesdienste"][0]["dienstbedarf"][0]["zuweisungen"]
+    assert len(zuweisungen) == 1
+    assert zuweisungen[0]["mini"]["id"] == mini_fix.id
+    assert zuweisungen[0]["manuell_fixiert"] is True
+
+
+def test_zuweisungen_leeren_nur_fuer_gottesdienst(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe, db_session
+) -> None:
+    # Nur automatische Zuweisungen im angegebenen Gottesdienst werden geleert; ein anderer
+    # Gottesdienst bleibt unberührt.
+    miniplan, zuweisung_a, _zuweisung_b, _mini_a, _mini_b = _plan_mit_zwei_gottesdiensten(
+        db_session, pfarrei, gruppe
+    )
+    # Beide Zuweisungen aus dem Helper sind fixiert (Default True) - eine auf automatisch stellen.
+    zuweisung_a.manuell_fixiert = False
+    db_session.commit()
+    gottesdienst_a_id = zuweisung_a.dienstbedarf.gottesdienst_id
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/zuweisungen/leeren",
+        json={"gottesdienst_id": gottesdienst_a_id},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    gottesdienste = {g["id"]: g for g in body["gottesdienste"]}
+    assert gottesdienste[gottesdienst_a_id]["dienstbedarf"][0]["zuweisungen"] == []
+    andere = [g for gid, g in gottesdienste.items() if gid != gottesdienst_a_id][0]
+    assert len(andere["dienstbedarf"][0]["zuweisungen"]) == 1
+
+
+def test_zuweisungen_leeren_erfordert_verantwortlich(
+    client: TestClient, betrachter_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe, db_session
+) -> None:
+    miniplan, _mini_auto, _mini_fix = _plan_mit_auto_und_fixierter_zuweisung(
+        db_session, pfarrei, gruppe
+    )
+
+    headers = auth_headers(client, "betrachter@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/zuweisungen/leeren",
+        json={},
+        headers=headers,
+    )
+    assert response.status_code == 403

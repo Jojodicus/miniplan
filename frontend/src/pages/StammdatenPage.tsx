@@ -1,7 +1,5 @@
 import {
   CalendarDays,
-  Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -75,15 +73,13 @@ import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
-import {
-  BearbeitenAbschnitt,
-  NeuAnlegenAbschnitt,
-  Row,
-} from '../components/ui/CardSections'
+import { Row } from '../components/ui/CardSections'
 import { EmptyState } from '../components/ui/EmptyState'
 import { CheckboxChip, Input, Label, Select } from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
+import { Modal } from '../components/ui/Modal'
+import { ListSkeleton } from '../components/ui/Skeleton'
 import { TabBar } from '../components/ui/TabBar'
 import { useToast } from '../components/ui/Toast'
 import { formatDatum } from '../lib/datum'
@@ -94,6 +90,39 @@ function fehlerText(err: unknown, fallback: string): string {
 
 function filtertagLabel(filtertags: FiltertagDef[], key: Filtertag): string {
   return filtertags.find((f) => f.key === key)?.label ?? key
+}
+
+// Kleiner "+ Neu"-Button für die Kartenkopfzeile (ersetzt den früheren "Neu anlegen"-Abschnitt am
+// Karten-Ende).
+function NeuButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button type="button" size="sm" onClick={onClick}>
+      <Plus className="h-4 w-4" />
+      {label}
+    </Button>
+  )
+}
+
+// Aktionsleiste am Ende eines Modal-Formulars (Abbrechen + Speichern).
+function ModalAktionen({
+  onCancel,
+  submitLabel,
+  disabled,
+}: {
+  onCancel: () => void
+  submitLabel: string
+  disabled?: boolean
+}) {
+  return (
+    <div className="mt-6 flex justify-end gap-2">
+      <Button type="button" variant="ghost" onClick={onCancel}>
+        Abbrechen
+      </Button>
+      <Button type="submit" disabled={disabled}>
+        {submitLabel}
+      </Button>
+    </div>
+  )
 }
 
 // Gemeinsame Chip-Auswahl für alle "genau eine Option aus einer kleinen Liste"-Felder (Gruppe,
@@ -203,41 +232,49 @@ function GruppenAuswahl({
 function GruppenSection({
   pfarreiId,
   gruppen,
+  geladen,
   reload,
 }: {
   pfarreiId: number
   gruppen: Gruppe[]
+  geladen: boolean
   reload: () => void
 }) {
-  const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [modalOffen, setModalOffen] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
-  const [editName, setEditName] = useState('')
+  const [name, setName] = useState('')
   const { showToast } = useToast()
 
-  async function handleCreate(event: SubmitEvent) {
-    event.preventDefault()
+  function oeffnenNeu() {
+    setEditId(null)
+    setName('')
     setError(null)
-    try {
-      await gruppeErstellen(pfarreiId, name)
-      setName('')
-      showToast('Gruppe angelegt')
-      reload()
-    } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Anlegen der Gruppe'))
-    }
+    setModalOffen(true)
   }
 
-  async function handleUpdate(event: SubmitEvent) {
+  function oeffnenBearbeiten(gruppe: Gruppe) {
+    setEditId(gruppe.id)
+    setName(gruppe.name)
+    setError(null)
+    setModalOffen(true)
+  }
+
+  async function handleSubmit(event: SubmitEvent) {
     event.preventDefault()
-    if (editId === null) return
     setError(null)
     try {
-      await gruppeBearbeiten(pfarreiId, editId, editName)
-      setEditId(null)
+      if (editId === null) {
+        await gruppeErstellen(pfarreiId, name)
+        showToast('Gruppe angelegt')
+      } else {
+        await gruppeBearbeiten(pfarreiId, editId, name)
+        showToast('Gruppe gespeichert')
+      }
+      setModalOffen(false)
       reload()
     } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Bearbeiten der Gruppe'))
+      setError(fehlerText(err, 'Fehler beim Speichern der Gruppe'))
     }
   }
 
@@ -257,77 +294,58 @@ function GruppenSection({
       <CardHeader
         title="Gruppen"
         description="Erfahrungsstufen, auf die sich Mindestbesetzungen beziehen."
+        action={<NeuButton label="Gruppe" onClick={oeffnenNeu} />}
       />
-      {error && (
+      {error && !modalOffen && (
         <div className="px-5 pt-4">
           <Alert>{error}</Alert>
         </div>
       )}
-      {gruppen.length === 0 ? (
+      {!geladen ? (
+        <ListSkeleton rows={3} />
+      ) : gruppen.length === 0 ? (
         <EmptyState icon={Users} title="Noch keine Gruppen angelegt" />
       ) : (
         <div>
-          {gruppen.map((gruppe) =>
-            editId === gruppe.id ? (
-              <BearbeitenAbschnitt key={gruppe.id}>
-                <form onSubmit={handleUpdate} className="flex items-end gap-2">
-                  <div className="flex-1">
-                    <Label htmlFor={`gruppe-${gruppe.id}-edit-name`}>Name</Label>
-                    <Input
-                      id={`gruppe-${gruppe.id}-edit-name`}
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      required
-                      autoFocus
-                    />
-                  </div>
-                  <Button type="submit" size="sm">
-                    <Check className="h-4 w-4" />
-                    Speichern
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditId(null)}>
-                    Abbrechen
-                  </Button>
-                </form>
-              </BearbeitenAbschnitt>
-            ) : (
-              <Row key={gruppe.id}>
-                <span className="text-sm font-medium text-ink">{gruppe.name}</span>
-                <div className="flex items-center gap-1">
-                  <IconButton
-                    label="Bearbeiten"
-                    onClick={() => {
-                      setEditId(gruppe.id)
-                      setEditName(gruppe.name)
-                    }}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </IconButton>
-                  <InlineConfirmButton onConfirm={() => handleDelete(gruppe.id)} />
-                </div>
-              </Row>
-            ),
-          )}
+          {gruppen.map((gruppe) => (
+            <Row key={gruppe.id}>
+              <span className="text-sm font-medium text-ink">{gruppe.name}</span>
+              <div className="flex items-center gap-1">
+                <IconButton label="Bearbeiten" onClick={() => oeffnenBearbeiten(gruppe)}>
+                  <Pencil className="h-4 w-4" />
+                </IconButton>
+                <InlineConfirmButton onConfirm={() => handleDelete(gruppe.id)} />
+              </div>
+            </Row>
+          ))}
         </div>
       )}
-      <NeuAnlegenAbschnitt>
-        <form onSubmit={handleCreate} className="flex items-end gap-2">
-          <div className="flex-1">
-            <Label htmlFor="gruppe-neu">Name</Label>
-            <Input
-              id="gruppe-neu"
-              placeholder="z. B. Obermini"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
+      <Modal
+        open={modalOffen}
+        onClose={() => setModalOffen(false)}
+        title={editId === null ? 'Gruppe anlegen' : 'Gruppe bearbeiten'}
+      >
+        {error && (
+          <div className="mb-4">
+            <Alert>{error}</Alert>
           </div>
-          <Button type="submit">
-            <Plus className="h-4 w-4" />
-            Anlegen
-          </Button>
+        )}
+        <form onSubmit={handleSubmit}>
+          <Label htmlFor="gruppe-name">Name</Label>
+          <Input
+            id="gruppe-name"
+            placeholder="z. B. Obermini"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            autoFocus
+          />
+          <ModalAktionen
+            onCancel={() => setModalOffen(false)}
+            submitLabel={editId === null ? 'Anlegen' : 'Speichern'}
+          />
         </form>
-      </NeuAnlegenAbschnitt>
+      </Modal>
     </Card>
   )
 }
@@ -342,64 +360,66 @@ function MinisSection({
   filtertags: FiltertagDef[]
 }) {
   const [minis, setMinis] = useState<Mini[]>([])
+  const [geladen, setGeladen] = useState(false)
   const [suche, setSuche] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [modalOffen, setModalOffen] = useState(false)
+  const [editId, setEditId] = useState<number | null>(null)
   const [name, setName] = useState('')
   const [gruppeId, setGruppeId] = useState<number | ''>('')
   const [ausgewaehlterFiltertag, setAusgewaehlterFiltertag] = useState<Filtertag | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [editId, setEditId] = useState<number | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editGruppeId, setEditGruppeId] = useState<number | ''>('')
-  const [editFiltertag, setEditFiltertag] = useState<Filtertag | null>(null)
   const { showToast } = useToast()
 
   const reload = useCallback(() => {
-    minisListe(pfarreiId).then(setMinis)
+    minisListe(pfarreiId).then((liste) => {
+      setMinis(liste)
+      setGeladen(true)
+    })
   }, [pfarreiId])
 
   useEffect(() => {
     reload()
   }, [reload])
 
-  useEffect(() => {
-    if (gruppeId === '' && gruppen.length > 0) {
-      setGruppeId(gruppen[0].id)
-    }
-  }, [gruppen, gruppeId])
+  function oeffnenNeu() {
+    setEditId(null)
+    setName('')
+    setGruppeId(gruppen[0]?.id ?? '')
+    setAusgewaehlterFiltertag(null)
+    setError(null)
+    setModalOffen(true)
+  }
 
-  async function handleCreate(event: SubmitEvent) {
+  function oeffnenBearbeiten(mini: Mini) {
+    setEditId(mini.id)
+    setName(mini.name)
+    setGruppeId(mini.gruppe_id)
+    setAusgewaehlterFiltertag(mini.filtertags[0] ?? null)
+    setError(null)
+    setModalOffen(true)
+  }
+
+  async function handleSubmit(event: SubmitEvent) {
     event.preventDefault()
     setError(null)
     if (gruppeId === '') return
-    try {
-      await miniErstellen(pfarreiId, {
-        name,
-        gruppe_id: gruppeId,
-        filtertags: ausgewaehlterFiltertag ? [ausgewaehlterFiltertag] : [],
-      })
-      setName('')
-      setAusgewaehlterFiltertag(null)
-      showToast('Mini angelegt')
-      reload()
-    } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Anlegen des Minis'))
+    const daten = {
+      name,
+      gruppe_id: gruppeId,
+      filtertags: ausgewaehlterFiltertag ? [ausgewaehlterFiltertag] : [],
     }
-  }
-
-  async function handleUpdate(event: SubmitEvent) {
-    event.preventDefault()
-    if (editId === null || editGruppeId === '') return
-    setError(null)
     try {
-      await miniBearbeiten(pfarreiId, editId, {
-        name: editName,
-        gruppe_id: editGruppeId,
-        filtertags: editFiltertag ? [editFiltertag] : [],
-      })
-      setEditId(null)
+      if (editId === null) {
+        await miniErstellen(pfarreiId, daten)
+        showToast('Mini angelegt')
+      } else {
+        await miniBearbeiten(pfarreiId, editId, daten)
+        showToast('Mini gespeichert')
+      }
+      setModalOffen(false)
       reload()
     } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Bearbeiten des Minis'))
+      setError(fehlerText(err, 'Fehler beim Speichern des Minis'))
     }
   }
 
@@ -427,13 +447,16 @@ function MinisSection({
 
   return (
     <Card>
-      <CardHeader title="Minis" />
-      {error && (
+      <CardHeader
+        title="Minis"
+        action={<NeuButton label="Mini" onClick={oeffnenNeu} />}
+      />
+      {error && !modalOffen && (
         <div className="px-5 pt-4">
           <Alert>{error}</Alert>
         </div>
       )}
-      {minis.length > 8 && (
+      {geladen && minis.length > 8 && (
         <div className="border-b border-line px-5 py-3">
           <div className="relative sm:max-w-xs">
             <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-faint" />
@@ -447,7 +470,9 @@ function MinisSection({
           </div>
         </div>
       )}
-      {minis.length === 0 ? (
+      {!geladen ? (
+        <ListSkeleton rows={4} />
+      ) : minis.length === 0 ? (
         <EmptyState
           icon={UserRound}
           title="Noch keine Minis angelegt"
@@ -457,107 +482,67 @@ function MinisSection({
         <EmptyState icon={Search} title={`Kein Mini passt zu „${suche.trim()}“`} />
       ) : (
         <div>
-          {sichtbareMinis.map((mini) =>
-            editId === mini.id ? (
-              <BearbeitenAbschnitt key={mini.id}>
-                <form onSubmit={handleUpdate} className="flex flex-col gap-4">
-                  <div className="sm:max-w-xs">
-                    <Label htmlFor={`mini-${mini.id}-edit-name`}>Name</Label>
-                    <Input
-                      id={`mini-${mini.id}-edit-name`}
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      required
-                      autoFocus
-                    />
-                  </div>
-                  <GruppenAuswahl
-                    gruppen={gruppen}
-                    ausgewaehlt={editGruppeId}
-                    onChange={setEditGruppeId}
-                    idPrefix={`mini-${mini.id}-edit-gruppe`}
-                  />
-                  <FiltertagAuswahl
-                    filtertags={filtertags}
-                    ausgewaehlt={editFiltertag}
-                    onChange={setEditFiltertag}
-                    idPrefix={`mini-${mini.id}-edit`}
-                  />
-                  <div className="flex items-center gap-2">
-                    <Button type="submit" size="sm">
-                      <Check className="h-4 w-4" />
-                      Speichern
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setEditId(null)}
-                    >
-                      Abbrechen
-                    </Button>
-                  </div>
-                </form>
-              </BearbeitenAbschnitt>
-            ) : (
-              <Row key={mini.id}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-ink">{mini.name}</span>
-                  <Badge tone="pine">{gruppenName(mini.gruppe_id)}</Badge>
-                  {mini.filtertags.map((tag) => (
-                    <Badge key={tag} tone="gold">
-                      {filtertagLabel(filtertags, tag)}
-                    </Badge>
-                  ))}
-                </div>
-                <div className="flex items-center gap-1">
-                  <IconButton
-                    label="Bearbeiten"
-                    onClick={() => {
-                      setEditId(mini.id)
-                      setEditName(mini.name)
-                      setEditGruppeId(mini.gruppe_id)
-                      setEditFiltertag(mini.filtertags[0] ?? null)
-                    }}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </IconButton>
-                  <InlineConfirmButton onConfirm={() => handleDelete(mini.id)} />
-                </div>
-              </Row>
-            ),
-          )}
+          {sichtbareMinis.map((mini) => (
+            <Row key={mini.id}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-ink">{mini.name}</span>
+                <Badge tone="pine">{gruppenName(mini.gruppe_id)}</Badge>
+                {mini.filtertags.map((tag) => (
+                  <Badge key={tag} tone="gold">
+                    {filtertagLabel(filtertags, tag)}
+                  </Badge>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                <IconButton label="Bearbeiten" onClick={() => oeffnenBearbeiten(mini)}>
+                  <Pencil className="h-4 w-4" />
+                </IconButton>
+                <InlineConfirmButton onConfirm={() => handleDelete(mini.id)} />
+              </div>
+            </Row>
+          ))}
         </div>
       )}
-      <NeuAnlegenAbschnitt>
-        <form onSubmit={handleCreate} className="flex flex-col gap-4">
-          <div className="sm:max-w-xs">
-            <Label htmlFor="mini-neu-name">Name</Label>
+      <Modal
+        open={modalOffen}
+        onClose={() => setModalOffen(false)}
+        title={editId === null ? 'Mini anlegen' : 'Mini bearbeiten'}
+      >
+        {error && (
+          <div className="mb-4">
+            <Alert>{error}</Alert>
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div>
+            <Label htmlFor="mini-name">Name</Label>
             <Input
-              id="mini-neu-name"
+              id="mini-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
+              autoFocus
             />
           </div>
           <GruppenAuswahl
             gruppen={gruppen}
             ausgewaehlt={gruppeId}
             onChange={setGruppeId}
-            idPrefix="mini-neu-gruppe"
+            idPrefix="mini-gruppe"
           />
           <FiltertagAuswahl
             filtertags={filtertags}
             ausgewaehlt={ausgewaehlterFiltertag}
             onChange={setAusgewaehlterFiltertag}
-            idPrefix="mini-neu"
+            idPrefix="mini"
           />
-          <Button type="submit" disabled={gruppen.length === 0} className="self-start">
-            <Plus className="h-4 w-4" />
-            Mini anlegen
-          </Button>
+          <ModalAktionen
+            onCancel={() => setModalOffen(false)}
+            submitLabel={editId === null ? 'Anlegen' : 'Speichern'}
+            disabled={gruppen.length === 0}
+          />
         </form>
-      </NeuAnlegenAbschnitt>
+      </Modal>
     </Card>
   )
 }
@@ -595,19 +580,7 @@ function GruppenAnforderungenEditor({
       <Label hint="z. B. mind. 1 aus Gruppe Obermini">Gruppen-Mindestanzahl</Label>
       <div className="flex flex-col gap-2">
         {anforderungen.map((anforderung, index) => (
-          <div key={index} className="flex flex-wrap items-center gap-2">
-            <Select
-              id={`${idPrefix}-gruppe-${index}`}
-              value={anforderung.gruppe_id}
-              onChange={(e) => updateRow(index, { gruppe_id: Number(e.target.value) })}
-              className="min-w-[9rem] flex-1"
-            >
-              {gruppen.map((gruppe) => (
-                <option key={gruppe.id} value={gruppe.id}>
-                  {gruppe.name}
-                </option>
-              ))}
-            </Select>
+          <div key={index} className="flex items-center gap-2">
             <span className="shrink-0 text-sm text-ink-soft">mind.</span>
             <Input
               id={`${idPrefix}-mindestanzahl-${index}`}
@@ -622,6 +595,19 @@ function GruppenAnforderungenEditor({
               }
               className="w-16 shrink-0 text-center"
             />
+            <span className="shrink-0 text-sm text-ink-soft">aus</span>
+            <Select
+              id={`${idPrefix}-gruppe-${index}`}
+              value={anforderung.gruppe_id}
+              onChange={(e) => updateRow(index, { gruppe_id: Number(e.target.value) })}
+              className="min-w-0 flex-1"
+            >
+              {gruppen.map((gruppe) => (
+                <option key={gruppe.id} value={gruppe.id}>
+                  {gruppe.name}
+                </option>
+              ))}
+            </Select>
             <IconButton label="Zeile entfernen" tone="danger" onClick={() => removeRow(index)}>
               <Trash2 className="h-4 w-4" />
             </IconButton>
@@ -631,6 +617,7 @@ function GruppenAnforderungenEditor({
       <Button
         type="button"
         variant="ghost"
+        size="sm"
         className="mt-2 self-start"
         onClick={addRow}
         disabled={anforderungen.length >= gruppen.length}
@@ -650,29 +637,53 @@ function DienstTypenSection({
   gruppen: Gruppe[]
 }) {
   const [dienstTypen, setDienstTypen] = useState<DienstTyp[]>([])
+  const [geladen, setGeladen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [modalOffen, setModalOffen] = useState(false)
+  const [editId, setEditId] = useState<number | null>(null)
   const [name, setName] = useState('')
   const [standardAnzahl, setStandardAnzahl] = useState(1)
   const [gruppenAnforderungen, setGruppenAnforderungen] = useState<GruppenAnforderung[]>([])
   const [zeigeLabel, setZeigeLabel] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [editId, setEditId] = useState<number | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editStandardAnzahl, setEditStandardAnzahl] = useState(1)
-  const [editGruppenAnforderungen, setEditGruppenAnforderungen] = useState<GruppenAnforderung[]>(
-    [],
-  )
-  const [editZeigeLabel, setEditZeigeLabel] = useState(false)
   const { showToast } = useToast()
 
   const reload = useCallback(() => {
-    dienstTypenListe(pfarreiId).then(setDienstTypen)
+    dienstTypenListe(pfarreiId).then((liste) => {
+      setDienstTypen(liste)
+      setGeladen(true)
+    })
   }, [pfarreiId])
 
   useEffect(() => {
     reload()
   }, [reload])
 
-  async function handleCreate(event: SubmitEvent) {
+  function oeffnenNeu() {
+    setEditId(null)
+    setName('')
+    setStandardAnzahl(1)
+    setGruppenAnforderungen([])
+    setZeigeLabel(true)
+    setError(null)
+    setModalOffen(true)
+  }
+
+  function oeffnenBearbeiten(dienstTyp: DienstTyp) {
+    setEditId(dienstTyp.id)
+    setName(dienstTyp.name)
+    setStandardAnzahl(dienstTyp.standard_anzahl)
+    setGruppenAnforderungen(
+      dienstTyp.gruppen_anforderungen.map((a) => ({
+        gruppe_id: a.gruppe.id,
+        mindest_anzahl: a.mindest_anzahl,
+      })),
+    )
+    setZeigeLabel(dienstTyp.zeige_label)
+    setError(null)
+    setModalOffen(true)
+  }
+
+  async function handleSubmit(event: SubmitEvent) {
     event.preventDefault()
     setError(null)
     const daten: DienstTypEingabe = {
@@ -682,33 +693,17 @@ function DienstTypenSection({
       zeige_label: zeigeLabel,
     }
     try {
-      await dienstTypErstellen(pfarreiId, daten)
-      setName('')
-      setStandardAnzahl(1)
-      setGruppenAnforderungen([])
-      setZeigeLabel(false)
-      showToast('Dienst-Typ angelegt')
+      if (editId === null) {
+        await dienstTypErstellen(pfarreiId, daten)
+        showToast('Dienst-Typ angelegt')
+      } else {
+        await dienstTypBearbeiten(pfarreiId, editId, daten)
+        showToast('Dienst-Typ gespeichert')
+      }
+      setModalOffen(false)
       reload()
     } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Anlegen des Dienst-Typs'))
-    }
-  }
-
-  async function handleUpdate(event: SubmitEvent) {
-    event.preventDefault()
-    if (editId === null) return
-    setError(null)
-    try {
-      await dienstTypBearbeiten(pfarreiId, editId, {
-        name: editName,
-        standard_anzahl: editStandardAnzahl,
-        gruppen_anforderungen: editGruppenAnforderungen,
-        zeige_label: editZeigeLabel,
-      })
-      setEditId(null)
-      reload()
-    } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Bearbeiten des Dienst-Typs'))
+      setError(fehlerText(err, 'Fehler beim Speichern des Dienst-Typs'))
     }
   }
 
@@ -727,161 +722,104 @@ function DienstTypenSection({
     <Card>
       <CardHeader
         title="Dienst-Typen"
-        description="Arten von Diensten mit Standard-Besetzung."
+        description="Arten von Diensten mit üblicher Besetzung."
+        action={<NeuButton label="Dienst-Typ" onClick={oeffnenNeu} />}
       />
-      {error && (
+      {error && !modalOffen && (
         <div className="px-5 pt-4">
           <Alert>{error}</Alert>
         </div>
       )}
-      {dienstTypen.length === 0 ? (
+      {!geladen ? (
+        <ListSkeleton rows={3} />
+      ) : dienstTypen.length === 0 ? (
         <EmptyState icon={ClipboardList} title="Noch keine Dienst-Typen angelegt" />
       ) : (
         <div>
-          {dienstTypen.map((dienstTyp) =>
-            editId === dienstTyp.id ? (
-              <BearbeitenAbschnitt key={dienstTyp.id}>
-                <form onSubmit={handleUpdate} className="flex flex-col gap-4">
-                  <div className="flex flex-wrap gap-4">
-                    <div className="min-w-[10rem] flex-1">
-                      <Label htmlFor={`dienst-typ-${dienstTyp.id}-edit-name`}>Name</Label>
-                      <Input
-                        id={`dienst-typ-${dienstTyp.id}-edit-name`}
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        required
-                        autoFocus
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor={`dienst-typ-${dienstTyp.id}-edit-anzahl`}>
-                        Standard-Anzahl
-                      </Label>
-                      <Input
-                        id={`dienst-typ-${dienstTyp.id}-edit-anzahl`}
-                        type="number"
-                        min={1}
-                        value={editStandardAnzahl}
-                        onChange={(e) => setEditStandardAnzahl(Number(e.target.value))}
-                        required
-                        className="w-16 text-center"
-                      />
-                    </div>
-                  </div>
-                  <GruppenAnforderungenEditor
-                    gruppen={gruppen}
-                    anforderungen={editGruppenAnforderungen}
-                    maxAnzahl={editStandardAnzahl}
-                    onChange={setEditGruppenAnforderungen}
-                    idPrefix={`dienst-typ-${dienstTyp.id}-edit`}
-                  />
-                  <CheckboxChip
-                    id={`dienst-typ-${dienstTyp.id}-edit-zeige-label`}
-                    checked={editZeigeLabel}
-                    onChange={() => setEditZeigeLabel((wert) => !wert)}
-                    title="Name erscheint als Beschriftung auf dem PDF-Plan."
-                  >
-                    Auf dem Plan anzeigen
-                  </CheckboxChip>
-                  <div className="flex items-center gap-2">
-                    <Button type="submit" size="sm">
-                      <Check className="h-4 w-4" />
-                      Speichern
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setEditId(null)}
-                    >
-                      Abbrechen
-                    </Button>
-                  </div>
-                </form>
-              </BearbeitenAbschnitt>
-            ) : (
-              <Row key={dienstTyp.id}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-ink">{dienstTyp.name}</span>
-                  <Badge tone="neutral">{dienstTyp.standard_anzahl}× besetzt</Badge>
-                  {dienstTyp.zeige_label && <Badge tone="neutral">auf Plan sichtbar</Badge>}
-                  {dienstTyp.gruppen_anforderungen.map((a) => (
-                    <Badge key={a.gruppe.id} tone="pine">
-                      mind. {a.mindest_anzahl}× {a.gruppe.name}
-                    </Badge>
-                  ))}
-                </div>
-                <div className="flex items-center gap-1">
-                  <IconButton
-                    label="Bearbeiten"
-                    onClick={() => {
-                      setEditId(dienstTyp.id)
-                      setEditName(dienstTyp.name)
-                      setEditStandardAnzahl(dienstTyp.standard_anzahl)
-                      setEditGruppenAnforderungen(
-                        dienstTyp.gruppen_anforderungen.map((a) => ({
-                          gruppe_id: a.gruppe.id,
-                          mindest_anzahl: a.mindest_anzahl,
-                        })),
-                      )
-                      setEditZeigeLabel(dienstTyp.zeige_label)
-                    }}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </IconButton>
-                  <InlineConfirmButton onConfirm={() => handleDelete(dienstTyp.id)} />
-                </div>
-              </Row>
-            ),
-          )}
+          {dienstTypen.map((dienstTyp) => (
+            <Row key={dienstTyp.id}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-ink">{dienstTyp.name}</span>
+                <Badge tone="neutral">{dienstTyp.standard_anzahl}× besetzt</Badge>
+                {dienstTyp.zeige_label && <Badge tone="neutral">auf Plan sichtbar</Badge>}
+                {dienstTyp.gruppen_anforderungen.map((a) => (
+                  <Badge key={a.gruppe.id} tone="pine">
+                    mind. {a.mindest_anzahl}× {a.gruppe.name}
+                  </Badge>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                <IconButton label="Bearbeiten" onClick={() => oeffnenBearbeiten(dienstTyp)}>
+                  <Pencil className="h-4 w-4" />
+                </IconButton>
+                <InlineConfirmButton onConfirm={() => handleDelete(dienstTyp.id)} />
+              </div>
+            </Row>
+          ))}
         </div>
       )}
-      <NeuAnlegenAbschnitt>
-        <form onSubmit={handleCreate} className="flex flex-col gap-4">
-          <div className="flex flex-wrap gap-4">
-            <div className="min-w-[10rem] flex-1">
-              <Label htmlFor="dienst-typ-neu-name">Name</Label>
-              <Input
-                id="dienst-typ-neu-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
+      <Modal
+        open={modalOffen}
+        onClose={() => setModalOffen(false)}
+        title={editId === null ? 'Dienst-Typ anlegen' : 'Dienst-Typ bearbeiten'}
+      >
+        {error && (
+          <div className="mb-4">
+            <Alert>{error}</Alert>
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div>
+            <Label htmlFor="dienst-typ-name">Name</Label>
+            <Input
+              id="dienst-typ-name"
+              placeholder="z. B. Messdiener"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              autoFocus
+            />
+            <div className="mt-2">
+              <CheckboxChip
+                id="dienst-typ-zeige-label"
+                checked={zeigeLabel}
+                onChange={() => setZeigeLabel((wert) => !wert)}
+                title="Ist dies aus, erscheint auf dem Plan nur die Anzahl/Einschränkung, nicht der Name."
+              >
+                Name auf dem Plan zeigen
+              </CheckboxChip>
             </div>
-            <div>
-              <Label htmlFor="dienst-typ-neu-anzahl">Standard-Anzahl</Label>
-              <Input
-                id="dienst-typ-neu-anzahl"
-                type="number"
-                min={1}
-                value={standardAnzahl}
-                onChange={(e) => setStandardAnzahl(Number(e.target.value))}
-                required
-                className="w-16 text-center"
-              />
-            </div>
+          </div>
+          <div>
+            <Label
+              htmlFor="dienst-typ-anzahl"
+              hint="Minis pro Termin"
+            >
+              Übliche Besetzung
+            </Label>
+            <Input
+              id="dienst-typ-anzahl"
+              type="number"
+              min={1}
+              value={standardAnzahl}
+              onChange={(e) => setStandardAnzahl(Number(e.target.value))}
+              required
+              className="w-24 text-center"
+            />
           </div>
           <GruppenAnforderungenEditor
             gruppen={gruppen}
             anforderungen={gruppenAnforderungen}
             maxAnzahl={standardAnzahl}
             onChange={setGruppenAnforderungen}
-            idPrefix="dienst-typ-neu"
+            idPrefix="dienst-typ"
           />
-          <CheckboxChip
-            id="dienst-typ-neu-zeige-label"
-            checked={zeigeLabel}
-            onChange={() => setZeigeLabel((wert) => !wert)}
-            title="Name erscheint als Beschriftung auf dem PDF-Plan."
-          >
-            Auf dem Plan anzeigen
-          </CheckboxChip>
-          <Button type="submit" className="self-start">
-            <Plus className="h-4 w-4" />
-            Dienst-Typ anlegen
-          </Button>
+          <ModalAktionen
+            onCancel={() => setModalOffen(false)}
+            submitLabel={editId === null ? 'Anlegen' : 'Speichern'}
+          />
         </form>
-      </NeuAnlegenAbschnitt>
+      </Modal>
     </Card>
   )
 }
@@ -973,19 +911,20 @@ function NeuerBlockerForm({
 function FiltertagsSection({
   pfarreiId,
   filtertags,
+  geladen,
   reload,
 }: {
   pfarreiId: number
   filtertags: FiltertagDef[]
+  geladen: boolean
   reload: () => void
 }) {
   const [blocker, setBlocker] = useState<FiltertagBlocker[]>([])
   const [offeneSperrzeiten, setOffeneSperrzeiten] = useState<Set<number>>(new Set())
+  const [modalOffen, setModalOffen] = useState(false)
+  const [editId, setEditId] = useState<number | null>(null)
   const [label, setLabel] = useState('')
   const [istSchuelerArtig, setIstSchuelerArtig] = useState(false)
-  const [editId, setEditId] = useState<number | null>(null)
-  const [editLabel, setEditLabel] = useState('')
-  const [editIstSchuelerArtig, setEditIstSchuelerArtig] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { showToast } = useToast()
 
@@ -997,34 +936,38 @@ function FiltertagsSection({
     reloadBlocker()
   }, [reloadBlocker])
 
-  async function handleCreate(event: SubmitEvent) {
+  function oeffnenNeu() {
+    setEditId(null)
+    setLabel('')
+    setIstSchuelerArtig(false)
+    setError(null)
+    setModalOffen(true)
+  }
+
+  function oeffnenBearbeiten(filtertag: FiltertagDef) {
+    setEditId(filtertag.id)
+    setLabel(filtertag.label)
+    setIstSchuelerArtig(filtertag.ist_schueler_artig)
+    setError(null)
+    setModalOffen(true)
+  }
+
+  async function handleSubmit(event: SubmitEvent) {
     event.preventDefault()
     setError(null)
     const daten: FiltertagEingabe = { label, ist_schueler_artig: istSchuelerArtig }
     try {
-      await filtertagErstellen(pfarreiId, daten)
-      setLabel('')
-      setIstSchuelerArtig(false)
-      showToast('Verfügbarkeits-Status angelegt')
+      if (editId === null) {
+        await filtertagErstellen(pfarreiId, daten)
+        showToast('Verfügbarkeits-Status angelegt')
+      } else {
+        await filtertagBearbeiten(pfarreiId, editId, daten)
+        showToast('Verfügbarkeits-Status gespeichert')
+      }
+      setModalOffen(false)
       reload()
     } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Anlegen des Verfügbarkeits-Status'))
-    }
-  }
-
-  async function handleUpdate(event: SubmitEvent) {
-    event.preventDefault()
-    if (editId === null) return
-    setError(null)
-    try {
-      await filtertagBearbeiten(pfarreiId, editId, {
-        label: editLabel,
-        ist_schueler_artig: editIstSchuelerArtig,
-      })
-      setEditId(null)
-      reload()
-    } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Bearbeiten des Verfügbarkeits-Status'))
+      setError(fehlerText(err, 'Fehler beim Speichern des Verfügbarkeits-Status'))
     }
   }
 
@@ -1077,139 +1020,113 @@ function FiltertagsSection({
       <CardHeader
         title="Verfügbarkeits-Status"
         description="Wöchentliche Sperrzeiten je Status, z. B. Schulzeiten für „Schüler“."
+        action={<NeuButton label="Status" onClick={oeffnenNeu} />}
       />
-      {error && (
+      {error && !modalOffen && (
         <div className="px-5 pt-4">
           <Alert>{error}</Alert>
         </div>
       )}
-      {filtertags.length === 0 ? (
+      {!geladen ? (
+        <ListSkeleton rows={3} />
+      ) : filtertags.length === 0 ? (
         <EmptyState icon={Clock} title="Noch keine Verfügbarkeits-Status angelegt" />
       ) : (
         <div>
-          {filtertags.map((filtertag) =>
-            editId === filtertag.id ? (
-              <BearbeitenAbschnitt key={filtertag.id}>
-                <form onSubmit={handleUpdate} className="flex flex-wrap items-end gap-2">
-                  <div className="min-w-[10rem] flex-1">
-                    <Label htmlFor={`filtertag-${filtertag.id}-edit-label`}>Bezeichnung</Label>
-                    <Input
-                      id={`filtertag-${filtertag.id}-edit-label`}
-                      value={editLabel}
-                      onChange={(e) => setEditLabel(e.target.value)}
-                      required
-                      autoFocus
-                    />
-                  </div>
-                  <CheckboxChip
-                    id={`filtertag-${filtertag.id}-edit-schueler-artig`}
-                    checked={editIstSchuelerArtig}
-                    onChange={() => setEditIstSchuelerArtig((wert) => !wert)}
-                    title="Ferien und schulfreie Feiertage gelten für diesen Status als frei."
+          {filtertags.map((filtertag) => (
+            <div key={filtertag.id} className="border-b border-line last:border-b-0">
+              <Row>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-ink">{filtertag.label}</span>
+                  {filtertag.ist_schueler_artig && (
+                    <Badge tone="gold">folgt Schulferien-Regeln</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleSperrzeiten(filtertag.id)}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
                   >
-                    folgt Schulferien-Regeln
-                  </CheckboxChip>
-                  <Button type="submit" size="sm">
-                    <Check className="h-4 w-4" />
-                    Speichern
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditId(null)}>
-                    Abbrechen
-                  </Button>
-                </form>
-              </BearbeitenAbschnitt>
-            ) : (
-              <div key={filtertag.id} className="border-b border-line last:border-b-0">
-                <Row>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-ink">{filtertag.label}</span>
-                    {filtertag.ist_schueler_artig && (
-                      <Badge tone="gold">folgt Schulferien-Regeln</Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => toggleSperrzeiten(filtertag.id)}
-                      className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
-                    >
-                      <ChevronDown
-                        className={`h-3.5 w-3.5 transition-transform ${
-                          offeneSperrzeiten.has(filtertag.id) ? '' : '-rotate-90'
-                        }`}
-                      />
-                      Sperrzeiten
-                      <span className="rounded-full bg-pine-tint px-1.5 text-[10px] text-pine-dark">
-                        {blocker.filter((b) => b.filtertag_id === filtertag.id).length}
-                      </span>
-                    </button>
-                    <IconButton
-                      label="Bearbeiten"
-                      onClick={() => {
-                        setEditId(filtertag.id)
-                        setEditLabel(filtertag.label)
-                        setEditIstSchuelerArtig(filtertag.ist_schueler_artig)
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </IconButton>
-                    <InlineConfirmButton onConfirm={() => handleDelete(filtertag.id)} />
-                  </div>
-                </Row>
-                {offeneSperrzeiten.has(filtertag.id) && (
-                  <div className="bg-pine-tint/20 pl-4">
-                    {WOCHENTAGE.map((wochentagName, wochentag) => {
-                      const eintraege = blocker.filter(
-                        (b) => b.filtertag_id === filtertag.id && b.wochentag === wochentag,
-                      )
-                      if (eintraege.length === 0) return null
-                      return (
-                        <div key={wochentag}>
-                          <p className="pt-2 text-xs font-medium text-ink-faint">{wochentagName}</p>
-                          {eintraege.map((b) => (
-                            <FiltertagBlockerZeile
-                              key={b.id}
-                              blocker={b}
-                              onDelete={() => handleBlockerDelete(b.id)}
-                            />
-                          ))}
-                        </div>
-                      )
-                    })}
-                    <NeuerBlockerForm filtertagId={filtertag.id} onCreate={handleBlockerCreate} />
-                  </div>
-                )}
-              </div>
-            ),
-          )}
+                    <ChevronRight
+                      className={`h-3.5 w-3.5 transition-transform ${
+                        offeneSperrzeiten.has(filtertag.id) ? 'rotate-90' : ''
+                      }`}
+                    />
+                    Sperrzeiten
+                    <span className="rounded-full bg-pine-tint px-1.5 text-[10px] text-pine-dark">
+                      {blocker.filter((b) => b.filtertag_id === filtertag.id).length}
+                    </span>
+                  </button>
+                  <IconButton label="Bearbeiten" onClick={() => oeffnenBearbeiten(filtertag)}>
+                    <Pencil className="h-4 w-4" />
+                  </IconButton>
+                  <InlineConfirmButton onConfirm={() => handleDelete(filtertag.id)} />
+                </div>
+              </Row>
+              {offeneSperrzeiten.has(filtertag.id) && (
+                <div className="bg-pine-tint/20 pl-4">
+                  {WOCHENTAGE.map((wochentagName, wochentag) => {
+                    const eintraege = blocker.filter(
+                      (b) => b.filtertag_id === filtertag.id && b.wochentag === wochentag,
+                    )
+                    if (eintraege.length === 0) return null
+                    return (
+                      <div key={wochentag}>
+                        <p className="pt-2 text-xs font-medium text-ink-faint">{wochentagName}</p>
+                        {eintraege.map((b) => (
+                          <FiltertagBlockerZeile
+                            key={b.id}
+                            blocker={b}
+                            onDelete={() => handleBlockerDelete(b.id)}
+                          />
+                        ))}
+                      </div>
+                    )
+                  })}
+                  <NeuerBlockerForm filtertagId={filtertag.id} onCreate={handleBlockerCreate} />
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
-      <NeuAnlegenAbschnitt>
-        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-2">
-          <div className="min-w-[10rem] flex-1">
-            <Label htmlFor="filtertag-neu-label">Bezeichnung</Label>
+      <Modal
+        open={modalOffen}
+        onClose={() => setModalOffen(false)}
+        title={editId === null ? 'Verfügbarkeits-Status anlegen' : 'Verfügbarkeits-Status bearbeiten'}
+      >
+        {error && (
+          <div className="mb-4">
+            <Alert>{error}</Alert>
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div>
+            <Label htmlFor="filtertag-label">Bezeichnung</Label>
             <Input
-              id="filtertag-neu-label"
+              id="filtertag-label"
               placeholder="z. B. Azubi"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               required
+              autoFocus
             />
           </div>
           <CheckboxChip
-            id="filtertag-neu-schueler-artig"
+            id="filtertag-schueler-artig"
             checked={istSchuelerArtig}
             onChange={() => setIstSchuelerArtig((wert) => !wert)}
             title="Ferien und schulfreie Feiertage gelten für diesen Status als frei."
           >
             folgt Schulferien-Regeln
           </CheckboxChip>
-          <Button type="submit">
-            <Plus className="h-4 w-4" />
-            Anlegen
-          </Button>
+          <ModalAktionen
+            onCancel={() => setModalOffen(false)}
+            submitLabel={editId === null ? 'Anlegen' : 'Speichern'}
+          />
         </form>
-      </NeuAnlegenAbschnitt>
+      </Modal>
     </Card>
   )
 }
@@ -1236,12 +1153,16 @@ const BUNDESLAND_NAMEN: Record<Bundesland, string> = {
 function FerienSection({ pfarreiId }: { pfarreiId: number }) {
   const [pfarreiInfo, setPfarreiInfo] = useState<PfarreiInfo | null>(null)
   const [ferien, setFerien] = useState<Ferienzeitraum[]>([])
+  const [geladen, setGeladen] = useState(false)
   const [aktualisiert, setAktualisiert] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const reload = useCallback(() => {
     pfarreiDetail(pfarreiId).then(setPfarreiInfo)
-    ferienListe(pfarreiId).then(setFerien)
+    ferienListe(pfarreiId).then((liste) => {
+      setFerien(liste)
+      setGeladen(true)
+    })
   }, [pfarreiId])
 
   useEffect(() => {
@@ -1307,7 +1228,9 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
         </Button>
         {aktualisiert && <span className="text-sm text-ink-soft">Ferienkalender aktualisiert.</span>}
       </div>
-      {ferien.length === 0 ? (
+      {!geladen ? (
+        <ListSkeleton rows={3} />
+      ) : ferien.length === 0 ? (
         <EmptyState icon={CalendarDays} title="Noch keine Ferien geladen" />
       ) : (
         <div>
@@ -1327,12 +1250,16 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
 
 function FeiertageSection({ pfarreiId }: { pfarreiId: number }) {
   const [feiertage, setFeiertage] = useState<Feiertag[]>([])
+  const [geladen, setGeladen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Umschaltbar, weil z. B. im Dezember bereits der Januar des Folgejahres geplant wird.
   const [jahr, setJahr] = useState(() => new Date().getFullYear())
 
   const reload = useCallback(() => {
-    feiertageListe(pfarreiId, jahr).then(setFeiertage)
+    feiertageListe(pfarreiId, jahr).then((liste) => {
+      setFeiertage(liste)
+      setGeladen(true)
+    })
   }, [pfarreiId, jahr])
 
   useEffect(() => {
@@ -1378,7 +1305,9 @@ function FeiertageSection({ pfarreiId }: { pfarreiId: number }) {
           <Alert>{error}</Alert>
         </div>
       )}
-      {feiertage.length === 0 ? (
+      {!geladen ? (
+        <ListSkeleton rows={4} />
+      ) : feiertage.length === 0 ? (
         <EmptyState icon={Landmark} title="Keine Feiertage gefunden" />
       ) : (
         <div>
@@ -1431,10 +1360,12 @@ type VerfuegbarkeitTabKey = (typeof VERFUEGBARKEIT_TABS)[number]['key']
 function VerfuegbarkeitSection({
   pfarreiId,
   filtertags,
+  filtertagsGeladen,
   reloadFiltertags,
 }: {
   pfarreiId: number
   filtertags: FiltertagDef[]
+  filtertagsGeladen: boolean
   reloadFiltertags: () => void
 }) {
   const [subTab, setSubTab] = useState<VerfuegbarkeitTabKey>('status')
@@ -1443,7 +1374,12 @@ function VerfuegbarkeitSection({
     <div className="flex flex-col gap-4">
       <TabBar tabs={VERFUEGBARKEIT_TABS} active={subTab} onChange={setSubTab} variant="pills" />
       {subTab === 'status' && (
-        <FiltertagsSection pfarreiId={pfarreiId} filtertags={filtertags} reload={reloadFiltertags} />
+        <FiltertagsSection
+          pfarreiId={pfarreiId}
+          filtertags={filtertags}
+          geladen={filtertagsGeladen}
+          reload={reloadFiltertags}
+        />
       )}
       {subTab === 'ferien' && <FerienSection pfarreiId={pfarreiId} />}
       {subTab === 'feiertage' && <FeiertageSection pfarreiId={pfarreiId} />}
@@ -1455,15 +1391,23 @@ export function StammdatenPage() {
   const { pfarreiId } = useParams<{ pfarreiId: string }>()
   const id = Number(pfarreiId)
   const [gruppen, setGruppen] = useState<Gruppe[]>([])
+  const [gruppenGeladen, setGruppenGeladen] = useState(false)
   const [filtertags, setFiltertags] = useState<FiltertagDef[]>([])
+  const [filtertagsGeladen, setFiltertagsGeladen] = useState(false)
   const [tab, setTab] = useState<TabKey>('gruppen')
 
   const reloadGruppen = useCallback(() => {
-    gruppenListe(id).then(setGruppen)
+    gruppenListe(id).then((liste) => {
+      setGruppen(liste)
+      setGruppenGeladen(true)
+    })
   }, [id])
 
   const reloadFiltertags = useCallback(() => {
-    filtertagsListe(id).then(setFiltertags)
+    filtertagsListe(id).then((liste) => {
+      setFiltertags(liste)
+      setFiltertagsGeladen(true)
+    })
   }, [id])
 
   useEffect(() => {
@@ -1482,7 +1426,12 @@ export function StammdatenPage() {
 
       <div className="mt-6">
         {tab === 'gruppen' && (
-          <GruppenSection pfarreiId={id} gruppen={gruppen} reload={reloadGruppen} />
+          <GruppenSection
+            pfarreiId={id}
+            gruppen={gruppen}
+            geladen={gruppenGeladen}
+            reload={reloadGruppen}
+          />
         )}
         {tab === 'minis' && (
           <MinisSection pfarreiId={id} gruppen={gruppen} filtertags={filtertags} />
@@ -1492,6 +1441,7 @@ export function StammdatenPage() {
           <VerfuegbarkeitSection
             pfarreiId={id}
             filtertags={filtertags}
+            filtertagsGeladen={filtertagsGeladen}
             reloadFiltertags={reloadFiltertags}
           />
         )}

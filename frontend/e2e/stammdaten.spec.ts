@@ -31,35 +31,41 @@ test('Nutzer kann Gruppe, Mini und Dienst-Typ mit Gruppen-Mindestanzahl anlegen'
   // "St. Beispiel" wird per `create-pfarrei` mit Default-Stammdaten geseedet (Gruppen Neu/
   // Normal/Obermini, DienstTypen Sonntagsmesse/Weihrauch/Wochentagsmesse, Filtertags
   // grundschueler/schueler/arbeiter) - daher hier bewusst andere Namen verwenden.
+  // "Neu anlegen" öffnet seit dem Redesign ein zentriertes Modal (role=dialog) über den
+  // "+ …"-Button in der Kartenkopfzeile statt eines Formulars am Karten-Ende.
   await page.getByRole('tab', { name: 'Gruppen' }).click()
-  await page.getByLabel('Name').fill('Sondergruppe')
-  await page.getByRole('button', { name: 'Anlegen' }).click()
+  await page.getByRole('button', { name: 'Gruppe', exact: true }).click()
+  const gruppeDialog = page.getByRole('dialog')
+  await gruppeDialog.getByLabel('Name').fill('Sondergruppe')
+  await gruppeDialog.getByRole('button', { name: 'Anlegen' }).click()
   // Großzügigere Timeouts für Assertions direkt nach einem Backend-Roundtrip: die e2e-Umgebung
   // teilt einen einzelnen Docker-Container/eine einzelne SQLite-DB über alle parallel laufenden
   // Playwright-Worker hinweg, wodurch Anfragen unter Last spürbar langsamer werden können.
   await expect(page.getByText('Sondergruppe', { exact: true })).toBeVisible({ timeout: 15_000 })
 
   await page.getByRole('tab', { name: 'Minis' }).click()
-  const miniForm = page.locator('form').filter({ hasText: 'Mini anlegen' })
-  await miniForm.getByLabel('Name').fill('Max Muster')
+  await page.getByRole('button', { name: 'Mini', exact: true }).click()
+  const miniDialog = page.getByRole('dialog')
+  await miniDialog.getByLabel('Name').fill('Max Muster')
   // Die Gruppen-Liste dieser Pfarrei ist über alle parallel laufenden e2e-Tests hinweg geteilt und
-  // ändert sich laufend (andere Tests legen Gruppen an/löschen sie) - das Formular wählt ohne
-  // Auswahl standardmäßig einfach die erste Gruppe der (fremdbestimmten) Liste, was zu einer Race
-  // Condition führen kann, falls diese Default-Gruppe gerade von einem anderen Test gelöscht wird.
-  // Daher hier bewusst die selbst angelegte "Sondergruppe" explizit auswählen.
-  await miniForm.getByLabel('Sondergruppe', { exact: true }).click({ force: true })
-  await miniForm.getByLabel('Schüler', { exact: true }).click({ force: true })
-  await miniForm.getByRole('button', { name: 'Mini anlegen' }).click()
+  // ändert sich laufend - daher bewusst die selbst angelegte "Sondergruppe" explizit auswählen.
+  await miniDialog.getByLabel('Sondergruppe', { exact: true }).click({ force: true })
+  await miniDialog.getByLabel('Schüler', { exact: true }).click({ force: true })
+  await miniDialog.getByRole('button', { name: 'Anlegen' }).click()
   await expect(page.getByText('Max Muster')).toBeVisible({ timeout: 15_000 })
 
   await page.getByRole('tab', { name: 'Dienst-Typen' }).click()
-  const dienstTypForm = page.locator('form').filter({ hasText: 'Dienst-Typ anlegen' })
-  await dienstTypForm.getByLabel('Name').fill('Kreuz tragen')
-  await dienstTypForm.getByLabel('Standard-Anzahl').fill('2')
-  await dienstTypForm.getByRole('button', { name: 'Zeile hinzufügen' }).click()
-  await dienstTypForm.locator('select').selectOption({ label: 'Sondergruppe' })
-  await dienstTypForm.locator('input[type="number"]').nth(1).fill('1')
-  await dienstTypForm.getByRole('button', { name: 'Dienst-Typ anlegen' }).click()
+  await page.getByRole('button', { name: 'Dienst-Typ', exact: true }).click()
+  const dienstTypDialog = page.getByRole('dialog')
+  // exact: true, sonst matcht getByLabel('Name') auch die Checkbox "Name auf dem Plan zeigen".
+  await dienstTypDialog.getByLabel('Name', { exact: true }).fill('Kreuz tragen')
+  // Frühere Beschriftung "Standard-Anzahl" ist jetzt "Übliche Besetzung" (klarer für Erstnutzer).
+  await dienstTypDialog.getByLabel('Übliche Besetzung').fill('2')
+  await dienstTypDialog.getByRole('button', { name: 'Zeile hinzufügen' }).click()
+  await dienstTypDialog.locator('select').selectOption({ label: 'Sondergruppe' })
+  // Reihenfolge der Zahlen-Felder: [0] übliche Besetzung, [1] Gruppen-Mindestanzahl.
+  await dienstTypDialog.locator('input[type="number"]').nth(1).fill('1')
+  await dienstTypDialog.getByRole('button', { name: 'Anlegen' }).click()
   await expect(page.getByText('mind. 1× Sondergruppe')).toBeVisible({ timeout: 15_000 })
 })
 
@@ -72,14 +78,14 @@ test('Nutzer kann Verfügbarkeits-Status anlegen und Zeitfenster hinzufügen', a
   await page.getByRole('tab', { name: 'Verfügbarkeit', exact: true }).click()
   await page.getByRole('tab', { name: 'Verfügbarkeits-Status' }).click()
 
-  const anlegenForm = page.locator('form').filter({ hasText: 'Anlegen' }).last()
-  await anlegenForm.getByLabel('Bezeichnung').fill('Azubi')
-  await anlegenForm.getByRole('button', { name: 'Anlegen' }).click()
+  await page.getByRole('button', { name: 'Status', exact: true }).click()
+  const statusDialog = page.getByRole('dialog')
+  await statusDialog.getByLabel('Bezeichnung').fill('Azubi')
+  await statusDialog.getByRole('button', { name: 'Anlegen' }).click()
   await expect(page.getByText('Azubi', { exact: true })).toBeVisible({ timeout: 15_000 })
 
   // Die Sperrzeiten-Sektion ist standardmäßig eingeklappt und muss erst über den Toggle in der
-  // Zeile des neu angelegten Verfügbarkeits-Status geöffnet werden, bevor das Zeitfenster-Formular
-  // sichtbar ist.
+  // Zeile des neu angelegten Verfügbarkeits-Status geöffnet werden.
   const azubiZeile = page.getByText('Azubi', { exact: true }).locator('xpath=../..')
   await azubiZeile.getByRole('button', { name: 'Sperrzeiten' }).click()
 
@@ -88,9 +94,8 @@ test('Nutzer kann Verfügbarkeits-Status anlegen und Zeitfenster hinzufügen', a
   await zeitfensterForm.getByLabel('Startzeit').fill('09:00')
   await zeitfensterForm.getByLabel('Endzeit').fill('11:00')
   await zeitfensterForm.getByRole('button', { name: 'Zeitfenster hinzufügen' }).click()
-  // Der Wochentag steht als eigene Überschrift (<p>) über der Zeitfenster-Gruppe, nicht als
-  // Teil des Textes selbst - "Samstag" kommt sonst auch als <option> in jedem Wochentag-Select
-  // vor, daher hier gezielt auf das <p>-Element eingrenzen.
+  // Der Wochentag steht als eigene Überschrift (<p>) über der Zeitfenster-Gruppe, nicht als Teil
+  // des Textes selbst - "Samstag" kommt sonst auch als <option> in jedem Wochentag-Select vor.
   await expect(page.locator('p', { hasText: 'Samstag' })).toBeVisible()
   await expect(page.getByText('09:00–11:00 Uhr')).toBeVisible()
 })
@@ -118,16 +123,15 @@ test('Löschen einer Gruppe erfordert Inline-Bestätigung statt eines Browser-Di
   await expect(page).toHaveURL(/\/stammdaten$/)
 
   await page.getByRole('tab', { name: 'Gruppen' }).click()
-  await page.getByLabel('Name').fill('LöschGruppe')
-  await page.getByRole('button', { name: 'Anlegen' }).click()
+  await page.getByRole('button', { name: 'Gruppe', exact: true }).click()
+  const gruppeDialog = page.getByRole('dialog')
+  await gruppeDialog.getByLabel('Name').fill('LöschGruppe')
+  await gruppeDialog.getByRole('button', { name: 'Anlegen' }).click()
   // Die Gruppen-Liste dieser Pfarrei ist über alle parallel laufenden e2e-Tests hinweg geteilt -
-  // ein globales `.last()` auf den "Löschen"-Button wäre eine Race-Condition, sobald ein anderer
-  // Test parallel eine weitere Gruppe anlegt. Stattdessen gezielt über den (immer exakt gleich
-  // bleibenden) Namens-Text zur umschließenden Zeile navigieren und den Button darin ansteuern -
-  // funktioniert unabhängig davon, ob gerade der Löschen- oder der Bestätigen/Abbrechen-Zustand
-  // gerendert wird.
+  // gezielt über den (immer exakt gleich bleibenden) Namens-Text zur umschließenden Zeile
+  // navigieren und den Button darin ansteuern.
   const nameSpan = page.getByText('LöschGruppe', { exact: true })
-  await expect(nameSpan).toBeVisible()
+  await expect(nameSpan).toBeVisible({ timeout: 15_000 })
   const zeile = nameSpan.locator('..')
 
   const loeschenButton = zeile.getByRole('button', { name: 'Löschen' })

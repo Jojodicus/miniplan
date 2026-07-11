@@ -167,28 +167,39 @@ weitere Endpunkte, gleiche Rolle wie `fuellen`):
   gelöscht und mit vertauschten Minis neu angelegt, nicht per In-Place-Update getauscht.
 - `POST .../miniplaene/{id}/zuweisungen/{zuweisung_id}/fixierung` (Body `{manuell_fixiert}`) setzt
   das Flag einer einzelnen Zeile.
+- `POST .../miniplaene/{id}/zuweisungen/leeren` (Body `{gottesdienst_id?, dienstbedarf_id?}`)
+  löscht die automatischen (nicht fixierten) Zuweisungen – ohne Angabe planweit, sonst gezielt für
+  einen Gottesdienst bzw. Dienstbedarf; fixierte Zuweisungen bleiben.
 
 Aus demselben Grund löscht auch `fuellen` die zu ersetzenden Zeilen zuerst und flusht, bevor die
 neuen eingefügt werden (ein erneuter Lauf kann denselben Mini wieder derselben Stelle zuteilen).
 
 Frontend: Der "Füllen"-Button in `MiniplanEditorPage` löst den Endpoint aus und lädt den Miniplan
 neu. Da jede `GottesdienstKarte` ihren Dienstbedarf nur beim ersten Rendern aus den Props in
-eigenen State übernimmt, erzwingt ein Revisions-Zähler im `key`-Prop der Karten nach jeder dieser
-drei Mutationen (Füllen, Tauschen, Fixieren) einen Remount, damit die neuen Zuweisungen sichtbar
-werden (Helper `refreshNachMutation`).
+eigenen State übernimmt, erzwingt ein Revisions-Zähler im `key`-Prop der Karten nach jeder
+Zuweisungs-Mutation (Füllen, Tauschen, Fixieren, Leeren) einen Remount, damit die neuen
+Zuweisungen sichtbar werden (Helper `refreshNachMutation`).
 
-Pro Dienstbedarf zeigt der Editor zwei Bereiche: "Fest zugewiesen" (durchsuchbare Checkbox-Chip-
-Liste wie bisher, treibt `fixierte_mini_ids`) und "Automatisch zugewiesen" (nur sichtbar wenn
-vorhanden, reine Anzeige aus dem Server-Stand, nicht Teil des editierbaren Drafts – sonst würde ein
-Autosave für ein anderes Feld automatisch zugewiesene Minis fälschlich als fest zugewiesen
-zurückschreiben). Ein einziger `DndContext` umschließt alle Gottesdienst-Karten; jeder Zuweisungs-
-Chip ist gleichzeitig Drag-Quelle und Drop-Ziel (Drop auf einen anderen Chip = Tauschen), die
-beiden Bereiche sind zusätzlich je Dienstbedarf eigene Drop-Ziele (Drop auf die Fläche statt auf
-einen Chip = Fixierung setzen/aufheben für die gezogene Zeile). Damit ein frisch zu einer Karte
-hinzugefügter Dienst-Typ/Freitext-Bedarf nach dem ersten Speichern eine echte `dienstbedarfId` für
-diese Drag-Ziele bekommt (initial `null`), pflegt `GottesdienstKarte` dafür eine eigene, von
-`bedarfListe` getrennte Map (`dienstbedarfIdMap`, analog `serverZuweisungenMap`) – eine Aktualisierung
-direkt in `bedarfListe` würde sonst den Autosave-Effekt erneut auslösen.
+Der Editor zeigt jede `GottesdienstKarte` ohne Aufklappen: die Belegung jedes Dienstbedarfs
+(`DienstbedarfBelegung`) ist stets sichtbar und direkt bearbeitbar – fest zugewiesene Minis (pine,
+treibt `fixierte_mini_ids`), automatisch zugewiesene (gold gestrichelt, reine Anzeige aus dem
+Server-Stand, nicht Teil des editierbaren Drafts – sonst würde ein Autosave für ein anderes Feld
+sie fälschlich als fest zurückschreiben) und weinrote „offen"-Platzhalter für unbesetzte Stellen
+(auf dem PDF ebenfalls hervorgehoben, siehe `typst_render._minis_zelle`). Minis werden über einen
+durchsuchbaren `MiniAdder` (mit „+X weitere"-Hinweis) hinzugefügt; ein Pin-Button an einem
+automatischen Chip übernimmt ihn fest (ruft `fixierung` mit `True`). Die strukturellen Angaben
+(Anzahl, Filtertags, Gruppen-Mindestanzahl, Name-auf-Plan) sowie Datum/Uhrzeit/Notiz und
+Dienst-Hinzufügen liegen im Bearbeiten-Modal (`Modal`, geöffnet über den Stift wie in Stammdaten).
+Ein einziger `DndContext` umschließt alle Karten; jeder Zuweisungs-Chip ist Drag-Quelle und
+Drop-Ziel (Drop auf einen anderen Chip = Tauschen). Damit ein frisch hinzugefügter Bedarf nach dem
+ersten Speichern eine echte `dienstbedarfId` bekommt (initial `null`), pflegt `GottesdienstKarte`
+eine eigene, von `bedarfListe` getrennte `dienstbedarfIdMap` (analog `serverZuweisungenMap`) – eine
+Aktualisierung direkt in `bedarfListe` würde sonst den Autosave-Effekt erneut auslösen.
+
+Anlege-/Bearbeiten-Formulare in `StammdatenPage` und `MiniplanEditorPage` laufen über ein
+zentriertes `Modal` (Portal), das ein „+ …"-Button in der Kartenkopfzeile bzw. der Stift/„Neuer
+Gottesdienst"-Button öffnet (kein Formular mehr am Karten-Ende, keine inline-expandierende
+Bearbeiten-Zeile). Listen zeigen bis zum ersten Laden `ListSkeleton` statt kurz den Leerzustand.
 
 ## Befehle
 

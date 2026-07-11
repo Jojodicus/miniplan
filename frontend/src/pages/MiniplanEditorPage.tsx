@@ -7,8 +7,20 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
-import { ChevronDown, Copy, Download, Plus, Search, Trash2, Wand2, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SubmitEvent } from 'react'
+import {
+  CalendarPlus,
+  Copy,
+  Download,
+  Eraser,
+  Pencil,
+  Pin,
+  Plus,
+  Search,
+  Trash2,
+  Wand2,
+  X,
+} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import type { GruppenAnforderung } from '../api/dienstTypen'
@@ -33,6 +45,7 @@ import {
   miniplanPdfHerunterladen,
   miniplanStatusAendern,
   miniplanVorschau,
+  miniplanZuweisungenLeeren,
   miniplanZuweisungFixieren,
   miniplanZuweisungenTauschen,
   type Miniplan,
@@ -50,6 +63,7 @@ import { CheckboxChip, Input, Label, Select } from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { MarkdownTextarea } from '../components/ui/MarkdownTextarea'
+import { Modal } from '../components/ui/Modal'
 import { PdfViewer } from '../components/ui/PdfViewer'
 import { TimeInput } from '../components/ui/TimeInput'
 import { useToast } from '../components/ui/Toast'
@@ -229,19 +243,12 @@ function draftZuVorschau(
   }
 }
 
-// Payload, das ein Zuweisungs-Chip beim Ziehen mitgibt und das ein Drop-Ziel (anderer Chip oder
-// Fest-/Automatisch-Bereich) über `event.active.data.current`/`event.over.data.current` liest -
-// dnd-kit reicht das über den gemeinsamen DndContext ohne Prop-Drilling durch, daher braucht das
-// Tauschen/Fixieren über Gottesdienst-Kartengrenzen hinweg keinen gehobenen State.
+// Payload, das ein Zuweisungs-Chip beim Ziehen mitgibt (Tauschen zweier Chips über den gemeinsamen
+// DndContext, ohne Prop-Drilling).
 export interface ZuweisungDragData {
   zuweisungId: number
   dienstbedarfId: number
   manuellFixiert: boolean
-}
-
-export interface ZuweisungContainerDropData {
-  containerType: 'fest' | 'auto'
-  dienstbedarfId: number
 }
 
 function ZuweisungsChip({
@@ -250,12 +257,14 @@ function ZuweisungsChip({
   dienstbedarfId,
   zuweisung,
   onRemove,
+  onPin,
 }: {
   name: string
   tone: 'fest' | 'auto'
   dienstbedarfId: number | null
   zuweisung: DienstbedarfZuweisung | null
   onRemove?: () => void
+  onPin?: () => void
 }) {
   const dragData: ZuweisungDragData | undefined =
     zuweisung && dienstbedarfId !== null
@@ -275,6 +284,7 @@ function ZuweisungsChip({
 
   return (
     <span
+      data-testid={`chip-${tone}`}
       ref={(node) => {
         setDragRef(node)
         setDropRef(node)
@@ -289,6 +299,18 @@ function ZuweisungsChip({
       }`}
     >
       {name}
+      {onPin && (
+        <button
+          type="button"
+          aria-label={`${name} fest zuweisen`}
+          title="Fest zuweisen (bleibt beim Füllen erhalten)"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onPin}
+          className="cursor-pointer text-current opacity-60 hover:opacity-100"
+        >
+          <Pin className="h-3 w-3" />
+        </button>
+      )}
       {onRemove && (
         <button
           type="button"
@@ -304,38 +326,115 @@ function ZuweisungsChip({
   )
 }
 
-function ZuweisungsContainer({
-  dienstbedarfId,
-  containerType,
-  children,
+// Durchsuchbarer Mini-Hinzufügen-Bereich: standardmäßig ein "+ Mini"-Button, der eine Suche +
+// gefilterte Chip-Liste aufklappt. Zeigt bei vielen Treffern "+X weitere", damit klar ist, dass die
+// Suche die Chip-Liste einschränkt (statt scheinbar keine Minis zu haben).
+const ADDER_LIMIT = 24
+
+function MiniAdder({
+  minis,
+  belegteMiniIds,
+  disabled,
+  onAdd,
+  offen,
+  setOffen,
 }: {
-  dienstbedarfId: number | null
-  containerType: 'fest' | 'auto'
-  children: ReactNode
+  minis: Mini[]
+  belegteMiniIds: Set<number>
+  disabled: boolean
+  onAdd: (miniId: number) => void
+  offen: boolean
+  setOffen: (offen: boolean) => void
 }) {
-  const id = `container-${containerType}-${dienstbedarfId ?? 'neu'}`
-  const { setNodeRef, isOver } = useDroppable({
-    id,
-    data:
-      dienstbedarfId !== null
-        ? ({ containerType, dienstbedarfId } satisfies ZuweisungContainerDropData)
-        : undefined,
-    disabled: dienstbedarfId === null,
-  })
+  const [suche, setSuche] = useState('')
+  const begriff = suche.trim().toLowerCase()
+  const verfuegbar = useMemo(
+    () =>
+      minis
+        .filter((m) => !belegteMiniIds.has(m.id))
+        .sort((a, b) => a.name.localeCompare(b.name, 'de')),
+    [minis, belegteMiniIds],
+  )
+  const gefiltert = verfuegbar.filter((m) => m.name.toLowerCase().includes(begriff))
+  const sichtbar = gefiltert.slice(0, ADDER_LIMIT)
+  const rest = gefiltert.length - sichtbar.length
+
+  if (!offen) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOffen(true)}
+        className="inline-flex items-center gap-1 rounded-full border border-dashed border-line px-3 py-1.5 text-sm text-ink-soft transition-colors hover:border-pine hover:text-pine-dark disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Mini
+      </button>
+    )
+  }
+
   return (
-    <div
-      ref={setNodeRef}
-      data-testid={`zuweisung-container-${containerType}`}
-      className={`flex min-h-10 flex-wrap items-center gap-2 rounded-md p-1.5 transition-colors ${
-        isOver ? 'bg-pine-tint/60' : ''
-      }`}
-    >
-      {children}
+    <div className="w-full rounded-lg border border-line bg-paper-dim/40 p-2">
+      <div className="mb-2 flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+          <Input
+            aria-label="Minis durchsuchen"
+            placeholder="Mini suchen…"
+            value={suche}
+            onChange={(e) => setSuche(e.target.value)}
+            className="h-8 pl-9"
+            autoFocus
+          />
+        </div>
+        <IconButton label="Schließen" onClick={() => setOffen(false)}>
+          <X className="h-4 w-4" />
+        </IconButton>
+      </div>
+      {verfuegbar.length === 0 ? (
+        <p className="px-1 py-1 text-xs text-ink-faint">Alle Minis sind bereits zugewiesen.</p>
+      ) : gefiltert.length === 0 ? (
+        <p className="px-1 py-1 text-xs text-ink-faint">Kein Mini passt zu „{suche.trim()}“.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {sichtbar.map((mini) => (
+            <button
+              key={mini.id}
+              type="button"
+              onClick={() => onAdd(mini.id)}
+              className="rounded-full border border-line px-2.5 py-1 text-sm text-ink-soft transition-colors hover:border-pine hover:bg-pine-tint hover:text-pine-dark"
+            >
+              {mini.name}
+            </button>
+          ))}
+          {rest > 0 && (
+            <span className="self-center px-1 text-xs text-ink-faint">
+              +{rest} weitere – Suche eingrenzen
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
-function DienstbedarfZeile({
+// Kurzbeschreibung eines Dienstes für die stets sichtbare Zeile (Name und/oder Einschränkungen).
+function dienstEinschraenkungen(bedarf: WorkingBedarf, gruppen: Gruppe[], filtertags: FiltertagDef[]): string[] {
+  return [
+    ...bedarf.erforderliche_filtertags.map(
+      (tag) => filtertags.find((f) => f.key === tag)?.label ?? tag,
+    ),
+    ...bedarf.gruppen_anforderungen.map(
+      (a) => `mind. ${a.mindest_anzahl}× ${gruppen.find((g) => g.id === a.gruppe_id)?.name ?? '?'}`,
+    ),
+  ]
+}
+
+// Stets sichtbare Belegungs-Zeile eines Dienstes: fest zugewiesene (pine) und automatisch
+// zugewiesene (gold, gestrichelt) Minis, offene Stellen als weinrote Platzhalter (auf dem PDF
+// ebenfalls hervorgehoben) und ein durchsuchbarer Mini-Adder. So lässt sich die Belegung ohne
+// Aufklappen mehrerer Ebenen direkt bearbeiten.
+function DienstbedarfBelegung({
   bedarf,
   gruppen,
   minis,
@@ -343,7 +442,8 @@ function DienstbedarfZeile({
   serverZuweisungen,
   dienstbedarfId,
   onChange,
-  onRemove,
+  onClearAuto,
+  onPinAuto,
 }: {
   bedarf: WorkingBedarf
   gruppen: Gruppe[]
@@ -352,11 +452,117 @@ function DienstbedarfZeile({
   serverZuweisungen: DienstbedarfZuweisung[]
   dienstbedarfId: number | null
   onChange: (patch: Partial<WorkingBedarf>) => void
+  onClearAuto: () => void
+  onPinAuto: (zuweisungId: number) => void
+}) {
+  const [adderOffen, setAdderOffen] = useState(false)
+
+  function toggleMini(miniId: number) {
+    onChange({
+      fixierteMiniIds: bedarf.fixierteMiniIds.includes(miniId)
+        ? bedarf.fixierteMiniIds.filter((id) => id !== miniId)
+        : [...bedarf.fixierteMiniIds, miniId],
+    })
+  }
+
+  const autoZuweisungen = serverZuweisungen.filter((z) => !z.manuell_fixiert)
+  const belegteMiniIds = new Set([
+    ...bedarf.fixierteMiniIds,
+    ...autoZuweisungen.map((z) => z.mini.id),
+  ])
+  const offeneStellen = Math.max(bedarf.anzahl - belegteMiniIds.size, 0)
+  const voll = belegteMiniIds.size >= bedarf.anzahl
+  const einschraenkungen = dienstEinschraenkungen(bedarf, gruppen, filtertags)
+  const anzeigeName = bedarf.dienst_typ_name ?? bedarf.name ?? 'Dienst'
+
+  return (
+    <div data-testid="dienst-belegung" className="rounded-lg border border-line p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <span className="text-sm font-medium text-ink">{anzeigeName}</span>
+          <span className="text-xs text-ink-faint">
+            {belegteMiniIds.size}/{bedarf.anzahl}
+          </span>
+          {einschraenkungen.length > 0 && (
+            <span className="text-xs text-ink-faint">· {einschraenkungen.join(', ')}</span>
+          )}
+        </div>
+        {autoZuweisungen.length > 0 && (
+          <button
+            type="button"
+            onClick={onClearAuto}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-ink-faint transition-colors hover:bg-wine-tint hover:text-wine"
+          >
+            <Eraser className="h-3.5 w-3.5" />
+            Auto leeren
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {bedarf.fixierteMiniIds.map((miniId) => {
+          const mini = minis.find((m) => m.id === miniId)
+          if (!mini) return null
+          const zuweisung =
+            serverZuweisungen.find((z) => z.manuell_fixiert && z.mini.id === miniId) ?? null
+          return (
+            <ZuweisungsChip
+              key={`fest-${miniId}`}
+              name={mini.name}
+              tone="fest"
+              dienstbedarfId={dienstbedarfId}
+              zuweisung={zuweisung}
+              onRemove={() => toggleMini(miniId)}
+            />
+          )
+        })}
+        {autoZuweisungen.map((zuweisung) => (
+          <ZuweisungsChip
+            key={`auto-${zuweisung.id}`}
+            name={zuweisung.mini.name}
+            tone="auto"
+            dienstbedarfId={dienstbedarfId}
+            zuweisung={zuweisung}
+            onPin={() => onPinAuto(zuweisung.id)}
+          />
+        ))}
+        {Array.from({ length: offeneStellen }, (_, i) => (
+          <button
+            key={`offen-${i}`}
+            type="button"
+            onClick={() => setAdderOffen(true)}
+            className="inline-flex items-center rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine transition-colors hover:bg-wine-tint"
+          >
+            offen
+          </button>
+        ))}
+        <MiniAdder
+          minis={minis}
+          belegteMiniIds={belegteMiniIds}
+          disabled={voll}
+          onAdd={(miniId) => toggleMini(miniId)}
+          offen={adderOffen}
+          setOffen={setAdderOffen}
+        />
+      </div>
+    </div>
+  )
+}
+
+// Strukturelle Einstellungen eines Dienstes (Name/Anzahl/Einschränkungen) – im Bearbeiten-Modal,
+// getrennt von der stets sichtbaren Belegung.
+function DienstbedarfEinstellungen({
+  bedarf,
+  gruppen,
+  filtertags,
+  onChange,
+  onRemove,
+}: {
+  bedarf: WorkingBedarf
+  gruppen: Gruppe[]
+  filtertags: FiltertagDef[]
+  onChange: (patch: Partial<WorkingBedarf>) => void
   onRemove: () => void
 }) {
-  const [erweitertOffen, setErweitertOffen] = useState(false)
-  const [miniSuche, setMiniSuche] = useState('')
-
   function addGruppenAnforderung() {
     const belegteIds = new Set(bedarf.gruppen_anforderungen.map((a) => a.gruppe_id))
     const naechsteGruppe = gruppen.find((g) => !belegteIds.has(g.id))
@@ -391,25 +597,6 @@ function DienstbedarfZeile({
     })
   }
 
-  function toggleMini(miniId: number) {
-    onChange({
-      fixierteMiniIds: bedarf.fixierteMiniIds.includes(miniId)
-        ? bedarf.fixierteMiniIds.filter((id) => id !== miniId)
-        : [...bedarf.fixierteMiniIds, miniId],
-    })
-  }
-
-  const autoZuweisungen = serverZuweisungen.filter((z) => !z.manuell_fixiert)
-  const belegteMiniIds = new Set([
-    ...bedarf.fixierteMiniIds,
-    ...autoZuweisungen.map((z) => z.mini.id),
-  ])
-
-  const anzahlEinschraenkungen =
-    bedarf.erforderliche_filtertags.length +
-    bedarf.gruppen_anforderungen.length +
-    bedarf.fixierteMiniIds.length
-
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -439,194 +626,90 @@ function DienstbedarfZeile({
             />
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setErweitertOffen((wert) => !wert)}
-            className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
-          >
-            <ChevronDown
-              className={`h-3.5 w-3.5 transition-transform ${erweitertOffen ? '' : '-rotate-90'}`}
-            />
-            Details
-            {!erweitertOffen && anzahlEinschraenkungen > 0 && (
-              <span className="rounded-full bg-pine-tint px-1.5 text-[10px] text-pine-dark">
-                {anzahlEinschraenkungen}
-              </span>
-            )}
-          </button>
-          <InlineConfirmButton onConfirm={onRemove} label="Dienst entfernen" size="sm" />
-        </div>
+        <InlineConfirmButton onConfirm={onRemove} label="Dienst entfernen" size="sm" />
       </div>
 
-      {erweitertOffen && (
-        <div className="flex flex-col gap-3 border-t border-line pt-3">
-          <CheckboxChip
-            id={`${bedarf.schluessel}-zeige-label`}
-            checked={bedarf.zeige_label}
-            onChange={() => onChange({ zeige_label: !bedarf.zeige_label })}
-            title="Name erscheint als Beschriftung auf dem PDF-Plan."
-          >
-            Auf dem Plan anzeigen
-          </CheckboxChip>
+      <CheckboxChip
+        id={`${bedarf.schluessel}-zeige-label`}
+        checked={bedarf.zeige_label}
+        onChange={() => onChange({ zeige_label: !bedarf.zeige_label })}
+        title="Ist dies aus, erscheint auf dem Plan nur die Anzahl/Einschränkung, nicht der Name."
+      >
+        Name auf dem Plan zeigen
+      </CheckboxChip>
 
-          <div>
-            <Label>Verfügbarkeits-Status</Label>
-            <div className="flex flex-wrap gap-2">
-              {filtertags.map((filtertag) => (
-                <CheckboxChip
-                  key={filtertag.key}
-                  id={`${bedarf.schluessel}-${filtertag.key}`}
-                  checked={bedarf.erforderliche_filtertags.includes(filtertag.key)}
-                  onChange={() => toggleFiltertag(filtertag.key)}
-                >
-                  {filtertag.label}
-                </CheckboxChip>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <Label hint="z. B. mind. 1 aus Gruppe Obermini">Gruppen-Mindestanzahl</Label>
-            <div className="flex flex-col gap-2">
-              {bedarf.gruppen_anforderungen.map((anforderung, index) => (
-                <div key={index} className="flex flex-wrap items-center gap-2">
-                  <Select
-                    value={anforderung.gruppe_id}
-                    onChange={(e) =>
-                      updateGruppenAnforderung(index, { gruppe_id: Number(e.target.value) })
-                    }
-                    className="min-w-[9rem] flex-1"
-                  >
-                    {gruppen.map((gruppe) => (
-                      <option key={gruppe.id} value={gruppe.id}>
-                        {gruppe.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <span className="shrink-0 text-sm text-ink-soft">mind.</span>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={bedarf.anzahl}
-                    value={anforderung.mindest_anzahl}
-                    onChange={(e) =>
-                      updateGruppenAnforderung(index, {
-                        mindest_anzahl: Math.min(Number(e.target.value), bedarf.anzahl),
-                      })
-                    }
-                    className="w-16 shrink-0 text-center"
-                  />
-                  <IconButton
-                    label="Zeile entfernen"
-                    tone="danger"
-                    onClick={() => removeGruppenAnforderung(index)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </IconButton>
-                </div>
-              ))}
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              className="mt-2 self-start"
-              onClick={addGruppenAnforderung}
-              disabled={bedarf.gruppen_anforderungen.length >= gruppen.length}
-            >
-              <Plus className="h-4 w-4" />
-              Zeile hinzufügen
-            </Button>
-          </div>
-
-          <div>
-            <Label
-              hint={
-                belegteMiniIds.size >= bedarf.anzahl ? `Anzahl (${bedarf.anzahl}) erreicht` : undefined
-              }
-            >
-              Fest zugewiesen
-            </Label>
-            <ZuweisungsContainer dienstbedarfId={dienstbedarfId} containerType="fest">
-              {bedarf.fixierteMiniIds.length === 0 && (
-                <span className="text-xs text-ink-faint">
-                  Niemand fest zugewiesen – unten hinzufügen oder hierher ziehen.
-                </span>
-              )}
-              {bedarf.fixierteMiniIds.map((miniId) => {
-                const mini = minis.find((m) => m.id === miniId)
-                if (!mini) return null
-                const zuweisung =
-                  serverZuweisungen.find((z) => z.manuell_fixiert && z.mini.id === miniId) ?? null
-                return (
-                  <ZuweisungsChip
-                    key={miniId}
-                    name={mini.name}
-                    tone="fest"
-                    dienstbedarfId={dienstbedarfId}
-                    zuweisung={zuweisung}
-                    onRemove={() => toggleMini(miniId)}
-                  />
-                )
-              })}
-            </ZuweisungsContainer>
-          </div>
-
-          {autoZuweisungen.length > 0 && (
-            <div>
-              <Label hint="von Füllen zugeteilt – zum Fixieren hierher ziehen">
-                Automatisch zugewiesen
-              </Label>
-              <ZuweisungsContainer dienstbedarfId={dienstbedarfId} containerType="auto">
-                {autoZuweisungen.map((zuweisung) => (
-                  <ZuweisungsChip
-                    key={zuweisung.id}
-                    name={zuweisung.mini.name}
-                    tone="auto"
-                    dienstbedarfId={dienstbedarfId}
-                    zuweisung={zuweisung}
-                  />
-                ))}
-              </ZuweisungsContainer>
-            </div>
-          )}
-
-          <div>
-            <Label>Mini hinzufügen</Label>
-            {minis.length > 12 && (
-              <div className="relative mb-2 sm:max-w-xs">
-                <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-faint" />
-                <Input
-                  aria-label="Minis durchsuchen"
-                  placeholder="Suchen…"
-                  value={miniSuche}
-                  onChange={(e) => setMiniSuche(e.target.value)}
-                  className="h-8 pl-9"
-                />
-              </div>
-            )}
-            <div className="flex flex-wrap gap-2">
-              {minis
-                .filter(
-                  (mini) =>
-                    !belegteMiniIds.has(mini.id) &&
-                    mini.name.toLowerCase().includes(miniSuche.trim().toLowerCase()),
-                )
-                .map((mini) => (
-                  <CheckboxChip
-                    key={mini.id}
-                    id={`${bedarf.schluessel}-mini-${mini.id}`}
-                    checked={false}
-                    disabled={belegteMiniIds.size >= bedarf.anzahl}
-                    onChange={() => toggleMini(mini.id)}
-                  >
-                    {mini.name}
-                  </CheckboxChip>
-                ))}
-            </div>
+      {filtertags.length > 0 && (
+        <div>
+          <Label>Nur mit Verfügbarkeits-Status</Label>
+          <div className="flex flex-wrap gap-2">
+            {filtertags.map((filtertag) => (
+              <CheckboxChip
+                key={filtertag.key}
+                id={`${bedarf.schluessel}-${filtertag.key}`}
+                checked={bedarf.erforderliche_filtertags.includes(filtertag.key)}
+                onChange={() => toggleFiltertag(filtertag.key)}
+              >
+                {filtertag.label}
+              </CheckboxChip>
+            ))}
           </div>
         </div>
       )}
+
+      <div>
+        <Label hint="z. B. mind. 1 aus Gruppe Obermini">Gruppen-Mindestanzahl</Label>
+        <div className="flex flex-col gap-2">
+          {bedarf.gruppen_anforderungen.map((anforderung, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <span className="shrink-0 text-sm text-ink-soft">mind.</span>
+              <Input
+                type="number"
+                min={1}
+                max={bedarf.anzahl}
+                value={anforderung.mindest_anzahl}
+                onChange={(e) =>
+                  updateGruppenAnforderung(index, {
+                    mindest_anzahl: Math.min(Number(e.target.value), bedarf.anzahl),
+                  })
+                }
+                className="w-16 shrink-0 text-center"
+              />
+              <span className="shrink-0 text-sm text-ink-soft">aus</span>
+              <Select
+                value={anforderung.gruppe_id}
+                onChange={(e) =>
+                  updateGruppenAnforderung(index, { gruppe_id: Number(e.target.value) })
+                }
+                className="min-w-0 flex-1"
+              >
+                {gruppen.map((gruppe) => (
+                  <option key={gruppe.id} value={gruppe.id}>
+                    {gruppe.name}
+                  </option>
+                ))}
+              </Select>
+              <IconButton
+                label="Zeile entfernen"
+                tone="danger"
+                onClick={() => removeGruppenAnforderung(index)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </IconButton>
+            </div>
+          ))}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="mt-2 self-start"
+          onClick={addGruppenAnforderung}
+          disabled={bedarf.gruppen_anforderungen.length >= gruppen.length}
+        >
+          <Plus className="h-4 w-4" />
+          Zeile hinzufügen
+        </Button>
+      </div>
     </div>
   )
 }
@@ -656,7 +739,10 @@ function GottesdienstKarte({
   onDraftChange,
   onStatusChange,
   onDuplicated,
-  defaultOffen = false,
+  onClearAutoBereich,
+  onPinAuto,
+  oeffneEditor = false,
+  onEditorGeoeffnet,
 }: {
   gottesdienst: Gottesdienst
   pfarreiId: number
@@ -671,7 +757,10 @@ function GottesdienstKarte({
   onDraftChange: (gottesdienstId: number, draft: GottesdienstDraft) => void
   onStatusChange: (gottesdienstId: number, status: SpeicherStatus) => void
   onDuplicated: (gottesdienstId: number) => void
-  defaultOffen?: boolean
+  onClearAutoBereich: (bereich: { gottesdienstId?: number; dienstbedarfId?: number }) => void
+  onPinAuto: (zuweisungId: number) => void
+  oeffneEditor?: boolean
+  onEditorGeoeffnet?: (gottesdienstId: number) => void
 }) {
   const [datum, setDatum] = useState(gottesdienst.datum)
   const [uhrzeit, setUhrzeit] = useState(gottesdienst.uhrzeit.slice(0, 5))
@@ -681,24 +770,27 @@ function GottesdienstKarte({
     gottesdienst.dienstbedarf.map(bedarfAusOut),
   )
   // Serverstand der Zuweisungen je Bedarf-Schlüssel - getrennt von `bedarfListe`, damit
-  // Auffrischen nach einem Speichern (siehe unten) nicht den Autosave-Effekt erneut auslöst, der
-  // an `bedarfListe` hängt. Wird beim Mount aus den Props befüllt und nach jedem erfolgreichen
-  // Speichern aus der Server-Antwort aktualisiert (Index-Zuordnung, da die Dienstbedarf-Liste in
-  // derselben Reihenfolge gesendet/zurückgegeben wird).
+  // Auffrischen nach einem Speichern nicht den Autosave-Effekt erneut auslöst.
   const [serverZuweisungenMap, setServerZuweisungenMap] = useState<
     Record<string, DienstbedarfZuweisung[]>
   >(() => Object.fromEntries(gottesdienst.dienstbedarf.map((b) => [`bestehend-${b.id}`, b.zuweisungen])))
-  // Ein neu hinzugefügter Dienst-Typ/Freitext-Bedarf hat zunächst `dienstbedarfId: null` (noch
-  // keine echte Dienstbedarf-Zeile). Ohne diese Karte bliebe seine `dienstbedarfId` nach dem
-  // ersten Speichern für immer `null`, da `WorkingBedarf` sonst nie aktualisiert wird (siehe
-  // `serverZuweisungenMap`) - die zugewiesenen Minis wären dann nie zieh-/tauschbar.
+  // Echte dienstbedarfId je Schlüssel (frisch hinzugefügter Bedarf startet mit `null`, bekommt sie
+  // nach dem ersten Speichern) - getrennt von `bedarfListe`, damit kein Autosave ausgelöst wird.
   const [dienstbedarfIdMap, setDienstbedarfIdMap] = useState<Record<string, number>>(() =>
     Object.fromEntries(gottesdienst.dienstbedarf.map((b) => [`bestehend-${b.id}`, b.id])),
   )
   const [status, setStatus] = useState<SpeicherStatus>('gespeichert')
-  const [offen, setOffen] = useState(defaultOffen)
+  const [editorOffen, setEditorOffen] = useState(oeffneEditor)
   const { showToast } = useToast()
   const istErstesRendern = useRef(true)
+
+  // Frisch angelegte/duplizierte Gottesdienste öffnen den Editor automatisch. Den Auslöser danach
+  // sofort zurücksetzen, damit ein späterer Remount (z.B. nach Füllen/Leeren via
+  // `zuteilungsRevision`) den Editor nicht erneut aufreißt.
+  useEffect(() => {
+    if (oeffneEditor) onEditorGeoeffnet?.(gottesdienst.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function updateBedarf(schluessel: string, patch: Partial<WorkingBedarf>) {
     setBedarfListe((liste) =>
@@ -765,9 +857,9 @@ function GottesdienstKarte({
           ),
         })
         setStatus('gespeichert')
-        // Server-Zuweisungen (v.a. neu vergebene Zuweisungs-IDs für gerade erst fixierte Minis,
-        // damit sie sofort ziehbar sind) anhand der Positions-Reihenfolge auffrischen - separat
-        // von `bedarfListe`, damit das hier keinen erneuten Autosave-Lauf auslöst.
+        // Server-Zuweisungen (v.a. neu vergebene IDs für gerade fixierte Minis) und dienstbedarfIds
+        // anhand der Positions-Reihenfolge auffrischen - separat von `bedarfListe`, damit das hier
+        // keinen erneuten Autosave-Lauf auslöst.
         setServerZuweisungenMap((karte) => {
           const aktualisiert = { ...karte }
           bedarfListe.forEach((bedarf, index) => {
@@ -797,6 +889,7 @@ function GottesdienstKarte({
     try {
       await gottesdienstLoeschen(pfarreiId, miniplanId, gottesdienst.id)
       showToast('Gottesdienst gelöscht')
+      setEditorOffen(false)
       onReload()
     } catch (err) {
       showToast(fehlerText(err, 'Fehler beim Löschen des Gottesdienstes'), 'error')
@@ -825,45 +918,79 @@ function GottesdienstKarte({
     }
   }
 
+  const hatAuto = bedarfListe.some(
+    (b) => (serverZuweisungenMap[b.schluessel] ?? []).some((z) => !z.manuell_fixiert),
+  )
+
   return (
     <Card className="animate-rise">
-      <div className="flex items-center gap-1 pr-2">
-        <button
-          type="button"
-          onClick={() => setOffen((wert) => !wert)}
-          className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 p-4 text-left"
-        >
-          <div className="flex min-w-0 items-center gap-2.5">
-            <ChevronDown
-              className={`h-4 w-4 shrink-0 text-ink-faint transition-transform ${offen ? '' : '-rotate-90'}`}
-            />
-            <div className="min-w-0">
-              <span className="font-medium text-ink">
-                {datum ? formatDatum(datum) : 'Kein Datum'}
-                {uhrzeit && `, ${uhrzeit} Uhr`}
-              </span>
-              {name && <span className="ml-2 text-sm text-ink-soft">{name}</span>}
-            </div>
+      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-medium text-ink">
+              {datum ? formatDatum(datum) : 'Kein Datum'}
+              {uhrzeit && `, ${uhrzeit} Uhr`}
+            </span>
+            {name && <span className="text-sm text-ink-soft">{name}</span>}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Badge tone="neutral">
-              {bedarfListe.length} {bedarfListe.length === 1 ? 'Dienst' : 'Dienste'}
-            </Badge>
-            {status !== 'gespeichert' && <StatusAnzeige status={status} />}
-          </div>
-        </button>
-        <IconButton
-          label="Duplizieren (eine Woche später)"
-          onClick={handleDuplicate}
-          disabled={!datum || !uhrzeit}
-          className="disabled:pointer-events-none disabled:opacity-40"
-        >
-          <Copy className="h-4 w-4" />
-        </IconButton>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {status !== 'gespeichert' && <StatusAnzeige status={status} className="mr-1 text-xs" />}
+          {hatAuto && (
+            <IconButton
+              label="Automatische Zuweisungen dieses Gottesdienstes leeren"
+              onClick={() => onClearAutoBereich({ gottesdienstId: gottesdienst.id })}
+            >
+              <Eraser className="h-4 w-4" />
+            </IconButton>
+          )}
+          <IconButton
+            label="Duplizieren (eine Woche später)"
+            onClick={handleDuplicate}
+            disabled={!datum || !uhrzeit}
+            className="disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Copy className="h-4 w-4" />
+          </IconButton>
+          <IconButton label="Bearbeiten" onClick={() => setEditorOffen(true)}>
+            <Pencil className="h-4 w-4" />
+          </IconButton>
+        </div>
       </div>
 
-      {offen && (
-        <div className="flex flex-col gap-4 border-t border-line p-5">
+      <div className="flex flex-col gap-3 p-4">
+        {bedarfListe.length === 0 ? (
+          <p className="text-sm text-ink-faint">
+            Noch keine Dienste – über „Bearbeiten“ hinzufügen.
+          </p>
+        ) : (
+          bedarfListe.map((bedarf) => (
+            <DienstbedarfBelegung
+              key={bedarf.schluessel}
+              bedarf={bedarf}
+              gruppen={gruppen}
+              minis={minis}
+              filtertags={filtertags}
+              serverZuweisungen={serverZuweisungenMap[bedarf.schluessel] ?? []}
+              dienstbedarfId={dienstbedarfIdMap[bedarf.schluessel] ?? bedarf.dienstbedarfId}
+              onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
+              onClearAuto={() => {
+                const id = dienstbedarfIdMap[bedarf.schluessel] ?? bedarf.dienstbedarfId
+                if (id !== null) onClearAutoBereich({ dienstbedarfId: id })
+              }}
+              onPinAuto={onPinAuto}
+            />
+          ))
+        )}
+      </div>
+
+      <Modal
+        open={editorOffen}
+        onClose={() => setEditorOffen(false)}
+        title="Gottesdienst bearbeiten"
+        maxWidth="max-w-2xl"
+      >
+        <div className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <Label htmlFor={`gottesdienst-${gottesdienst.id}-datum`}>Datum</Label>
@@ -917,14 +1044,11 @@ function GottesdienstKarte({
 
           <div className="flex flex-col gap-3">
             {bedarfListe.map((bedarf) => (
-              <DienstbedarfZeile
+              <DienstbedarfEinstellungen
                 key={bedarf.schluessel}
                 bedarf={bedarf}
                 gruppen={gruppen}
-                minis={minis}
                 filtertags={filtertags}
-                serverZuweisungen={serverZuweisungenMap[bedarf.schluessel] ?? []}
-                dienstbedarfId={dienstbedarfIdMap[bedarf.schluessel] ?? bedarf.dienstbedarfId}
                 onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
                 onRemove={() => removeBedarf(bedarf.schluessel)}
               />
@@ -959,24 +1083,31 @@ function GottesdienstKarte({
               label="Gottesdienst löschen"
               confirmLabel="Gottesdienst wirklich löschen?"
             />
+            <Button type="button" onClick={() => setEditorOffen(false)}>
+              Fertig
+            </Button>
           </div>
         </div>
-      )}
+      </Modal>
     </Card>
   )
 }
 
-function NeuerGottesdienstForm({
+function NeuerGottesdienstModal({
   pfarreiId,
   miniplanId,
   jahr,
   monat,
+  open,
+  onClose,
   onCreated,
 }: {
   pfarreiId: number
   miniplanId: number
   jahr: number
   monat: number
+  open: boolean
+  onClose: () => void
   onCreated: (gottesdienstId: number) => void
 }) {
   const [datum, setDatum] = useState('')
@@ -985,6 +1116,15 @@ function NeuerGottesdienstForm({
   const [notiz, setNotiz] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [versucht, setVersucht] = useState(false)
+
+  function reset() {
+    setDatum('')
+    setUhrzeit('')
+    setName('')
+    setNotiz('')
+    setVersucht(false)
+    setError(null)
+  }
 
   async function handleCreate(event: SubmitEvent) {
     event.preventDefault()
@@ -1001,11 +1141,7 @@ function NeuerGottesdienstForm({
         notiz: notiz.trim() ? notiz : null,
         dienstbedarf: [],
       })
-      setDatum('')
-      setUhrzeit('')
-      setName('')
-      setNotiz('')
-      setVersucht(false)
+      reset()
       onCreated(erstellt.id)
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Anlegen des Gottesdienstes'))
@@ -1013,18 +1149,13 @@ function NeuerGottesdienstForm({
   }
 
   return (
-    <Card className="animate-rise">
-      <CardHeader title="Neuer Gottesdienst" />
+    <Modal open={open} onClose={onClose} title="Neuer Gottesdienst">
       {error && (
-        <div className="px-5 pt-4">
+        <div className="mb-4">
           <Alert>{error}</Alert>
         </div>
       )}
-      <form
-        onSubmit={handleCreate}
-        aria-label="Gottesdienst anlegen"
-        className="flex flex-col gap-4 p-5"
-      >
+      <form onSubmit={handleCreate} aria-label="Gottesdienst anlegen" className="flex flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
             <Label htmlFor="neuer-gottesdienst-datum">Datum</Label>
@@ -1074,14 +1205,17 @@ function NeuerGottesdienstForm({
             className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15"
           />
         </div>
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Abbrechen
+          </Button>
           <Button type="submit">
             <Plus className="h-4 w-4" />
-            Gottesdienst anlegen
+            Anlegen
           </Button>
         </div>
       </form>
-    </Card>
+    </Modal>
   )
 }
 
@@ -1246,6 +1380,7 @@ export function MiniplanEditorPage() {
     Record<number, GottesdienstDraft>
   >({})
   const [neuesterGottesdienstId, setNeuesterGottesdienstId] = useState<number | null>(null)
+  const [neuGottesdienstOffen, setNeuGottesdienstOffen] = useState(false)
   const [freitextDraft, setFreitextDraft] = useState<{
     veranstaltungen: string
     ankuendigungen: string
@@ -1255,10 +1390,10 @@ export function MiniplanEditorPage() {
   const [statusWirdGeaendert, setStatusWirdGeaendert] = useState(false)
   const [downloadFehler, setDownloadFehler] = useState<string | null>(null)
   const [fuelltGerade, setFuelltGerade] = useState(false)
-  // Jede Gottesdienst-Karte hält ihren Dienstbedarf in eigenem State (nur beim ersten Rendern aus
-  // den Props übernommen) - nach "Füllen" ändert sich der Bedarf serverseitig, ohne dass die
-  // Karten das von selbst bemerken. Ein Revisions-Zähler im Karten-`key` erzwingt daher einen
-  // Remount mit den frisch geladenen Zuweisungen.
+  // Jede Gottesdienst-Karte hält ihre Zuweisungen in eigenem State (nur beim ersten Rendern aus den
+  // Props übernommen) - nach "Füllen"/"Leeren"/Tauschen/Fixieren ändert sich das serverseitig, ohne
+  // dass die Karten das von selbst bemerken. Ein Revisions-Zähler im Karten-`key` erzwingt daher
+  // einen Remount mit den frisch geladenen Zuweisungen.
   const [zuteilungsRevision, setZuteilungsRevision] = useState(0)
   const { showToast } = useToast()
   const dndSensoren = useSensors(
@@ -1269,9 +1404,8 @@ export function MiniplanEditorPage() {
     miniplanDetail(id, planId).then(setMiniplan)
   }, [id, planId])
 
-  // Von "Füllen" und den Drag-Aktionen (Tauschen/Fixieren) gemeinsam genutzt: alle drei ändern
-  // Zuweisungen serverseitig, ohne dass die betroffenen Karten das selbst bemerken (siehe
-  // `zuteilungsRevision`), daher nach jeder dieser Aktionen denselben Refresh anstoßen.
+  // Von "Füllen", "Leeren" und den Drag-Aktionen (Tauschen/Fixieren) gemeinsam genutzt: alle ändern
+  // Zuweisungen serverseitig, ohne dass die betroffenen Karten das selbst bemerken.
   function refreshNachMutation(aktualisiert: Miniplan) {
     setMiniplan(aktualisiert)
     setZuteilungsRevision((revision) => revision + 1)
@@ -1290,34 +1424,37 @@ export function MiniplanEditorPage() {
     }
   }
 
+  async function handleClearAuto(bereich: { gottesdienstId?: number; dienstbedarfId?: number } = {}) {
+    try {
+      const aktualisiert = await miniplanZuweisungenLeeren(id, planId, bereich)
+      refreshNachMutation(aktualisiert)
+      showToast('Automatische Zuweisungen geleert')
+    } catch (err) {
+      showToast(fehlerText(err, 'Fehler beim Leeren'), 'error')
+    }
+  }
+
+  async function handlePinAuto(zuweisungId: number) {
+    try {
+      const aktualisiert = await miniplanZuweisungFixieren(id, planId, zuweisungId, true)
+      refreshNachMutation(aktualisiert)
+      showToast('Zuweisung fest übernommen')
+    } catch (err) {
+      showToast(fehlerText(err, 'Fehler beim Fixieren'), 'error')
+    }
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     const aktivDaten = event.active.data.current as ZuweisungDragData | undefined
-    const zielDaten = event.over?.data.current as
-      | ZuweisungDragData
-      | ZuweisungContainerDropData
-      | undefined
+    const zielDaten = event.over?.data.current as ZuweisungDragData | undefined
     if (!aktivDaten || !zielDaten) return
-
-    if ('zuweisungId' in zielDaten) {
-      if (zielDaten.zuweisungId === aktivDaten.zuweisungId) return
-      miniplanZuweisungenTauschen(id, planId, aktivDaten.zuweisungId, zielDaten.zuweisungId)
-        .then((aktualisiert) => {
-          refreshNachMutation(aktualisiert)
-          showToast('Zuweisungen getauscht')
-        })
-        .catch((err) => showToast(fehlerText(err, 'Fehler beim Tauschen'), 'error'))
-      return
-    }
-
-    if (zielDaten.dienstbedarfId !== aktivDaten.dienstbedarfId) return
-    const sollFixiert = zielDaten.containerType === 'fest'
-    if (sollFixiert === aktivDaten.manuellFixiert) return
-    miniplanZuweisungFixieren(id, planId, aktivDaten.zuweisungId, sollFixiert)
+    if (zielDaten.zuweisungId === aktivDaten.zuweisungId) return
+    miniplanZuweisungenTauschen(id, planId, aktivDaten.zuweisungId, zielDaten.zuweisungId)
       .then((aktualisiert) => {
         refreshNachMutation(aktualisiert)
-        showToast(sollFixiert ? 'Zuweisung fixiert' : 'Fixierung aufgehoben')
+        showToast('Zuweisungen getauscht')
       })
-      .catch((err) => showToast(fehlerText(err, 'Fehler beim Fixieren'), 'error'))
+      .catch((err) => showToast(fehlerText(err, 'Fehler beim Tauschen'), 'error'))
   }
 
   async function handleStatusWechsel(neuerStatus: 'abgeschlossen' | 'in_bearbeitung') {
@@ -1393,6 +1530,14 @@ export function MiniplanEditorPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [speicherStatus])
 
+  const hatAutoZuweisungen = useMemo(
+    () =>
+      miniplan?.gottesdienste.some((gd) =>
+        gd.dienstbedarf.some((b) => b.zuweisungen.some((z) => !z.manuell_fixiert)),
+      ) ?? false,
+    [miniplan],
+  )
+
   const vorschauEingabe = useMemo<MiniplanVorschauEingabe | null>(() => {
     if (!miniplan) return null
     return {
@@ -1435,12 +1580,26 @@ export function MiniplanEditorPage() {
           <Button
             variant="secondary"
             size="sm"
+            onClick={() => setNeuGottesdienstOffen(true)}
+          >
+            <CalendarPlus className="h-4 w-4" />
+            Gottesdienst
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             disabled={fuelltGerade || miniplan.gottesdienste.length === 0}
             onClick={handleFuellen}
           >
             <Wand2 className="h-4 w-4" />
             {fuelltGerade ? 'Befüllt…' : 'Füllen'}
           </Button>
+          {hatAutoZuweisungen && (
+            <Button variant="secondary" size="sm" onClick={() => handleClearAuto()}>
+              <Eraser className="h-4 w-4" />
+              Auto leeren
+            </Button>
+          )}
           {miniplan.status === 'abgeschlossen' ? (
             <>
               <Button variant="secondary" size="sm" onClick={handleDownload}>
@@ -1492,24 +1651,30 @@ export function MiniplanEditorPage() {
               onReload={reload}
               onDraftChange={handleGottesdienstDraftChange}
               onStatusChange={handleKartenStatusChange}
+              onClearAutoBereich={handleClearAuto}
+              onPinAuto={handlePinAuto}
               onDuplicated={(gottesdienstId) => {
                 setNeuesterGottesdienstId(gottesdienstId)
                 reload()
               }}
-              defaultOffen={gottesdienst.id === neuesterGottesdienstId}
+              oeffneEditor={gottesdienst.id === neuesterGottesdienstId}
+              onEditorGeoeffnet={(gid) =>
+                setNeuesterGottesdienstId((cur) => (cur === gid ? null : cur))
+              }
             />
           ))}
 
-          <NeuerGottesdienstForm
-            pfarreiId={id}
-            miniplanId={planId}
-            jahr={miniplan.jahr}
-            monat={miniplan.monat}
-            onCreated={(gottesdienstId) => {
-              setNeuesterGottesdienstId(gottesdienstId)
-              reload()
-            }}
-          />
+          {miniplan.gottesdienste.length === 0 && (
+            <Card className="animate-rise">
+              <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+                <p className="text-sm text-ink-soft">Noch keine Gottesdienste angelegt.</p>
+                <Button type="button" onClick={() => setNeuGottesdienstOffen(true)}>
+                  <CalendarPlus className="h-4 w-4" />
+                  Ersten Gottesdienst anlegen
+                </Button>
+              </div>
+            </Card>
+          )}
 
           <FreitextSection
             pfarreiId={id}
@@ -1525,6 +1690,20 @@ export function MiniplanEditorPage() {
           <VorschauPanel pfarreiId={id} miniplanId={planId} eingabe={vorschauEingabe} />
         </div>
       </div>
+
+      <NeuerGottesdienstModal
+        pfarreiId={id}
+        miniplanId={planId}
+        jahr={miniplan.jahr}
+        monat={miniplan.monat}
+        open={neuGottesdienstOffen}
+        onClose={() => setNeuGottesdienstOffen(false)}
+        onCreated={(gottesdienstId) => {
+          setNeuGottesdienstOffen(false)
+          setNeuesterGottesdienstId(gottesdienstId)
+          reload()
+        }}
+      />
     </AppShell>
   )
 }

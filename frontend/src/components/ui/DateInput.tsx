@@ -6,6 +6,15 @@ import { formatDatum, MONATE } from '../../lib/datum'
 import { IconButton } from './IconButton'
 
 const WOCHENTAGE_KURZ = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+const WOCHENTAGE_LANG = [
+  'Sonntag',
+  'Montag',
+  'Dienstag',
+  'Mittwoch',
+  'Donnerstag',
+  'Freitag',
+  'Samstag',
+]
 
 function formatIso(jahr: number, monat: number, tag: number): string {
   return `${jahr}-${String(monat + 1).padStart(2, '0')}-${String(tag).padStart(2, '0')}`
@@ -104,7 +113,9 @@ export function DateInput({
   }, [offen])
 
   const feiertag = value ? feiertage.find((f) => f.datum === value) : undefined
-  const istSonntag = value ? new Date(`${value}T00:00:00`).getDay() === 0 : false
+  const wochentagIndex = value ? new Date(`${value}T00:00:00`).getDay() : null
+  const istSonntag = wochentagIndex === 0
+  const wochentagName = wochentagIndex !== null ? WOCHENTAGE_LANG[wochentagIndex] : null
 
   function oeffnen() {
     if (value) {
@@ -165,12 +176,14 @@ export function DateInput({
       >
         {value ? formatDatum(value) : 'Datum wählen'}
       </button>
-      {(feiertag || istSonntag) && (
+      {value && wochentagName && !error && (
         <p
-          className={`mt-1 text-xs ${feiertag ? 'text-gold-dark' : 'text-wine'}`}
+          className={`mt-1 text-xs ${
+            feiertag ? 'text-gold-dark' : istSonntag ? 'text-wine' : 'text-ink-faint'
+          }`}
           title={feiertag?.name}
         >
-          {feiertag ? `Feiertag: ${feiertag.name}` : 'Sonntag'}
+          {feiertag ? `${wochentagName} · Feiertag: ${feiertag.name}` : wochentagName}
         </p>
       )}
       {error && <p className="mt-1 text-xs text-wine">{error}</p>}

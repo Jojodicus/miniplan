@@ -11,6 +11,7 @@ from app.schemas.miniplan_vorschau import (
 from app.services.typst_render import (
     TypstCompileError,
     _dienstbedarf_bezeichnung,
+    _minis_zelle,
     markdown_to_typst,
     render_miniplan_pdf,
 )
@@ -126,6 +127,48 @@ def test_dienstbedarf_bezeichnung_verwendet_filtertag_label_lookup() -> None:
     )
     bezeichnung = _dienstbedarf_bezeichnung(bedarf, {"arbeiter": "Arbeiter"})
     assert bezeichnung == "Weihrauch (Arbeiter)"
+
+
+def test_minis_zelle_leere_stelle_ohne_zuweisung_zeigt_trennwert() -> None:
+    # Anzahl 0 und keine Minis: neutraler Trennwert, kein Platzhalter.
+    bedarf = VorschauDienstbedarf(name="Weihrauch", anzahl=0, zugewiesene_minis=[])
+    assert _minis_zelle(bedarf) == "—"
+
+
+def test_minis_zelle_offene_stellen_als_weinrote_platzhalter() -> None:
+    # Zwei von drei Stellen besetzt -> ein weinroter "offen"-Platzhalter, Namen escaped.
+    bedarf = VorschauDienstbedarf(
+        name="Messdiener", anzahl=3, zugewiesene_minis=["Anna", "Bea"]
+    )
+    zelle = _minis_zelle(bedarf)
+    assert '#"Anna"' in zelle
+    assert '#"Bea"' in zelle
+    assert zelle.count('rgb("#7c2f3b")') == 1
+    assert '[#"offen"]' in zelle
+
+
+def test_minis_zelle_alle_stellen_offen() -> None:
+    bedarf = VorschauDienstbedarf(name="Messdiener", anzahl=2, zugewiesene_minis=[])
+    zelle = _minis_zelle(bedarf)
+    assert zelle.count('[#"offen"]') == 2
+    assert '#", "' in zelle  # Platzhalter durch Komma getrennt
+
+
+def test_render_mit_offenen_stellen_liefert_pdf() -> None:
+    plan = _plan(
+        gottesdienste=[
+            VorschauGottesdienst(
+                datum=date(2026, 7, 5),
+                uhrzeit=time(10, 0),
+                name="Sonntagsmesse",
+                dienstbedarf=[
+                    VorschauDienstbedarf(name="Messdiener", anzahl=4, zugewiesene_minis=["Anna"])
+                ],
+            )
+        ],
+    )
+    pdf = render_miniplan_pdf("St. Beispiel", plan)
+    assert pdf.startswith(b"%PDF")
 
 
 def test_markdown_to_typst_fett() -> None:

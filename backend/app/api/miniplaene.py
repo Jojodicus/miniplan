@@ -10,7 +10,11 @@ from app.models.gottesdienst import Gottesdienst
 from app.models.miniplan import Miniplan, MiniplanStatus
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
-from app.schemas.dienstbedarf import ZuweisungFixierungIn, ZuweisungTauschenIn
+from app.schemas.dienstbedarf import (
+    ZuweisungenLeerenIn,
+    ZuweisungFixierungIn,
+    ZuweisungTauschenIn,
+)
 from app.schemas.miniplan import MiniplanCreate, MiniplanOut, MiniplanStatusUpdate, MiniplanUpdate
 from app.schemas.miniplan_vorschau import MiniplanVorschauIn, miniplan_zu_vorschau
 from app.services.typst_render import TypstCompileError, render_miniplan_pdf
@@ -239,6 +243,32 @@ def zuweisungen_tauschen(
             dienstbedarf_id=dienstbedarf_b_id, mini_id=mini_a_id, manuell_fixiert=fixiert_b
         )
     )
+    db.commit()
+    db.refresh(miniplan)
+    return miniplan
+
+
+@router.post("/{miniplan_id}/zuweisungen/leeren", response_model=MiniplanOut)
+def zuweisungen_leeren(
+    pfarrei_id: int,
+    miniplan_id: int,
+    daten: ZuweisungenLeerenIn,
+    db: Session = Depends(get_db),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Miniplan:
+    """Entfernt automatisch (nicht fixiert) zugewiesene Minis - je nach Body für den ganzen Plan,
+    einen Gottesdienst oder einen einzelnen Dienstbedarf. Manuell fixierte Zuweisungen bleiben."""
+    miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    for gottesdienst in miniplan.gottesdienste:
+        if daten.gottesdienst_id is not None and gottesdienst.id != daten.gottesdienst_id:
+            continue
+        for bedarf in gottesdienst.dienstbedarf:
+            if daten.dienstbedarf_id is not None and bedarf.id != daten.dienstbedarf_id:
+                continue
+            for zuweisung in bedarf.zuweisungen:
+                if not zuweisung.manuell_fixiert:
+                    db.delete(zuweisung)
     db.commit()
     db.refresh(miniplan)
     return miniplan

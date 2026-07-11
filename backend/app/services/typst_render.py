@@ -122,6 +122,31 @@ def markdown_to_typst(text: str) -> str:
     return "\n#linebreak()\n".join(bloecke)
 
 
+# Weinrot (identisch zur Frontend-Palette --color-wine), damit noch offene Stellen auf dem PDF
+# genauso hervorstechen wie die Platzhalter im Editor.
+_OFFEN_FARBE = '#7c2f3b'
+
+
+def _minis_zelle(bedarf: VorschauDienstbedarf) -> str:
+    """Baut den Inhalt der „Zugewiesene Minis“-Zelle: vergebene Namen in Normalschrift, für jede
+    noch unbesetzte Stelle einen weinrot eingefärbten „offen“-Platzhalter (analog zu den
+    Platzhaltern im Editor)."""
+    namen = bedarf.zugewiesene_minis
+    fehlend = max(bedarf.anzahl - len(namen), 0)
+    if not namen and fehlend == 0:
+        return "—"
+    teile: list[str] = []
+    for i, name in enumerate(namen):
+        if i > 0:
+            teile.append('#", "')
+        teile.append(f"#{_typst_str(name)}")
+    for j in range(fehlend):
+        if teile or j > 0:
+            teile.append('#", "')
+        teile.append(f'#text(fill: rgb("{_OFFEN_FARBE}"))[#{_typst_str("offen")}]')
+    return "".join(teile)
+
+
 def _dienstbedarf_bezeichnung(
     bedarf: VorschauDienstbedarf, filtertag_labels: dict[str, str]
 ) -> str:
@@ -174,11 +199,11 @@ def _build_source(
                 "    table.header([*Dienst*], [*Anzahl*], [*Zugewiesene Minis*]),"
             )
             for bedarf in gd.dienstbedarf:
-                minis_text = ", ".join(bedarf.zugewiesene_minis) if bedarf.zugewiesene_minis else "—"
+                minis_zelle = _minis_zelle(bedarf)
                 bezeichnung = _dienstbedarf_bezeichnung(bedarf, filtertag_labels)
                 zeilen.append(
                     f"    [#{_typst_str(bezeichnung)}], [#{_typst_str(str(bedarf.anzahl))}], "
-                    f"[#{_typst_str(minis_text)}],"
+                    f"[{minis_zelle}],"
                 )
             zeilen.append("  )")
         else:
