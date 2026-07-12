@@ -21,7 +21,13 @@ type PdfFile = { data: Uint8Array }
 // daher bei jedem Laden eine frische Kopie der Bytes, nie dasselbe Objekt wie der andere Slot.
 type SlotName = 'a' | 'b'
 
-export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; className?: string }) {
+export function PdfViewer({
+  data,
+  className = '',
+}: {
+  data: Uint8Array | null
+  className?: string
+}) {
   // "100%" heißt hier: die Seite füllt den (bewusst A4-förmigen) Container exakt aus - nicht die
   // tatsächliche PDF-Punktgröße. Da der Container dasselbe Seitenverhältnis wie eine A4-Seite hat,
   // ergibt Breite-passend automatisch auch Höhe-passend. `zoomFactor` ist der Multiplikator auf
@@ -125,13 +131,21 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
   return (
     <div className={`relative min-h-0 ${className}`}>
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-full border border-line bg-white/85 px-1 py-1 shadow-sm backdrop-blur-sm">
-        <IconButton label="Verkleinern" onClick={() => zoom(-ZOOM_STEP)} disabled={zoomFactor <= ZOOM_MIN}>
+        <IconButton
+          label="Verkleinern"
+          onClick={() => zoom(-ZOOM_STEP)}
+          disabled={zoomFactor <= ZOOM_MIN}
+        >
           <Minus className="h-4 w-4" />
         </IconButton>
         <span className="w-11 text-center text-xs tabular-nums text-ink-soft">
           {Math.round(zoomFactor * 100)}%
         </span>
-        <IconButton label="Vergrößern" onClick={() => zoom(ZOOM_STEP)} disabled={zoomFactor >= ZOOM_MAX}>
+        <IconButton
+          label="Vergrößern"
+          onClick={() => zoom(ZOOM_STEP)}
+          disabled={zoomFactor >= ZOOM_MAX}
+        >
           <Plus className="h-4 w-4" />
         </IconButton>
       </div>
@@ -180,7 +194,8 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
                           loading={null}
                           onLoadSuccess={
                             index === 0
-                              ? (page) => setNativePageWidth((breite) => breite ?? page.originalWidth)
+                              ? (page) =>
+                                  setNativePageWidth((breite) => breite ?? page.originalWidth)
                               : undefined
                           }
                           renderTextLayer={false}

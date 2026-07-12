@@ -96,9 +96,7 @@ def test_mini_loeschen(
         headers=headers,
     ).json()
 
-    response = client.delete(
-        f"/api/pfarreien/{pfarrei.id}/minis/{erstellt['id']}", headers=headers
-    )
+    response = client.delete(f"/api/pfarreien/{pfarrei.id}/minis/{erstellt['id']}", headers=headers)
     assert response.status_code == 204
 
     response = client.get(f"/api/pfarreien/{pfarrei.id}/minis", headers=headers)

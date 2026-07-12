@@ -4,6 +4,21 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from app.api import (
+    admin,
+    auth,
+    dienst_typen,
+    feiertage,
+    filtertag_blocker,
+    filtertags,
+    gottesdienste,
+    gruppen,
+    miniplaene,
+    minis,
+    pfarreien,
+)
+from app.config import settings
+
 
 class _ImmutableCachedStaticFiles(StaticFiles):
     """Vite hasht Dateinamen in `assets/` bei jeder inhaltlichen Änderung neu - derselbe Pfad
@@ -15,20 +30,6 @@ class _ImmutableCachedStaticFiles(StaticFiles):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
-from app.api import (
-    admin,
-    auth,
-    dienst_typen,
-    feiertage,
-    filtertag_blocker,
-    filtertags,
-    gottesdienste,
-    gruppen,
-    minis,
-    miniplaene,
-    pfarreien,
-)
-from app.config import settings
 
 app = FastAPI(title="Miniplan")
 
@@ -61,6 +62,7 @@ app.include_router(gottesdienste.router)
 @app.get("/api/health", include_in_schema=False)
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
 
 static_dir = Path(settings.static_files_dir)
 if static_dir.is_dir():

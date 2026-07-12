@@ -100,7 +100,9 @@ export function TimeInput({
         aria-required={required}
         aria-invalid={error ? true : undefined}
         className={`flex h-10 w-full items-center justify-between rounded-md border bg-paper px-3 text-left text-sm outline-none transition-shadow focus:ring-2 focus:ring-pine/15 ${
-          error ? 'border-wine focus:border-wine focus:ring-wine/15' : 'border-line focus:border-pine'
+          error
+            ? 'border-wine focus:border-wine focus:ring-wine/15'
+            : 'border-line focus:border-pine'
         } ${value ? 'text-ink' : 'text-ink-faint'}`}
       >
         <span>{value ? `${value} Uhr` : 'Uhrzeit wählen'}</span>
@@ -126,9 +128,7 @@ export function TimeInput({
                     type="button"
                     onClick={() => setStunde(s)}
                     className={`flex h-7 items-center justify-center rounded text-xs tabular-nums transition-colors ${
-                      aktiv
-                        ? 'bg-pine font-medium text-paper'
-                        : 'text-ink hover:bg-pine-tint'
+                      aktiv ? 'bg-pine font-medium text-paper' : 'text-ink hover:bg-pine-tint'
                     }`}
                   >
                     {label}

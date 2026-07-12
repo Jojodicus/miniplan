@@ -34,9 +34,7 @@ def _get_miniplan_or_404(pfarrei_id: int, miniplan_id: int, db: Session) -> Mini
         .first()
     )
     if miniplan is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Miniplan nicht gefunden"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Miniplan nicht gefunden")
     return miniplan
 
 
@@ -69,9 +67,7 @@ def _dienstbedarf_bauen(
             detail="Ein oder mehrere Dienst-Typen gehören nicht zu dieser Pfarrei",
         )
 
-    gruppen_ids = {
-        a.gruppe_id for e in eintraege for a in e.gruppen_anforderungen
-    }
+    gruppen_ids = {a.gruppe_id for e in eintraege for a in e.gruppen_anforderungen}
     gruppen_by_id = {
         g.id: g
         for g in db.query(Gruppe)
@@ -84,9 +80,7 @@ def _dienstbedarf_bauen(
             detail="Eine oder mehrere Gruppen gehören nicht zu dieser Pfarrei",
         )
 
-    mini_ids = {
-        mini_id for e in eintraege for mini_id in (*e.fixierte_mini_ids, *e.auto_mini_ids)
-    }
+    mini_ids = {mini_id for e in eintraege for mini_id in (*e.fixierte_mini_ids, *e.auto_mini_ids)}
     minis_by_id = {
         m.id: m
         for m in db.query(Mini).filter(Mini.id.in_(mini_ids), Mini.pfarrei_id == pfarrei_id).all()

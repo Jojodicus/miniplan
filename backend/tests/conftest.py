@@ -147,7 +147,8 @@ def gruppe(db_session: Session, pfarrei: Pfarrei) -> Gruppe:
 @pytest.fixture
 def filtertags(db_session: Session, pfarrei: Pfarrei) -> dict[str, Filtertag]:
     """Legt die drei Standard-Filtertags für `pfarrei` an (wie `seed_default_stammdaten`), damit
-    Tests, die z.B. "arbeiter" als Filtertag-Key verwenden, gegen eine gültige Referenz validieren."""
+    Tests, die z.B. "arbeiter" als Filtertag-Key verwenden, gegen eine gültige Referenz
+    validieren."""
     definitionen = [
         ("grundschueler", "Grundschüler", True),
         ("schueler", "Schüler", True),

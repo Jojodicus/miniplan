@@ -84,7 +84,9 @@ def _als_zeitraeume(pfarrei: Pfarrei, rohdaten: list[dict]) -> list[Ferienzeitra
     return zeitraeume
 
 
-def sync_ferien_falls_fehlend(pfarrei: Pfarrei, db: Session, jahre: set[int]) -> list[Ferienzeitraum]:
+def sync_ferien_falls_fehlend(
+    pfarrei: Pfarrei, db: Session, jahre: set[int]
+) -> list[Ferienzeitraum]:
     """Ergänzt (statt zu ersetzen) nur die Jahre, die noch nicht gespeichert sind - für
     automatische, unaufdringliche Hintergrund-Syncs (z.B. beim Öffnen eines Datumsfelds). Anders
     als `sync_ferien` (voller Neuabgleich für den manuellen "Aktualisieren"-Button) werden bereits
@@ -102,7 +104,9 @@ def sync_ferien_falls_fehlend(pfarrei: Pfarrei, db: Session, jahre: set[int]) ->
     )
 
 
-def sync_ferien(pfarrei: Pfarrei, db: Session, jahre: set[int] | None = None) -> list[Ferienzeitraum]:
+def sync_ferien(
+    pfarrei: Pfarrei, db: Session, jahre: set[int] | None = None
+) -> list[Ferienzeitraum]:
     if jahre is None:
         heute = date.today()
         jahre = {heute.year, (heute.year + 1)}

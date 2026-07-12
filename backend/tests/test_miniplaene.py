@@ -53,9 +53,7 @@ def test_miniplan_anlegen_doppelter_monat_konflikt(
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     daten = {"monat": 8, "jahr": 2026}
     client.post(f"/api/pfarreien/{pfarrei.id}/miniplaene", json=daten, headers=headers)
-    response = client.post(
-        f"/api/pfarreien/{pfarrei.id}/miniplaene", json=daten, headers=headers
-    )
+    response = client.post(f"/api/pfarreien/{pfarrei.id}/miniplaene", json=daten, headers=headers)
     assert response.status_code == 409
 
 
@@ -80,9 +78,7 @@ def test_miniplan_detail(
     db_session.refresh(miniplan)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
-    response = client.get(
-        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}", headers=headers
-    )
+    response = client.get(f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}", headers=headers)
     assert response.status_code == 200
     assert response.json()["id"] == miniplan.id
 
@@ -202,7 +198,11 @@ def test_miniplan_pdf_download_erfordert_abgeschlossen(
 
 
 def test_miniplan_pdf_download_liefert_pdf_fuer_betrachter(
-    client: TestClient, verantwortlicher_user: Nutzer, betrachter_user: Nutzer, pfarrei: Pfarrei, db_session
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    betrachter_user: Nutzer,
+    pfarrei: Pfarrei,
+    db_session,
 ) -> None:
     miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=4, jahr=2027, status="abgeschlossen")
     db_session.add(miniplan)
@@ -222,18 +222,14 @@ def test_miniplan_pdf_download_unbekannter_plan(
     client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei
 ) -> None:
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
-    response = client.get(
-        f"/api/pfarreien/{pfarrei.id}/miniplaene/999/pdf", headers=headers
-    )
+    response = client.get(f"/api/pfarreien/{pfarrei.id}/miniplaene/999/pdf", headers=headers)
     assert response.status_code == 404
 
 
 def test_miniplan_fuellen_besetzt_freie_stellen(
     client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe, db_session
 ) -> None:
-    minis = [
-        Mini(pfarrei_id=pfarrei.id, gruppe_id=gruppe.id, name=f"Mini {i}") for i in range(2)
-    ]
+    minis = [Mini(pfarrei_id=pfarrei.id, gruppe_id=gruppe.id, name=f"Mini {i}") for i in range(2)]
     db_session.add_all(minis)
     miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=5, jahr=2027)
     db_session.add(miniplan)
@@ -338,13 +334,19 @@ def _plan_mit_zwei_gottesdiensten(db_session, pfarrei: Pfarrei, gruppe: Gruppe):
         name="Kreuz", anzahl=1, zuweisungen=[DienstbedarfZuweisung(mini_id=mini_a.id)]
     )
     gottesdienst_1 = Gottesdienst(
-        miniplan_id=miniplan.id, datum=date(2027, 7, 4), uhrzeit=time(10, 0), dienstbedarf=[bedarf_1]
+        miniplan_id=miniplan.id,
+        datum=date(2027, 7, 4),
+        uhrzeit=time(10, 0),
+        dienstbedarf=[bedarf_1],
     )
     bedarf_2 = Dienstbedarf(
         name="Kreuz", anzahl=1, zuweisungen=[DienstbedarfZuweisung(mini_id=mini_b.id)]
     )
     gottesdienst_2 = Gottesdienst(
-        miniplan_id=miniplan.id, datum=date(2027, 7, 11), uhrzeit=time(10, 0), dienstbedarf=[bedarf_2]
+        miniplan_id=miniplan.id,
+        datum=date(2027, 7, 11),
+        uhrzeit=time(10, 0),
+        dienstbedarf=[bedarf_2],
     )
     db_session.add_all([gottesdienst_1, gottesdienst_2])
     db_session.commit()
@@ -371,8 +373,12 @@ def test_zuweisungen_tauschen_ueber_zwei_gottesdienste(
     assert response.status_code == 200
     body = response.json()
     gottesdienste_nach_datum = sorted(body["gottesdienste"], key=lambda g: g["datum"])
-    assert gottesdienste_nach_datum[0]["dienstbedarf"][0]["zuweisungen"][0]["mini"]["id"] == mini_b.id
-    assert gottesdienste_nach_datum[1]["dienstbedarf"][0]["zuweisungen"][0]["mini"]["id"] == mini_a.id
+    assert (
+        gottesdienste_nach_datum[0]["dienstbedarf"][0]["zuweisungen"][0]["mini"]["id"] == mini_b.id
+    )
+    assert (
+        gottesdienste_nach_datum[1]["dienstbedarf"][0]["zuweisungen"][0]["mini"]["id"] == mini_a.id
+    )
 
 
 def test_zuweisungen_tauschen_innerhalb_desselben_gottesdienstes(
@@ -517,9 +523,7 @@ def test_miniplan_fixierung_uebersteht_erneutes_fuellen(
     # zuteilen (z.B. weil er der einzige verbleibende Kandidat ist) - der Endpoint muss die nicht
     # fixierten Zuweisungen vor dem Einfügen der neuen tatsächlich löschen und flushen, sonst
     # verletzt die neue Zeile den Unique-Constraint (dienstbedarf_id, mini_id) der alten.
-    minis = [
-        Mini(pfarrei_id=pfarrei.id, gruppe_id=gruppe.id, name=f"Mini {i}") for i in range(2)
-    ]
+    minis = [Mini(pfarrei_id=pfarrei.id, gruppe_id=gruppe.id, name=f"Mini {i}") for i in range(2)]
     db_session.add_all(minis)
     miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=8, jahr=2028)
     db_session.add(miniplan)
@@ -744,9 +748,7 @@ def test_abgeschlossener_miniplan_ist_schreibgeschuetzt(
         assert response.status_code == 409, f"{methode.upper()} {url} -> {response.status_code}"
 
     # Wieder öffnen macht den Plan editierbar.
-    response = client.post(
-        f"{base}/status", json={"status": "in_bearbeitung"}, headers=headers
-    )
+    response = client.post(f"{base}/status", json={"status": "in_bearbeitung"}, headers=headers)
     assert response.status_code == 200
     response = client.put(
         base, json={"veranstaltungen": "x", "ankuendigungen": None}, headers=headers

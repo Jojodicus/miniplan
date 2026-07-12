@@ -39,9 +39,7 @@ def _gruppen_anforderungen_bauen(
         return []
     gruppen_ids = [a.gruppe_id for a in anforderungen]
     gruppen = (
-        db.query(Gruppe)
-        .filter(Gruppe.id.in_(gruppen_ids), Gruppe.pfarrei_id == pfarrei_id)
-        .all()
+        db.query(Gruppe).filter(Gruppe.id.in_(gruppen_ids), Gruppe.pfarrei_id == pfarrei_id).all()
     )
     if len(gruppen) != len(set(gruppen_ids)):
         raise HTTPException(
@@ -51,7 +49,9 @@ def _gruppen_anforderungen_bauen(
     gruppen_by_id = {g.id: g for g in gruppen}
     return [
         DienstTypGruppenAnforderung(
-            gruppe_id=a.gruppe_id, mindest_anzahl=a.mindest_anzahl, gruppe=gruppen_by_id[a.gruppe_id]
+            gruppe_id=a.gruppe_id,
+            mindest_anzahl=a.mindest_anzahl,
+            gruppe=gruppen_by_id[a.gruppe_id],
         )
         for a in anforderungen
     ]

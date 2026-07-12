@@ -102,7 +102,13 @@ function neuerSchluessel(): string {
 
 type SpeicherStatus = 'gespeichert' | 'speichert' | 'ungespeichert' | 'fehler'
 
-function StatusAnzeige({ status, className = 'text-xs' }: { status: SpeicherStatus; className?: string }) {
+function StatusAnzeige({
+  status,
+  className = 'text-xs',
+}: {
+  status: SpeicherStatus
+  className?: string
+}) {
   const text: Record<SpeicherStatus, string> = {
     gespeichert: 'Gespeichert',
     speichert: 'Speichert…',
@@ -264,9 +270,7 @@ function draftZuVorschau(
         b,
         gruppen,
         minis,
-        (draft.serverZuweisungenBySchluessel[b.schluessel] ?? []).filter(
-          (z) => !z.manuell_fixiert,
-        ),
+        (draft.serverZuweisungenBySchluessel[b.schluessel] ?? []).filter((z) => !z.manuell_fixiert),
       ),
     ),
   }
@@ -302,7 +306,12 @@ function ZuweisungsChip({
       ? { zuweisungId: zuweisung.id, dienstbedarfId, manuellFixiert: zuweisung.manuell_fixiert }
       : undefined
   const dragId = zuweisung ? `zuweisung-${zuweisung.id}` : undefined
-  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDragRef,
+    isDragging,
+  } = useDraggable({
     id: dragId ?? 'zuweisung-unbekannt',
     data: dragData,
     disabled: !dragData,
@@ -433,7 +442,11 @@ function MiniAdder({
 }
 
 // Kurzbeschreibung eines Dienstes für die stets sichtbare Zeile (Name und/oder Einschränkungen).
-function dienstEinschraenkungen(bedarf: WorkingBedarf, gruppen: Gruppe[], filtertags: FiltertagDef[]): string[] {
+function dienstEinschraenkungen(
+  bedarf: WorkingBedarf,
+  gruppen: Gruppe[],
+  filtertags: FiltertagDef[],
+): string[] {
   return [
     ...bedarf.erforderliche_filtertags.map(
       (tag) => filtertags.find((f) => f.key === tag)?.label ?? tag,
@@ -521,69 +534,69 @@ function DienstbedarfBelegung({
         )}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-            {bedarf.fixierteMiniIds.map((miniId) => {
-              const mini = minis.find((m) => m.id === miniId)
-              if (!mini) return null
-              const zuweisung =
-                serverZuweisungen.find((z) => z.manuell_fixiert && z.mini.id === miniId) ?? null
-              return (
-                <ZuweisungsChip
-                  key={`fest-${miniId}`}
-                  name={mini.name}
-                  tone="fest"
-                  dienstbedarfId={dienstbedarfId}
-                  zuweisung={zuweisung}
-                  readonly={readonly}
-                  onRemove={readonly ? undefined : () => toggleMini(miniId)}
-                />
-              )
-            })}
-            {autoZuweisungen.map((zuweisung) => (
-              <ZuweisungsChip
-                key={`auto-${zuweisung.id}`}
-                name={zuweisung.mini.name}
-                tone="auto"
-                dienstbedarfId={dienstbedarfId}
-                zuweisung={zuweisung}
-                readonly={readonly}
-                onPin={readonly ? undefined : () => onPinAuto(zuweisung.id)}
-              />
-            ))}
-            {/* "offen"-Platzhalter sind der einzige Einstiegspunkt zur Suche - als Button statt
+        {bedarf.fixierteMiniIds.map((miniId) => {
+          const mini = minis.find((m) => m.id === miniId)
+          if (!mini) return null
+          const zuweisung =
+            serverZuweisungen.find((z) => z.manuell_fixiert && z.mini.id === miniId) ?? null
+          return (
+            <ZuweisungsChip
+              key={`fest-${miniId}`}
+              name={mini.name}
+              tone="fest"
+              dienstbedarfId={dienstbedarfId}
+              zuweisung={zuweisung}
+              readonly={readonly}
+              onRemove={readonly ? undefined : () => toggleMini(miniId)}
+            />
+          )
+        })}
+        {autoZuweisungen.map((zuweisung) => (
+          <ZuweisungsChip
+            key={`auto-${zuweisung.id}`}
+            name={zuweisung.mini.name}
+            tone="auto"
+            dienstbedarfId={dienstbedarfId}
+            zuweisung={zuweisung}
+            readonly={readonly}
+            onPin={readonly ? undefined : () => onPinAuto(zuweisung.id)}
+          />
+        ))}
+        {/* "offen"-Platzhalter sind der einzige Einstiegspunkt zur Suche - als Button statt
                 reiner Anzeige, damit die Suche nicht dauerhaft sichtbar sein muss (weniger
                 Unruhe bei vielen Diensten). */}
-            {Array.from({ length: offeneStellen }, (_, i) =>
-              readonly ? (
-                <span
-                  key={`offen-${i}`}
-                  className="inline-flex items-center rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine"
-                >
-                  offen
-                </span>
-              ) : (
-                <button
-                  key={`offen-${i}`}
-                  type="button"
-                  onClick={() => setSucheOffen((wert) => !wert)}
-                  aria-expanded={sucheOffen}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine transition-colors hover:bg-wine-tint"
-                >
-                  offen
-                  <Pencil className="h-3 w-3" />
-                </button>
-              ),
-            )}
-          </div>
-          {!readonly && sucheOffen && !voll && (
-            <div className="mt-2">
-              <MiniAdder
-                minis={minis}
-                belegteMiniIds={gottesdienstBelegteMiniIds}
-                disabled={voll}
-                onAdd={(miniId) => toggleMini(miniId)}
-              />
-            </div>
-          )}
+        {Array.from({ length: offeneStellen }, (_, i) =>
+          readonly ? (
+            <span
+              key={`offen-${i}`}
+              className="inline-flex items-center rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine"
+            >
+              offen
+            </span>
+          ) : (
+            <button
+              key={`offen-${i}`}
+              type="button"
+              onClick={() => setSucheOffen((wert) => !wert)}
+              aria-expanded={sucheOffen}
+              className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine transition-colors hover:bg-wine-tint"
+            >
+              offen
+              <Pencil className="h-3 w-3" />
+            </button>
+          ),
+        )}
+      </div>
+      {!readonly && sucheOffen && !voll && (
+        <div className="mt-2">
+          <MiniAdder
+            minis={minis}
+            belegteMiniIds={gottesdienstBelegteMiniIds}
+            disabled={voll}
+            onAdd={(miniId) => toggleMini(miniId)}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -676,7 +689,10 @@ function DienstbedarfEinstellungen({
           {/* Bewusst kein `Label` hier: das trägt für die übliche Stapelung (Label über Feld) ein
               `mb-1.5`, das in dieser einzeiligen Anordnung Label und Feld vertikal gegeneinander
               verschieben würde. */}
-          <label htmlFor={`${bedarf.schluessel}-anzahl`} className="shrink-0 text-sm font-medium text-ink-soft">
+          <label
+            htmlFor={`${bedarf.schluessel}-anzahl`}
+            className="shrink-0 text-sm font-medium text-ink-soft"
+          >
             Anzahl
           </label>
           <Input
@@ -1015,7 +1031,9 @@ function GottesdienstKarte({
   // Auffrischen nach einem Speichern nicht den Autosave-Effekt erneut auslöst.
   const [serverZuweisungenMap, setServerZuweisungenMap] = useState<
     Record<string, DienstbedarfZuweisung[]>
-  >(() => Object.fromEntries(gottesdienst.dienstbedarf.map((b) => [`bestehend-${b.id}`, b.zuweisungen])))
+  >(() =>
+    Object.fromEntries(gottesdienst.dienstbedarf.map((b) => [`bestehend-${b.id}`, b.zuweisungen])),
+  )
   // Echte dienstbedarfId je Schlüssel (frisch hinzugefügter Bedarf startet mit `null`, bekommt sie
   // nach dem ersten Speichern) - getrennt von `bedarfListe`, damit kein Autosave ausgelöst wird.
   const [dienstbedarfIdMap, setDienstbedarfIdMap] = useState<Record<string, number>>(() =>
@@ -1165,8 +1183,8 @@ function GottesdienstKarte({
     }
   }
 
-  const hatAuto = bedarfListe.some(
-    (b) => (serverZuweisungenMap[b.schluessel] ?? []).some((z) => !z.manuell_fixiert),
+  const hatAuto = bedarfListe.some((b) =>
+    (serverZuweisungenMap[b.schluessel] ?? []).some((z) => !z.manuell_fixiert),
   )
 
   return (
@@ -1366,7 +1384,11 @@ function NeuerGottesdienstModal({
           <Alert>{error}</Alert>
         </div>
       )}
-      <form onSubmit={handleCreate} aria-label="Gottesdienst anlegen" className="flex flex-col gap-4">
+      <form
+        onSubmit={handleCreate}
+        aria-label="Gottesdienst anlegen"
+        className="flex flex-col gap-4"
+      >
         <GottesdienstDetailsForm
           idPrefix="neuer-gottesdienst"
           pfarreiId={pfarreiId}
@@ -1587,7 +1609,13 @@ function ZuteilungEinstellungenPopover({
   }, [open, miniplan])
 
   return (
-    <Popover open={open} onClose={onClose} anchorRef={anchorRef} title="Auto-Fill-Einstellungen" width={340}>
+    <Popover
+      open={open}
+      onClose={onClose}
+      anchorRef={anchorRef}
+      title="Auto-Fill-Einstellungen"
+      width={340}
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -1685,9 +1713,9 @@ export function MiniplanEditorPage() {
   const [minis, setMinis] = useState<Mini[]>([])
   const [dienstTypen, setDienstTypen] = useState<DienstTyp[]>([])
   const [filtertags, setFiltertags] = useState<FiltertagDef[]>([])
-  const [gottesdienstDrafts, setGottesdienstDrafts] = useState<
-    Record<number, GottesdienstDraft>
-  >({})
+  const [gottesdienstDrafts, setGottesdienstDrafts] = useState<Record<number, GottesdienstDraft>>(
+    {},
+  )
   const [neuesterGottesdienstId, setNeuesterGottesdienstId] = useState<number | null>(null)
   const [neuGottesdienstOffen, setNeuGottesdienstOffen] = useState(false)
   const [freitextDraft, setFreitextDraft] = useState<{
@@ -1760,7 +1788,9 @@ export function MiniplanEditorPage() {
     }
   }
 
-  async function handleClearAuto(bereich: { gottesdienstId?: number; dienstbedarfId?: number } = {}) {
+  async function handleClearAuto(
+    bereich: { gottesdienstId?: number; dienstbedarfId?: number } = {},
+  ) {
     try {
       const aktualisiert = await miniplanZuweisungenLeeren(id, planId, bereich)
       refreshNachMutation(aktualisiert)
@@ -1814,7 +1844,9 @@ export function MiniplanEditorPage() {
     try {
       await miniplanPdfHerunterladen(id, miniplan)
     } catch (err) {
-      setDownloadFehler(err instanceof Error ? err.message : 'PDF konnte nicht heruntergeladen werden')
+      setDownloadFehler(
+        err instanceof Error ? err.message : 'PDF konnte nicht heruntergeladen werden',
+      )
     }
   }
 
@@ -1836,16 +1868,16 @@ export function MiniplanEditorPage() {
     [],
   )
 
-  const handleFreitextDraftChange = useCallback((veranstaltungen: string, ankuendigungen: string) => {
-    setFreitextDraft({ veranstaltungen, ankuendigungen })
-  }, [])
-
-  const handleKartenStatusChange = useCallback(
-    (gottesdienstId: number, status: SpeicherStatus) => {
-      setKartenStatus((aktuell) => ({ ...aktuell, [gottesdienstId]: status }))
+  const handleFreitextDraftChange = useCallback(
+    (veranstaltungen: string, ankuendigungen: string) => {
+      setFreitextDraft({ veranstaltungen, ankuendigungen })
     },
     [],
   )
+
+  const handleKartenStatusChange = useCallback((gottesdienstId: number, status: SpeicherStatus) => {
+    setKartenStatus((aktuell) => ({ ...aktuell, [gottesdienstId]: status }))
+  }, [])
 
   // Nur Statusmeldungen noch existierender Gottesdienste zählen (gelöschte Karten hinterlassen
   // sonst veraltete Einträge in der Map).
@@ -1944,14 +1976,24 @@ export function MiniplanEditorPage() {
             </IconButton>
           )}
           {!readonly && hatAutoZuweisungen && (
-            <Button variant="secondary" size="sm" title="Auto leeren" onClick={() => handleClearAuto()}>
+            <Button
+              variant="secondary"
+              size="sm"
+              title="Auto leeren"
+              onClick={() => handleClearAuto()}
+            >
               <Eraser className="h-4 w-4" />
               <span className="hidden sm:inline">Auto leeren</span>
             </Button>
           )}
           {miniplan.status === 'abgeschlossen' ? (
             <>
-              <Button variant="secondary" size="sm" title="PDF herunterladen" onClick={handleDownload}>
+              <Button
+                variant="secondary"
+                size="sm"
+                title="PDF herunterladen"
+                onClick={handleDownload}
+              >
                 <Download className="h-4 w-4" />
                 <span className="hidden sm:inline">PDF herunterladen</span>
               </Button>
@@ -1997,70 +2039,70 @@ export function MiniplanEditorPage() {
           Spalte anwachsen, in der die (selbst begrenzt hohe) Karte dann sticky bleiben kann. */}
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
         <DndContext sensors={dndSensoren} onDragEnd={handleDragEnd}>
-        <div className="flex min-w-0 flex-col gap-6">
-          {miniplan.gottesdienste.map((gottesdienst) => (
-            <GottesdienstKarte
-              key={`${gottesdienst.id}-${zuteilungsRevision}`}
-              gottesdienst={gottesdienst}
+          <div className="flex min-w-0 flex-col gap-6">
+            {miniplan.gottesdienste.map((gottesdienst) => (
+              <GottesdienstKarte
+                key={`${gottesdienst.id}-${zuteilungsRevision}`}
+                gottesdienst={gottesdienst}
+                pfarreiId={id}
+                miniplanId={planId}
+                jahr={miniplan.jahr}
+                monat={miniplan.monat}
+                readonly={readonly}
+                gruppen={gruppen}
+                minis={minis}
+                dienstTypen={dienstTypen}
+                filtertags={filtertags}
+                onReload={reload}
+                onDraftChange={handleGottesdienstDraftChange}
+                onStatusChange={handleKartenStatusChange}
+                onClearAutoBereich={handleClearAuto}
+                onPinAuto={handlePinAuto}
+                onDuplicated={(gottesdienstId) => {
+                  setNeuesterGottesdienstId(gottesdienstId)
+                  reload()
+                }}
+                oeffneEditor={gottesdienst.id === neuesterGottesdienstId}
+                onEditorGeoeffnet={(gid) =>
+                  setNeuesterGottesdienstId((cur) => (cur === gid ? null : cur))
+                }
+              />
+            ))}
+
+            {miniplan.gottesdienste.length === 0 && (
+              <Card className="animate-rise">
+                <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+                  <p className="text-sm text-ink-soft">Noch keine Gottesdienste angelegt.</p>
+                  {!readonly && (
+                    <Button type="button" onClick={() => setNeuGottesdienstOffen(true)}>
+                      <CalendarPlus className="h-4 w-4" />
+                      Ersten Gottesdienst anlegen
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            )}
+
+            {!readonly && miniplan.gottesdienste.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setNeuGottesdienstOffen(true)}
+                className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-line px-4 py-3 text-sm text-ink-soft transition-colors hover:border-pine hover:bg-pine-tint hover:text-pine-dark"
+              >
+                <CalendarPlus className="h-4 w-4" />
+                Gottesdienst hinzufügen
+              </button>
+            )}
+
+            <FreitextSection
               pfarreiId={id}
-              miniplanId={planId}
-              jahr={miniplan.jahr}
-              monat={miniplan.monat}
+              miniplan={miniplan}
               readonly={readonly}
-              gruppen={gruppen}
-              minis={minis}
-              dienstTypen={dienstTypen}
-              filtertags={filtertags}
-              onReload={reload}
-              onDraftChange={handleGottesdienstDraftChange}
-              onStatusChange={handleKartenStatusChange}
-              onClearAutoBereich={handleClearAuto}
-              onPinAuto={handlePinAuto}
-              onDuplicated={(gottesdienstId) => {
-                setNeuesterGottesdienstId(gottesdienstId)
-                reload()
-              }}
-              oeffneEditor={gottesdienst.id === neuesterGottesdienstId}
-              onEditorGeoeffnet={(gid) =>
-                setNeuesterGottesdienstId((cur) => (cur === gid ? null : cur))
-              }
+              onSaved={setMiniplan}
+              onDraftChange={handleFreitextDraftChange}
+              onStatusChange={setFreitextStatus}
             />
-          ))}
-
-          {miniplan.gottesdienste.length === 0 && (
-            <Card className="animate-rise">
-              <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
-                <p className="text-sm text-ink-soft">Noch keine Gottesdienste angelegt.</p>
-                {!readonly && (
-                  <Button type="button" onClick={() => setNeuGottesdienstOffen(true)}>
-                    <CalendarPlus className="h-4 w-4" />
-                    Ersten Gottesdienst anlegen
-                  </Button>
-                )}
-              </div>
-            </Card>
-          )}
-
-          {!readonly && miniplan.gottesdienste.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setNeuGottesdienstOffen(true)}
-              className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-line px-4 py-3 text-sm text-ink-soft transition-colors hover:border-pine hover:bg-pine-tint hover:text-pine-dark"
-            >
-              <CalendarPlus className="h-4 w-4" />
-              Gottesdienst hinzufügen
-            </button>
-          )}
-
-          <FreitextSection
-            pfarreiId={id}
-            miniplan={miniplan}
-            readonly={readonly}
-            onSaved={setMiniplan}
-            onDraftChange={handleFreitextDraftChange}
-            onStatusChange={setFreitextStatus}
-          />
-        </div>
+          </div>
         </DndContext>
 
         <div className="min-w-0">

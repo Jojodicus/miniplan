@@ -1,3 +1,5 @@
+import contextlib
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -60,9 +62,7 @@ def _get_miniplan_or_404(pfarrei_id: int, miniplan_id: int, db: Session) -> Mini
         .first()
     )
     if miniplan is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Miniplan nicht gefunden"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Miniplan nicht gefunden")
     return miniplan
 
 
@@ -77,7 +77,9 @@ def schreibschutz_pruefen(miniplan: Miniplan) -> None:
         )
 
 
-def _get_zuweisung_or_404(miniplan_id: int, zuweisung_id: int, db: Session) -> DienstbedarfZuweisung:
+def _get_zuweisung_or_404(
+    miniplan_id: int, zuweisung_id: int, db: Session
+) -> DienstbedarfZuweisung:
     zuweisung = (
         db.query(DienstbedarfZuweisung)
         .join(Dienstbedarf, DienstbedarfZuweisung.dienstbedarf_id == Dienstbedarf.id)
@@ -224,10 +226,8 @@ def fuellen(
     # erhalten (siehe sync_ferien) - das Füllen soll dadurch nicht scheitern. Jahre aus dem
     # Miniplan selbst statt dem heutigen Datum, damit auch mit Vorlauf geplante Monate
     # (z.B. kurz vor Schuljahresbeginn) aktuelle Ferienzeiten für ihr eigenes Jahr bekommen.
-    try:
+    with contextlib.suppress(FerienSyncFehler):
         sync_ferien(pfarrei, db, jahre={miniplan.jahr, miniplan.jahr + 1})
-    except FerienSyncFehler:
-        pass
     vorschlag = zuteilung_vorschlagen(db, pfarrei_id, miniplan)
     # Erst alle nicht fixierten Zuweisungen löschen und flushen, bevor die neu vorgeschlagenen
     # eingefügt werden: bei einem erneuten Füllen-Lauf kann derselbe Mini wieder demselben

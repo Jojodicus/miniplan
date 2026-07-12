@@ -71,13 +71,15 @@ def nutzer_anlegen(daten: NutzerCreate, db: Session = Depends(get_db)) -> Nutzer
 
 
 @router.put("/nutzer/{nutzer_id}", response_model=NutzerOut)
-def nutzer_bearbeiten(
-    nutzer_id: int, daten: NutzerUpdate, db: Session = Depends(get_db)
-) -> Nutzer:
+def nutzer_bearbeiten(nutzer_id: int, daten: NutzerUpdate, db: Session = Depends(get_db)) -> Nutzer:
     nutzer = _get_nutzer_or_404(nutzer_id, db)
     # Den letzten verbleibenden Admin nicht zum Nicht-Admin herabstufen - sonst ist niemand mehr
     # zur Verwaltung berechtigt.
-    if nutzer.ist_admin and not daten.ist_admin and _anzahl_admins(db, ausser_nutzer_id=nutzer.id) == 0:
+    if (
+        nutzer.ist_admin
+        and not daten.ist_admin
+        and _anzahl_admins(db, ausser_nutzer_id=nutzer.id) == 0
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Der letzte Admin kann nicht herabgestuft werden",
@@ -134,16 +136,12 @@ def nutzer_pfarrei_rolle_setzen(
     Pfarrei existiert höchstens eine Rolle)."""
     nutzer = _get_nutzer_or_404(nutzer_id, db)
     _get_pfarrei_or_404(daten.pfarrei_id, db)
-    bestehend = next(
-        (z for z in nutzer.pfarrei_rollen if z.pfarrei_id == daten.pfarrei_id), None
-    )
+    bestehend = next((z for z in nutzer.pfarrei_rollen if z.pfarrei_id == daten.pfarrei_id), None)
     if bestehend is not None:
         bestehend.rolle = daten.rolle
     else:
         db.add(
-            NutzerPfarreiRolle(
-                nutzer_id=nutzer.id, pfarrei_id=daten.pfarrei_id, rolle=daten.rolle
-            )
+            NutzerPfarreiRolle(nutzer_id=nutzer.id, pfarrei_id=daten.pfarrei_id, rolle=daten.rolle)
         )
     db.commit()
     db.refresh(nutzer)

@@ -125,10 +125,9 @@ export async function miniplanPdfHerunterladen(
   pfarreiId: number,
   miniplan: Miniplan,
 ): Promise<void> {
-  const response = await fetch(
-    `/api/pfarreien/${pfarreiId}/miniplaene/${miniplan.id}/pdf`,
-    { credentials: 'same-origin' },
-  )
+  const response = await fetch(`/api/pfarreien/${pfarreiId}/miniplaene/${miniplan.id}/pdf`, {
+    credentials: 'same-origin',
+  })
   if (!response.ok) {
     const body = await response.json().catch(() => null)
     throw new Error(

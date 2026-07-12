@@ -88,7 +88,7 @@ def _badness(
     naehe_strafe = 0.0
     for termine in termine_je_mini.values():
         termine.sort()
-        for davor, danach in zip(termine, termine[1:]):
+        for davor, danach in zip(termine, termine[1:], strict=False):
             abstand = (danach - davor).days
             if abstand < config.mindestabstand_tage:
                 naehe_strafe += _ABSTAND_STRAFE * (config.mindestabstand_tage - abstand)
@@ -138,7 +138,9 @@ def _badness(
     )
 
 
-def _akzeptieren(alte_badness: float, neue_badness: float, temperatur: float, zufall: random.Random) -> bool:
+def _akzeptieren(
+    alte_badness: float, neue_badness: float, temperatur: float, zufall: random.Random
+) -> bool:
     if neue_badness <= alte_badness:
         return True
     if temperatur <= 0:
@@ -146,7 +148,9 @@ def _akzeptieren(alte_badness: float, neue_badness: float, temperatur: float, zu
     return zufall.random() < math.exp((alte_badness - neue_badness) / temperatur)
 
 
-def _baue_slots(miniplan: Miniplan, minis_by_id: dict[int, Mini]) -> tuple[list[_Slot], dict[int, set[int]]]:
+def _baue_slots(
+    miniplan: Miniplan, minis_by_id: dict[int, Mini]
+) -> tuple[list[_Slot], dict[int, set[int]]]:
     slots: list[_Slot] = []
     belegt_je_gottesdienst: dict[int, set[int]] = {}
 
@@ -166,7 +170,9 @@ def _baue_slots(miniplan: Miniplan, minis_by_id: dict[int, Mini]) -> tuple[list[
             anzahl_frei = bedarf.anzahl - len(fixierte)
             quoten: list[int | None] = []
             for anforderung in bedarf.gruppen_anforderungen:
-                defizit = anforderung.mindest_anzahl - fixiert_je_gruppe.get(anforderung.gruppe_id, 0)
+                defizit = anforderung.mindest_anzahl - fixiert_je_gruppe.get(
+                    anforderung.gruppe_id, 0
+                )
                 for _ in range(max(0, defizit)):
                     if len(quoten) < anzahl_frei:
                         quoten.append(anforderung.gruppe_id)
@@ -277,7 +283,8 @@ def _simulated_annealing(
             kandidaten = [
                 m
                 for m in minis
-                if m.id != slot.mini_id and _mini_passt(m, slot, belegte_ohne_eigene, ist_mini_blockiert)
+                if m.id != slot.mini_id
+                and _mini_passt(m, slot, belegte_ohne_eigene, ist_mini_blockiert)
             ]
             if not kandidaten:
                 continue
@@ -295,11 +302,13 @@ def _simulated_annealing(
                 einsatz_anzahl[alter_mini_id] += 1
                 einsatz_anzahl[kandidat.id] -= 1
 
-    for slot, mini_id in zip(slots, beste_zuweisung):
+    for slot, mini_id in zip(slots, beste_zuweisung, strict=True):
         slot.mini_id = mini_id
 
 
-def _setze_slot(slot: _Slot, neuer_mini_id: int, belegt_je_gottesdienst: dict[int, set[int]]) -> None:
+def _setze_slot(
+    slot: _Slot, neuer_mini_id: int, belegt_je_gottesdienst: dict[int, set[int]]
+) -> None:
     if slot.mini_id is not None:
         belegt_je_gottesdienst[slot.gottesdienst_id].discard(slot.mini_id)
     slot.mini_id = neuer_mini_id
@@ -359,7 +368,9 @@ def zuteilung_vorschlagen(
                     einsatz_anzahl[zuweisung.mini_id] += 1
                     fixierte_belegung.append((gottesdienst.id, signatur, zuweisung.mini_id))
 
-    _greedy_konstruktion(slots, minis, einsatz_anzahl, belegt_je_gottesdienst, _ist_mini_blockiert, zufall)
+    _greedy_konstruktion(
+        slots, minis, einsatz_anzahl, belegt_je_gottesdienst, _ist_mini_blockiert, zufall
+    )
     _simulated_annealing(
         slots,
         minis,

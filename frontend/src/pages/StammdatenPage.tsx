@@ -15,7 +15,15 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type SubmitEvent,
+} from 'react'
 import { useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import {
@@ -27,11 +35,7 @@ import {
   type DienstTypEingabe,
   type GruppenAnforderung,
 } from '../api/dienstTypen'
-import {
-  feiertagEinstellungSetzen,
-  feiertageListe,
-  type Feiertag,
-} from '../api/feiertage'
+import { feiertagEinstellungSetzen, feiertageListe, type Feiertag } from '../api/feiertage'
 import { ferienAktualisieren, ferienListe, type Ferienzeitraum } from '../api/ferien'
 import {
   filtertagBlockerBearbeiten,
@@ -64,12 +68,7 @@ import {
   type Filtertag,
   type Mini,
 } from '../api/minis'
-import {
-  bundeslandSetzen,
-  pfarreiDetail,
-  BUNDESLAENDER,
-  type Bundesland,
-} from '../api/pfarreien'
+import { bundeslandSetzen, pfarreiDetail, BUNDESLAENDER, type Bundesland } from '../api/pfarreien'
 import { AppShell } from '../components/layout/AppShell'
 import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
@@ -533,10 +532,7 @@ function MinisSection({
 
   return (
     <Card>
-      <CardHeader
-        title="Minis"
-        action={<NeuButton label="Mini" onClick={oeffnenNeu} />}
-      />
+      <CardHeader title="Minis" action={<NeuButton label="Mini" onClick={oeffnenNeu} />} />
       {error && !modalOffen && (
         <div className="px-5 pt-4">
           <Alert>{error}</Alert>
@@ -715,13 +711,7 @@ function GruppenAnforderungenEditor({
   )
 }
 
-function DienstTypenSection({
-  pfarreiId,
-  gruppen,
-}: {
-  pfarreiId: number
-  gruppen: Gruppe[]
-}) {
+function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen: Gruppe[] }) {
   const [dienstTypen, setDienstTypen] = useState<DienstTyp[]>([])
   const [geladen, setGeladen] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -880,7 +870,10 @@ function DienstTypenSection({
             {/* Bewusst kein `Label` hier: das trägt für die übliche Stapelung (Label über Feld) ein
                 `mb-1.5`, das in dieser einzeiligen Anordnung Label und Feld vertikal gegeneinander
                 verschieben würde. */}
-            <label htmlFor="dienst-typ-anzahl" className="shrink-0 text-sm font-medium text-ink-soft">
+            <label
+              htmlFor="dienst-typ-anzahl"
+              className="shrink-0 text-sm font-medium text-ink-soft"
+            >
               Übliche Besetzung
             </label>
             <Input
@@ -1031,7 +1024,9 @@ function WochenSperrzeiten({
                     return (
                       <div
                         key={stunde}
-                        onMouseDown={() => setDrag({ wochentag, startStunde: stunde, endStunde: stunde })}
+                        onMouseDown={() =>
+                          setDrag({ wochentag, startStunde: stunde, endStunde: stunde })
+                        }
                         onMouseEnter={() =>
                           setDrag((aktuell) =>
                             aktuell && aktuell.wochentag === wochentag
@@ -1112,7 +1107,12 @@ function WochenSperrzeiten({
                 }}
               />
               <div className="flex gap-2">
-                <Button type="button" variant="secondary" size="sm" onClick={() => setBearbeiten(null)}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setBearbeiten(null)}
+                >
                   Abbrechen
                 </Button>
                 <Button type="submit" size="sm">
@@ -1539,10 +1539,7 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
 
   return (
     <Card>
-      <CardHeader
-        title="Ferien"
-        description="Automatisch abgerufen für das gewählte Bundesland."
-      />
+      <CardHeader title="Ferien" description="Automatisch abgerufen für das gewählte Bundesland." />
       {error && (
         <div className="px-5 pt-4">
           <Alert>{error}</Alert>

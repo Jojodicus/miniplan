@@ -20,7 +20,8 @@ class MiniplanStatusUpdate(BaseModel):
 
 class ZuteilungEinstellungen(BaseModel):
     """Konfiguration des automatischen Füllens. Als eigener Endpunkt getrennt vom Freitext-PUT,
-    damit der Editor-Autosave (nur Veranstaltungen/Ankündigungen) die Gewichte nicht überschreibt."""
+    damit der Editor-Autosave (nur Veranstaltungen/Ankündigungen) die Gewichte nicht
+    überschreibt."""
 
     fairness_gewicht: float = Field(ge=0, le=100)
     mindestabstand_tage: int = Field(ge=0, le=31)

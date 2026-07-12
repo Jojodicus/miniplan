@@ -9,11 +9,7 @@ function PfarreiKarte({ pfarrei }: { pfarrei: Pfarrei }) {
     <div className="animate-rise flex w-full shrink-0 snap-center flex-col overflow-hidden rounded-2xl border border-line bg-white/70 shadow-sm shadow-ink/5">
       <div className="relative h-56 w-full bg-pine-tint sm:h-72">
         {pfarrei.hat_bild ? (
-          <img
-            src={pfarreiBildUrl(pfarrei.id)}
-            alt=""
-            className="h-full w-full object-cover"
-          />
+          <img src={pfarreiBildUrl(pfarrei.id)} alt="" className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-pine-tint to-paper-dim">
             <Church className="h-16 w-16 text-pine/40" />

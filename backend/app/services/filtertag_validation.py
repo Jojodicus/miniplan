@@ -8,7 +8,6 @@ def unbekannte_filtertag_keys(pfarrei_id: int, keys: set[str], db: Session) -> s
     if not keys:
         return set()
     gueltige = {
-        row[0]
-        for row in db.query(Filtertag.key).filter(Filtertag.pfarrei_id == pfarrei_id).all()
+        row[0] for row in db.query(Filtertag.key).filter(Filtertag.pfarrei_id == pfarrei_id).all()
     }
     return keys - gueltige

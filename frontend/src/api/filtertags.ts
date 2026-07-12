@@ -22,10 +22,7 @@ export function filtertagsListe(pfarreiId: number): Promise<Filtertag[]> {
   return api.get<Filtertag[]>(`/api/pfarreien/${pfarreiId}/filtertags`)
 }
 
-export function filtertagErstellen(
-  pfarreiId: number,
-  daten: FiltertagEingabe,
-): Promise<Filtertag> {
+export function filtertagErstellen(pfarreiId: number, daten: FiltertagEingabe): Promise<Filtertag> {
   return api.post<Filtertag>(`/api/pfarreien/${pfarreiId}/filtertags`, daten)
 }
 

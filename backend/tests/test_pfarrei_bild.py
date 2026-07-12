@@ -12,9 +12,13 @@ from tests.conftest import auth_headers
 
 def _png_bytes() -> bytes:
     """Minimales gültiges 1x1-PNG (Inhalt ist für die Tests egal, nur der Content-Type zählt)."""
+
     def chunk(typ: bytes, daten: bytes) -> bytes:
-        return struct.pack(">I", len(daten)) + typ + daten + struct.pack(
-            ">I", zlib.crc32(typ + daten) & 0xFFFFFFFF
+        return (
+            struct.pack(">I", len(daten))
+            + typ
+            + daten
+            + struct.pack(">I", zlib.crc32(typ + daten) & 0xFFFFFFFF)
         )
 
     ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
@@ -95,7 +99,5 @@ def test_bild_abruf_fremder_pfarrei_verweigert(
     assert client.get(f"/api/pfarreien/{andere.id}/bild", headers=headers).status_code == 403
 
 
-def test_bild_abruf_unauthentifiziert_verweigert(
-    client: TestClient, pfarrei: Pfarrei
-) -> None:
+def test_bild_abruf_unauthentifiziert_verweigert(client: TestClient, pfarrei: Pfarrei) -> None:
     assert client.get(f"/api/pfarreien/{pfarrei.id}/bild").status_code == 401

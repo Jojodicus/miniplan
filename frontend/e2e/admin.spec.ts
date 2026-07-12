@@ -38,7 +38,9 @@ test('Admin kann Pfarrei und Nutzer anlegen, Rolle zuweisen - Nutzer sieht danac
   await nutzerZeile.getByRole('button', { name: 'Bearbeiten' }).click()
   const bearbeitenDialog = page.getByRole('dialog').filter({ hasText: 'Nutzer bearbeiten' })
   await bearbeitenDialog.getByLabel('Pfarrei').selectOption({ label: 'Admin-Test-Pfarrei' })
-  await bearbeitenDialog.getByLabel('Rolle', { exact: true }).selectOption('pfarrei_verantwortlicher')
+  await bearbeitenDialog
+    .getByLabel('Rolle', { exact: true })
+    .selectOption('pfarrei_verantwortlicher')
   await bearbeitenDialog.getByRole('button', { name: 'Rolle hinzufügen' }).click()
   // Der Modal-Header hat ebenfalls einen "Schließen"-Button (X) - der untere Aktions-Button ist
   // der zweite mit diesem Namen.

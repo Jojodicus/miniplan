@@ -87,9 +87,7 @@ def test_dienst_typ_anlegen_doppelter_name_konflikt(
         "gruppen_anforderungen": [],
     }
     client.post(f"/api/pfarreien/{pfarrei.id}/dienst-typen", json=daten, headers=headers)
-    response = client.post(
-        f"/api/pfarreien/{pfarrei.id}/dienst-typen", json=daten, headers=headers
-    )
+    response = client.post(f"/api/pfarreien/{pfarrei.id}/dienst-typen", json=daten, headers=headers)
     assert response.status_code == 409
 
 

@@ -50,10 +50,7 @@ export function allePfarreien(): Promise<Pfarrei[]> {
   return api.get<Pfarrei[]>('/api/pfarreien')
 }
 
-export function pfarreiAnlegen(daten: {
-  name: string
-  bundesland?: Bundesland
-}): Promise<Pfarrei> {
+export function pfarreiAnlegen(daten: { name: string; bundesland?: Bundesland }): Promise<Pfarrei> {
   return api.post<Pfarrei>('/api/admin/pfarreien', daten)
 }
 

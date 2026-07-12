@@ -1,13 +1,11 @@
 from fastapi.testclient import TestClient
 
-from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
+from app.models.nutzer import Nutzer
 from app.models.pfarrei import Pfarrei
 from tests.conftest import _create_user, auth_headers
 
 
-def test_admin_endpunkte_nur_fuer_admins(
-    client: TestClient, verantwortlicher_user: Nutzer
-) -> None:
+def test_admin_endpunkte_nur_fuer_admins(client: TestClient, verantwortlicher_user: Nutzer) -> None:
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     assert client.get("/api/admin/nutzer", headers=headers).status_code == 403
 
@@ -64,9 +62,7 @@ def test_nutzer_anlegen_bearbeiten_passwort_loeschen(
         headers=headers,
     )
     assert response.status_code == 200
-    assert response.json()["pfarrei_rollen"] == [
-        {"pfarrei_id": pfarrei.id, "rolle": "betrachter"}
-    ]
+    assert response.json()["pfarrei_rollen"] == [{"pfarrei_id": pfarrei.id, "rolle": "betrachter"}]
 
     # Rolle entfernen.
     response = client.request(
@@ -121,9 +117,7 @@ def test_letzter_admin_kann_nicht_geloescht_oder_herabgestuft_werden(
 def test_pfarrei_crud_mit_seed(client: TestClient, admin_user: Nutzer) -> None:
     headers = auth_headers(client, "admin@example.com", "geheim123")
 
-    response = client.post(
-        "/api/admin/pfarreien", json={"name": "St. Neu"}, headers=headers
-    )
+    response = client.post("/api/admin/pfarreien", json={"name": "St. Neu"}, headers=headers)
     assert response.status_code == 201
     pfarrei_id = response.json()["id"]
     assert response.json()["hat_bild"] is False

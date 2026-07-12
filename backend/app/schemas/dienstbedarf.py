@@ -30,17 +30,13 @@ class DienstbedarfIn(BaseModel):
                 )
         summe = sum(a.mindest_anzahl for a in self.gruppen_anforderungen)
         if summe > self.anzahl:
-            raise ValueError(
-                "Die Summe der Mindestanzahlen darf die Anzahl nicht überschreiten"
-            )
+            raise ValueError("Die Summe der Mindestanzahlen darf die Anzahl nicht überschreiten")
         if set(self.fixierte_mini_ids) & set(self.auto_mini_ids):
             raise ValueError(
                 "Ein Mini kann nicht gleichzeitig fest und automatisch zugewiesen sein"
             )
         if len(self.fixierte_mini_ids) + len(self.auto_mini_ids) > self.anzahl:
-            raise ValueError(
-                "Es dürfen nicht mehr Minis zugewiesen werden als die Anzahl vorgibt"
-            )
+            raise ValueError("Es dürfen nicht mehr Minis zugewiesen werden als die Anzahl vorgibt")
         return self
 
 

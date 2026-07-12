@@ -139,8 +139,8 @@ def markdown_to_typst(text: str) -> str:
 # bleiben bewusst ungefärbt (schwarz auf weiß): eingefärbte Boxen für jeden vergebenen Namen
 # kosten beim Druck unnötig Tinte, ohne die Lesbarkeit zu verbessern. Offene Stellen sollen
 # dagegen weiterhin auffallen, damit sie beim Blick auf den Plan nicht übersehen werden.
-_OFFEN_FARBE = '#7c2f3b'
-_OFFEN_FUELLUNG = '#f4e6ea'
+_OFFEN_FARBE = "#7c2f3b"
+_OFFEN_FUELLUNG = "#f4e6ea"
 
 
 def _mini_chip(name: str, *, offen: bool) -> str:
@@ -169,14 +169,14 @@ def _minis_zeile(bedarf: VorschauDienstbedarf) -> str:
     # Zeilenabstand (`par`) für den Fall, dass die Liste innerhalb der Zelle umbricht - beides
     # macht lange Namenslisten deutlich besser lesbar.
     trenner = '#text(fill: rgb("#8a8a8a"))[,]#h(0.4em)'
-    return f'#par(leading: 0.75em)[{trenner.join(eintraege)}]'
+    return f"#par(leading: 0.75em)[{trenner.join(eintraege)}]"
 
 
 def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
     zeilen: list[str] = []
     zeilen.append('#set page(paper: "a4", margin: (x: 2.4cm, y: 2.2cm))')
     zeilen.append('#set text(size: 10.5pt, lang: "de")')
-    zeilen.append('#set par(justify: false)')
+    zeilen.append("#set par(justify: false)")
     titel = f"{pfarrei_name} · {_MONATSNAMEN[plan.monat - 1]} {plan.jahr}"
     zeilen.append("#align(center)[")
     zeilen.append(
@@ -189,7 +189,10 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
     zeilen.append("#v(0.9em)")
 
     if not plan.gottesdienste:
-        zeilen.append('#align(center)[#text(style: "italic", fill: rgb("#6a6a6a"))[Keine Gottesdienste geplant.]]')
+        zeilen.append(
+            '#align(center)[#text(style: "italic", fill: rgb("#6a6a6a"))'
+            "[Keine Gottesdienste geplant.]]"
+        )
 
     for gd in plan.gottesdienste:
         wochentag = _WOCHENTAGE[gd.datum.weekday()]
@@ -204,7 +207,9 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
         zeilen.append(f'    text(size: 11.5pt, weight: "bold")[#{_typst_str(gd_kopf)}],')
         if gd.notiz:
             gd_notiz_zelle = (
-                f'text(style: "italic", size: 9pt, fill: rgb("#6a6a6a"))[' + _text_zeilen(gd.notiz) + "]"
+                'text(style: "italic", size: 9pt, fill: rgb("#6a6a6a"))['
+                + _text_zeilen(gd.notiz)
+                + "]"
             )
         else:
             gd_notiz_zelle = "[]"
@@ -226,10 +231,12 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
                 if bedarf.zeige_label and not keine_minis:
                     label_zelle = (
                         f'text(weight: "medium", fill: rgb("#3a3a3a"))[#{_typst_str(bedarf.name)}'
-                        f'#{_typst_str(":")}]'
+                        f"#{_typst_str(':')}]"
                     )
                 elif bedarf.zeige_label:
-                    label_zelle = f'text(weight: "medium", fill: rgb("#3a3a3a"))[#{_typst_str(bedarf.name)}]'
+                    label_zelle = (
+                        f'text(weight: "medium", fill: rgb("#3a3a3a"))[#{_typst_str(bedarf.name)}]'
+                    )
                 else:
                     label_zelle = "[]"
                 # Als Grid-Argument muss die Zelle ein gültiger Ausdruck sein, nicht rohes Markup -
@@ -238,7 +245,10 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
                 zeilen.append(f"    {label_zelle}, {minis_zelle},")
             zeilen.append("  )")
         else:
-            zeilen.append('  #text(style: "italic", size: 9pt, fill: rgb("#6a6a6a"))[Kein Dienstbedarf hinterlegt.]')
+            zeilen.append(
+                '  #text(style: "italic", size: 9pt, fill: rgb("#6a6a6a"))'
+                "[Kein Dienstbedarf hinterlegt.]"
+            )
         zeilen.append("  #v(0.5em)")
         zeilen.append('  #line(length: 100%, stroke: 0.4pt + rgb("#d6d0c4"))')
         zeilen.append("  #v(0.5em)")
@@ -251,7 +261,7 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
         zeilen.append("#v(0.7em)" if plan.gottesdienste else "#v(1.3em)")
         if not plan.gottesdienste:
             zeilen.append('#line(length: 100%, stroke: 0.4pt + rgb("#d6d0c4"))')
-            zeilen.append('#v(0.7em)')
+            zeilen.append("#v(0.7em)")
         zeilen.append('#text(size: 12pt, weight: "bold")[Veranstaltungen]')
         zeilen.append("#block(above: 0.5em)[" + markdown_to_typst(plan.veranstaltungen) + "]")
 
@@ -262,7 +272,7 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
         # entstünde eine doppelte Linie.
         if not plan.veranstaltungen and not plan.gottesdienste:
             zeilen.append('#line(length: 100%, stroke: 0.4pt + rgb("#d6d0c4"))')
-            zeilen.append('#v(0.7em)')
+            zeilen.append("#v(0.7em)")
         zeilen.append('#text(size: 12pt, weight: "bold")[Ankündigungen]')
         zeilen.append("#block(above: 0.5em)[" + markdown_to_typst(plan.ankuendigungen) + "]")
 

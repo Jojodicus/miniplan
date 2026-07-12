@@ -15,16 +15,17 @@ Revises: 6f7471145215
 Create Date: 2026-07-04 23:04:54.135193
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 
+from alembic import op
 
-revision: str = '5c13f29a84b9'
-down_revision: Union[str, None] = '6f7471145215'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "5c13f29a84b9"
+down_revision: str | None = "6f7471145215"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 _DEFAULT_FILTERTAGS = [

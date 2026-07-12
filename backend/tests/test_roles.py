@@ -6,15 +6,15 @@ from app.security import hash_password
 from tests.conftest import auth_headers
 
 
-def test_pfarreien_liste_erfordert_admin(
-    client: TestClient, verantwortlicher_user: Nutzer
-) -> None:
+def test_pfarreien_liste_erfordert_admin(client: TestClient, verantwortlicher_user: Nutzer) -> None:
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     response = client.get("/api/pfarreien", headers=headers)
     assert response.status_code == 403
 
 
-def test_pfarreien_liste_als_admin(client: TestClient, admin_user: Nutzer, pfarrei: Pfarrei) -> None:
+def test_pfarreien_liste_als_admin(
+    client: TestClient, admin_user: Nutzer, pfarrei: Pfarrei
+) -> None:
     headers = auth_headers(client, "admin@example.com", "geheim123")
     response = client.get("/api/pfarreien", headers=headers)
     assert response.status_code == 200

@@ -39,10 +39,7 @@ function EmailKarte({ aktuelleEmail }: { aktuelleEmail: string }) {
 
   return (
     <Card className="animate-rise">
-      <CardHeader
-        title="E-Mail-Adresse"
-        description="Wird für die Anmeldung verwendet."
-      />
+      <CardHeader title="E-Mail-Adresse" description="Wird für die Anmeldung verwendet." />
       <form
         onSubmit={(e) => {
           e.preventDefault()

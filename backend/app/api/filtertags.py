@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
 from app.models.filtertag import Filtertag
-from app.models.filtertag_blocker import FiltertagBlocker
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.schemas.filtertag import FiltertagCreate, FiltertagOut, FiltertagUpdate
@@ -56,7 +55,12 @@ def liste(
     _pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
 ) -> list[Filtertag]:
-    return db.query(Filtertag).filter(Filtertag.pfarrei_id == pfarrei_id).order_by(Filtertag.label).all()
+    return (
+        db.query(Filtertag)
+        .filter(Filtertag.pfarrei_id == pfarrei_id)
+        .order_by(Filtertag.label)
+        .all()
+    )
 
 
 @router.post("", response_model=FiltertagOut, status_code=status.HTTP_201_CREATED)

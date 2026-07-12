@@ -77,9 +77,7 @@ def test_ferien_aktualisieren_ruft_sync_auf(
     monkeypatch.setattr("app.api.pfarreien.sync_ferien", fake_sync)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
-    response = client.post(
-        f"/api/pfarreien/{pfarrei.id}/ferien/aktualisieren", headers=headers
-    )
+    response = client.post(f"/api/pfarreien/{pfarrei.id}/ferien/aktualisieren", headers=headers)
     assert response.status_code == 200
     assert response.json() == []
 
@@ -96,9 +94,7 @@ def test_ferien_aktualisieren_gibt_502_bei_netzwerkfehler(
     monkeypatch.setattr("app.api.pfarreien.sync_ferien", fake_sync)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
-    response = client.post(
-        f"/api/pfarreien/{pfarrei.id}/ferien/aktualisieren", headers=headers
-    )
+    response = client.post(f"/api/pfarreien/{pfarrei.id}/ferien/aktualisieren", headers=headers)
     assert response.status_code == 502
 
 
@@ -122,14 +118,10 @@ def test_ferien_liste_mit_jahr_synct_fehlendes_jahr_automatisch(
         aufrufe.append(jahre)
         return []
 
-    monkeypatch.setattr(
-        "app.api.pfarreien.sync_ferien_falls_fehlend", fake_sync_falls_fehlend
-    )
+    monkeypatch.setattr("app.api.pfarreien.sync_ferien_falls_fehlend", fake_sync_falls_fehlend)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
-    response = client.get(
-        f"/api/pfarreien/{pfarrei.id}/ferien?jahr=2030", headers=headers
-    )
+    response = client.get(f"/api/pfarreien/{pfarrei.id}/ferien?jahr=2030", headers=headers)
     assert response.status_code == 200
     assert aufrufe == [{2030}]
 
@@ -143,9 +135,7 @@ def test_ferien_liste_ohne_jahr_synct_nicht(
     def fake_sync_falls_fehlend(pfarrei_arg, db, jahre):
         raise AssertionError("sollte ohne ?jahr nicht aufgerufen werden")
 
-    monkeypatch.setattr(
-        "app.api.pfarreien.sync_ferien_falls_fehlend", fake_sync_falls_fehlend
-    )
+    monkeypatch.setattr("app.api.pfarreien.sync_ferien_falls_fehlend", fake_sync_falls_fehlend)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     response = client.get(f"/api/pfarreien/{pfarrei.id}/ferien", headers=headers)
@@ -161,13 +151,9 @@ def test_ferien_liste_mit_jahr_ignoriert_sync_fehler(
     def fake_sync_falls_fehlend(pfarrei_arg, db, jahre):
         raise ferien_sync.FerienSyncFehler("nicht erreichbar")
 
-    monkeypatch.setattr(
-        "app.api.pfarreien.sync_ferien_falls_fehlend", fake_sync_falls_fehlend
-    )
+    monkeypatch.setattr("app.api.pfarreien.sync_ferien_falls_fehlend", fake_sync_falls_fehlend)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
-    response = client.get(
-        f"/api/pfarreien/{pfarrei.id}/ferien?jahr=2030", headers=headers
-    )
+    response = client.get(f"/api/pfarreien/{pfarrei.id}/ferien?jahr=2030", headers=headers)
     assert response.status_code == 200
     assert response.json() == []

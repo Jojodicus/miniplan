@@ -27,9 +27,7 @@ class DienstTyp(Base):
 class DienstTypGruppenAnforderung(Base):
     __tablename__ = "dienst_typ_gruppen_anforderungen"
     __table_args__ = (
-        UniqueConstraint(
-            "dienst_typ_id", "gruppe_id", name="uq_dienst_typ_gruppen_anforderung"
-        ),
+        UniqueConstraint("dienst_typ_id", "gruppe_id", name="uq_dienst_typ_gruppen_anforderung"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

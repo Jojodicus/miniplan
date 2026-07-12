@@ -1,7 +1,7 @@
 import enum
 
 
-class Bundesland(str, enum.Enum):
+class Bundesland(enum.StrEnum):
     BW = "BW"
     BY = "BY"
     BE = "BE"

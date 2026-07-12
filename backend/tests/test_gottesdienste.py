@@ -24,9 +24,7 @@ def _dienst_typ(db_session, pfarrei: Pfarrei, gruppe: Gruppe) -> DienstTyp:
         pfarrei_id=pfarrei.id,
         name="Weihrauch",
         standard_anzahl=2,
-        gruppen_anforderungen=[
-            DienstTypGruppenAnforderung(gruppe_id=gruppe.id, mindest_anzahl=1)
-        ],
+        gruppen_anforderungen=[DienstTypGruppenAnforderung(gruppe_id=gruppe.id, mindest_anzahl=1)],
     )
     db_session.add(dienst_typ)
     db_session.commit()
@@ -159,8 +157,7 @@ def test_dienstbedarf_erfordert_genau_eine_quelle(
     # daraus einen lesbaren Text zusammensetzen kann statt "[object Object]".
     fehler = response.json()["detail"]
     assert any(
-        "Entweder dienst_typ_id oder name muss gesetzt sein" in eintrag["msg"]
-        for eintrag in fehler
+        "Entweder dienst_typ_id oder name muss gesetzt sein" in eintrag["msg"] for eintrag in fehler
     )
 
 
@@ -234,9 +231,7 @@ def test_dienstbedarf_mit_fremdem_dienst_typ_abgelehnt(
     db_session.add(andere_pfarrei)
     db_session.commit()
     db_session.refresh(andere_pfarrei)
-    fremder_dienst_typ = DienstTyp(
-        pfarrei_id=andere_pfarrei.id, name="Fremd", standard_anzahl=1
-    )
+    fremder_dienst_typ = DienstTyp(pfarrei_id=andere_pfarrei.id, name="Fremd", standard_anzahl=1)
     db_session.add(fremder_dienst_typ)
     db_session.commit()
     db_session.refresh(fremder_dienst_typ)
@@ -249,7 +244,11 @@ def test_dienstbedarf_mit_fremdem_dienst_typ_abgelehnt(
             "uhrzeit": "10:00:00",
             "name": "Sonntagsmesse",
             "dienstbedarf": [
-                {"dienst_typ_id": fremder_dienst_typ.id, "anzahl": 1, "erforderliche_filtertags": []}
+                {
+                    "dienst_typ_id": fremder_dienst_typ.id,
+                    "anzahl": 1,
+                    "erforderliche_filtertags": [],
+                }
             ],
         },
         headers=headers,
@@ -366,9 +365,7 @@ def test_gottesdienst_bearbeiten_ersetzt_dienstbedarf(
             "datum": "2026-07-05",
             "uhrzeit": "10:00:00",
             "name": "Sonntagsmesse",
-            "dienstbedarf": [
-                {"name": "Kreuz", "anzahl": 1, "erforderliche_filtertags": []}
-            ],
+            "dienstbedarf": [{"name": "Kreuz", "anzahl": 1, "erforderliche_filtertags": []}],
         },
         headers=headers,
     ).json()
@@ -379,9 +376,7 @@ def test_gottesdienst_bearbeiten_ersetzt_dienstbedarf(
             "datum": "2026-07-05",
             "uhrzeit": "11:00:00",
             "name": "Sonntagsmesse (verschoben)",
-            "dienstbedarf": [
-                {"name": "Buch", "anzahl": 1, "erforderliche_filtertags": []}
-            ],
+            "dienstbedarf": [{"name": "Buch", "anzahl": 1, "erforderliche_filtertags": []}],
         },
         headers=headers,
     )

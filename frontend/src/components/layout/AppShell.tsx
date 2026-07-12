@@ -54,7 +54,9 @@ export function AppShell({
   return (
     <div className="min-h-svh">
       <header className="border-b border-line bg-white/60 backdrop-blur-sm">
-        <div className={`mx-auto flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 ${containerWidth}`}>
+        <div
+          className={`mx-auto flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 ${containerWidth}`}
+        >
           <Link to="/" className="flex items-center gap-2.5">
             <span className="flex h-8 w-8 items-center justify-center rounded-md bg-pine text-sm font-semibold text-paper">
               M

@@ -108,9 +108,7 @@ def test_minis_zeile_leere_stelle_ohne_zuweisung_zeigt_trennwert() -> None:
 
 def test_minis_zeile_offene_stellen_als_weinrote_chips() -> None:
     # Zwei von drei Stellen besetzt -> ein weinroter "offen"-Chip, Namen escaped.
-    bedarf = VorschauDienstbedarf(
-        name="Messdiener", anzahl=3, zugewiesene_minis=["Anna", "Bea"]
-    )
+    bedarf = VorschauDienstbedarf(name="Messdiener", anzahl=3, zugewiesene_minis=["Anna", "Bea"])
     zeile = _minis_zeile(bedarf)
     assert '#"Anna"' in zeile
     assert '#"Bea"' in zeile

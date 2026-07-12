@@ -75,7 +75,9 @@ def seed_demo_daten(db: Session, pfarrei: Pfarrei) -> None:
 
     for datum, uhrzeit, name, dienst_typ_name in _GOTTESDIENST_DEFAULTS:
         dienst_typ = dienst_typen[dienst_typ_name]
-        gottesdienst = Gottesdienst(miniplan_id=miniplan.id, datum=datum, uhrzeit=uhrzeit, name=name)
+        gottesdienst = Gottesdienst(
+            miniplan_id=miniplan.id, datum=datum, uhrzeit=uhrzeit, name=name
+        )
         db.add(gottesdienst)
         db.flush()
         dienstbedarf = Dienstbedarf(

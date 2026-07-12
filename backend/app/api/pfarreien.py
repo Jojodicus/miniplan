@@ -1,3 +1,5 @@
+import contextlib
+
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -120,10 +122,8 @@ def bundesland_setzen(
     db.refresh(pfarrei)
     # Best-effort: schlägt die externe Ferien-Quelle fehl, bleiben bestehende Ferienzeiten
     # erhalten (siehe sync_ferien) - das Setzen des Bundeslands soll dadurch nicht scheitern.
-    try:
+    with contextlib.suppress(FerienSyncFehler):
         sync_ferien(pfarrei, db)
-    except FerienSyncFehler:
-        pass
     return pfarrei
 
 
@@ -140,10 +140,8 @@ def ferien_liste(
     # Schlägt die externe Quelle fehl, liefert der Endpunkt trotzdem den bisherigen Bestand statt
     # eines Fehlers, damit ein reines Kalender-Öffnen nie fehlschlägt.
     if jahr is not None:
-        try:
+        with contextlib.suppress(FerienSyncFehler):
             sync_ferien_falls_fehlend(pfarrei, db, {jahr})
-        except FerienSyncFehler:
-            pass
     return (
         db.query(Ferienzeitraum)
         .filter(Ferienzeitraum.pfarrei_id == pfarrei_id)

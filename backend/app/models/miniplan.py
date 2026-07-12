@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from app.models.gottesdienst import Gottesdienst
 
 
-class MiniplanStatus(str, enum.Enum):
+class MiniplanStatus(enum.StrEnum):
     IN_BEARBEITUNG = "in_bearbeitung"
     ABGESCHLOSSEN = "abgeschlossen"
 

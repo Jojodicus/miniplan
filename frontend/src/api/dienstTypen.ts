@@ -31,10 +31,7 @@ export function dienstTypenListe(pfarreiId: number): Promise<DienstTyp[]> {
   return api.get<DienstTyp[]>(`/api/pfarreien/${pfarreiId}/dienst-typen`)
 }
 
-export function dienstTypErstellen(
-  pfarreiId: number,
-  daten: DienstTypEingabe,
-): Promise<DienstTyp> {
+export function dienstTypErstellen(pfarreiId: number, daten: DienstTypEingabe): Promise<DienstTyp> {
   return api.post<DienstTyp>(`/api/pfarreien/${pfarreiId}/dienst-typen`, daten)
 }
 

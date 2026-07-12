@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
@@ -28,7 +28,7 @@ def verify_password_or_dummy(plain_password: str, password_hash: str | None) -> 
 
 
 def create_access_token(subject: int) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+    expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     payload = {"sub": str(subject), "exp": expire}
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 

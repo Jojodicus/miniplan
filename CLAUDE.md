@@ -211,6 +211,8 @@ uv sync --extra dev                                                     # Setup 
 .venv/bin/uvicorn app.main:app --reload                                 # Dev-Server
 .venv/bin/pytest                                                        # Tests
 .venv/bin/pytest -n auto                                                 # Tests, parallelisiert (pytest-xdist)
+.venv/bin/ruff check . --fix                                            # Lint (autofixbare Regeln direkt korrigieren)
+.venv/bin/ruff format .                                                 # Formatieren
 .venv/bin/python -m app.cli create-pfarrei --name "..."
 .venv/bin/python -m app.cli create-user --email ... --password ... --role admin|pfarrei_verantwortlicher|betrachter [--pfarrei "..."]
 ```
@@ -220,6 +222,8 @@ uv sync --extra dev                                                     # Setup 
 pnpm install
 pnpm run dev                 # Dev-Server (Port 5173, proxied /api -> localhost:8000)
 pnpm run build                # tsc -b && vite build
+pnpm run lint                 # oxlint
+npx prettier --write .        # Formatieren (Konfiguration in .prettierrc.json)
 pnpm exec playwright test     # E2E-Tests gegen echten Docker-Container (Port 8100), inkl.
                               # automatischem Build/Start/Seed/Cleanup, siehe playwright.config.ts
 ```
@@ -240,6 +244,8 @@ docker compose -p miniplan-e2e -f docker-compose.e2e.yml up -d --build   # manue
 - Frontend: API-Zugriff nur über `src/api/`, Komponenten in `src/pages/` bleiben UI-fokussiert.
 - Jede neue Funktionalität bekommt Pytest- (Backend) bzw. Playwright-Tests (Frontend-Workflows) im
   selben Arbeitsschritt.
+- Vor jedem Commit: Backend mit `ruff check . --fix` und `ruff format .`, Frontend mit
+  `pnpm run lint` und `npx prettier --write .` lint- und formatfrei halten (siehe Befehle oben).
 - Tests hinterlassen keine temporären Dateien oder Container: Backend-Tests laufen gegen eine
   In-Memory-DB, die E2E-Docker-Umgebung wird über `globalSetup`/`globalTeardown` in
   `frontend/playwright.config.ts` auch bei Testfehlern zuverlässig wieder abgebaut.

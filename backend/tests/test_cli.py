@@ -70,9 +70,7 @@ def test_create_user_pfarrei_rolle(db_session: Session) -> None:
         "verantwortlich@example.com", "geheim123", "pfarrei_verantwortlicher", "St. Beispiel"
     )
 
-    nutzer = (
-        db_session.query(Nutzer).filter(Nutzer.email == "verantwortlich@example.com").first()
-    )
+    nutzer = db_session.query(Nutzer).filter(Nutzer.email == "verantwortlich@example.com").first()
     assert nutzer is not None
     assert nutzer.ist_admin is False
     zuordnung = (
@@ -117,9 +115,7 @@ def test_create_user_meldet_integrity_error_als_system_exit(
     weil ein anderer Prozess den Nutzer zwischen Prüfung und Commit angelegt hat). Der Commit
     muss den resultierenden IntegrityError sauber als SystemExit(1) melden statt eine rohe
     Exception durchzureichen."""
-    db_session.add(
-        Nutzer(email="admin@example.com", password_hash="platzhalter", ist_admin=True)
-    )
+    db_session.add(Nutzer(email="admin@example.com", password_hash="platzhalter", ist_admin=True))
     db_session.commit()
 
     class _KeinTrefferQuery:
@@ -133,9 +129,7 @@ def test_create_user_meldet_integrity_error_als_system_exit(
     monkeypatch.setattr(
         Session,
         "query",
-        lambda self, model: _KeinTrefferQuery()
-        if model is Nutzer
-        else original_query(self, model),
+        lambda self, model: _KeinTrefferQuery() if model is Nutzer else original_query(self, model),
     )
 
     with pytest.raises(SystemExit):

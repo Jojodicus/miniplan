@@ -139,7 +139,5 @@ def test_filtertag_blocker_zugriff_auf_fremde_pfarrei_verweigert(
     db_session.refresh(andere_pfarrei)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
-    response = client.get(
-        f"/api/pfarreien/{andere_pfarrei.id}/filtertag-blocker", headers=headers
-    )
+    response = client.get(f"/api/pfarreien/{andere_pfarrei.id}/filtertag-blocker", headers=headers)
     assert response.status_code == 403

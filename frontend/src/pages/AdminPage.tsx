@@ -1,4 +1,14 @@
-import { Church, ImageOff, KeyRound, Pencil, Plus, ShieldCheck, Upload, UserPlus, X } from 'lucide-react'
+import {
+  Church,
+  ImageOff,
+  KeyRound,
+  Pencil,
+  Plus,
+  ShieldCheck,
+  Upload,
+  UserPlus,
+  X,
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import type { Nutzer } from '../api/auth'
@@ -154,7 +164,13 @@ function PfarreienVerwaltung() {
   )
 }
 
-function PfarreiZeile({ pfarrei, onGeaendert }: { pfarrei: Pfarrei; onGeaendert: () => Promise<void> }) {
+function PfarreiZeile({
+  pfarrei,
+  onGeaendert,
+}: {
+  pfarrei: Pfarrei
+  onGeaendert: () => Promise<void>
+}) {
   const { showToast } = useToast()
   const [bearbeiten, setBearbeiten] = useState(false)
   const [name, setName] = useState(pfarrei.name)
@@ -387,7 +403,8 @@ function NutzerVerwaltung() {
                   ) : (
                     n.pfarrei_rollen.map((r) => (
                       <Badge key={r.pfarrei_id} tone="neutral">
-                        {pfarreiName(r.pfarrei_id)} · {r.rolle === 'pfarrei_verantwortlicher' ? 'Verantw.' : 'Betrachter'}
+                        {pfarreiName(r.pfarrei_id)} ·{' '}
+                        {r.rolle === 'pfarrei_verantwortlicher' ? 'Verantw.' : 'Betrachter'}
                       </Badge>
                     ))
                   )}
@@ -435,9 +452,7 @@ function NutzerBearbeitenModal({
   const [fehler, setFehler] = useState<string | null>(null)
 
   const pfarreiName = (id: number) => pfarreien.find((p) => p.id === id)?.name ?? `#${id}`
-  const verfuegbarePfarreien = pfarreien.filter(
-    (p) => !rollen.some((r) => r.pfarrei_id === p.id),
-  )
+  const verfuegbarePfarreien = pfarreien.filter((p) => !rollen.some((r) => r.pfarrei_id === p.id))
 
   async function stammdatenSpeichern() {
     try {
@@ -484,7 +499,12 @@ function NutzerBearbeitenModal({
         <div className="flex flex-col gap-3">
           <div>
             <Label htmlFor="edit-email">E-Mail</Label>
-            <Input id="edit-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input
+              id="edit-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           </div>
           <CheckboxChip id="edit-admin" checked={istAdmin} onChange={() => setIstAdmin(!istAdmin)}>
             Globaler Admin
@@ -518,7 +538,11 @@ function NutzerBearbeitenModal({
                   <Badge tone="neutral">
                     {r.rolle === 'pfarrei_verantwortlicher' ? 'Verantwortlich' : 'Betrachter'}
                   </Badge>
-                  <IconButton label="Rolle entfernen" tone="danger" onClick={() => rolleEntfernen(r.pfarrei_id)}>
+                  <IconButton
+                    label="Rolle entfernen"
+                    tone="danger"
+                    onClick={() => rolleEntfernen(r.pfarrei_id)}
+                  >
                     <X className="h-4 w-4" />
                   </IconButton>
                 </li>
@@ -570,10 +594,13 @@ function NutzerBearbeitenModal({
         </div>
 
         <div className="flex items-center justify-between border-t border-line pt-4">
-          <NutzerLoeschenButton nutzer={nutzer} onGeloescht={async () => {
-            await onGeaendert()
-            onClose()
-          }} />
+          <NutzerLoeschenButton
+            nutzer={nutzer}
+            onGeloescht={async () => {
+              await onGeaendert()
+              onClose()
+            }}
+          />
           <div className="flex gap-2">
             <Button type="button" variant="secondary" size="sm" onClick={onClose}>
               Schließen
@@ -588,7 +615,13 @@ function NutzerBearbeitenModal({
   )
 }
 
-function NutzerLoeschenButton({ nutzer, onGeloescht }: { nutzer: Nutzer; onGeloescht: () => Promise<void> }) {
+function NutzerLoeschenButton({
+  nutzer,
+  onGeloescht,
+}: {
+  nutzer: Nutzer
+  onGeloescht: () => Promise<void>
+}) {
   const { showToast } = useToast()
   return (
     <InlineConfirmButton

@@ -42,7 +42,9 @@ def seed_default_stammdaten(db: Session, pfarrei: Pfarrei) -> None:
                 )
             )
 
-    gruppen = {name: Gruppe(pfarrei_id=pfarrei.id, name=name) for name in ("Neu", "Normal", "Obermini")}
+    gruppen = {
+        name: Gruppe(pfarrei_id=pfarrei.id, name=name) for name in ("Neu", "Normal", "Obermini")
+    }
     for gruppe in gruppen.values():
         db.add(gruppe)
     db.flush()

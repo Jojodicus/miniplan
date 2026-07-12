@@ -1,6 +1,10 @@
 from datetime import date, time, timedelta
 
-from app.models.dienstbedarf import Dienstbedarf, DienstbedarfGruppenAnforderung, DienstbedarfZuweisung
+from app.models.dienstbedarf import (
+    Dienstbedarf,
+    DienstbedarfGruppenAnforderung,
+    DienstbedarfZuweisung,
+)
 from app.models.filtertag_blocker import FiltertagBlocker
 from app.models.gottesdienst import Gottesdienst
 from app.models.gruppe import Gruppe
@@ -10,7 +14,9 @@ from app.models.pfarrei import Pfarrei
 from app.services.zuteilung import zuteilung_vorschlagen
 
 
-def _mini(db_session, pfarrei: Pfarrei, gruppe: Gruppe, name: str, filtertags: list[str] | None = None) -> Mini:
+def _mini(
+    db_session, pfarrei: Pfarrei, gruppe: Gruppe, name: str, filtertags: list[str] | None = None
+) -> Mini:
     mini = Mini(pfarrei_id=pfarrei.id, gruppe_id=gruppe.id, name=name, filtertags=filtertags or [])
     db_session.add(mini)
     db_session.commit()
@@ -19,7 +25,11 @@ def _mini(db_session, pfarrei: Pfarrei, gruppe: Gruppe, name: str, filtertags: l
 
 
 def _gottesdienst(
-    db_session, miniplan: Miniplan, dienstbedarf: list[Dienstbedarf], datum: date, uhrzeit: time = time(10, 0)
+    db_session,
+    miniplan: Miniplan,
+    dienstbedarf: list[Dienstbedarf],
+    datum: date,
+    uhrzeit: time = time(10, 0),
 ) -> Gottesdienst:
     gottesdienst = Gottesdienst(
         miniplan_id=miniplan.id, datum=datum, uhrzeit=uhrzeit, dienstbedarf=dienstbedarf
@@ -38,7 +48,9 @@ def _miniplan(db_session, pfarrei: Pfarrei) -> Miniplan:
     return miniplan
 
 
-def test_zuteilung_besetzt_freie_stellen_wenn_genug_minis_vorhanden(db_session, pfarrei, gruppe) -> None:
+def test_zuteilung_besetzt_freie_stellen_wenn_genug_minis_vorhanden(
+    db_session, pfarrei, gruppe
+) -> None:
     miniplan = _miniplan(db_session, pfarrei)
     minis = [_mini(db_session, pfarrei, gruppe, f"Mini {i}") for i in range(3)]
     bedarf = Dienstbedarf(name="Kreuz", anzahl=2)
@@ -53,7 +65,9 @@ def test_zuteilung_besetzt_freie_stellen_wenn_genug_minis_vorhanden(db_session, 
     assert len(set(zugeteilt)) == 2  # kein Mini doppelt in derselben Stelle
 
 
-def test_zuteilung_lässt_manuell_fixierte_zuweisungen_unangetastet(db_session, pfarrei, gruppe) -> None:
+def test_zuteilung_lässt_manuell_fixierte_zuweisungen_unangetastet(
+    db_session, pfarrei, gruppe
+) -> None:
     miniplan = _miniplan(db_session, pfarrei)
     fixiert = _mini(db_session, pfarrei, gruppe, "Fixiert")
     frei = _mini(db_session, pfarrei, gruppe, "Frei")
@@ -80,7 +94,9 @@ def test_zuteilung_verletzt_gruppen_mindestanzahl_nie(db_session, pfarrei) -> No
     db_session.refresh(normal)
 
     ober_mini = _mini(db_session, pfarrei, obermini, "Ober")
-    normale_minis = [_mini(db_session, pfarrei, normal, f"Normal {i}") for i in range(3)]
+    # Nur als Seiteneffekt (legt drei Minis in der Gruppe "normal" an), Rückgabewert wird nicht
+    # gebraucht - der Test prüft ausschließlich, dass der Obermini-Slot nie an einen von ihnen geht.
+    [_mini(db_session, pfarrei, normal, f"Normal {i}") for i in range(3)]
 
     miniplan = _miniplan(db_session, pfarrei)
     bedarf = Dienstbedarf(
@@ -100,7 +116,9 @@ def test_zuteilung_verletzt_gruppen_mindestanzahl_nie(db_session, pfarrei) -> No
     assert ober_mini.id in zugeteilt
 
 
-def test_zuteilung_ignoriert_erforderliche_filtertags_verletzung_nie(db_session, pfarrei, gruppe, filtertags) -> None:
+def test_zuteilung_ignoriert_erforderliche_filtertags_verletzung_nie(
+    db_session, pfarrei, gruppe, filtertags
+) -> None:
     passend = _mini(db_session, pfarrei, gruppe, "Schueler", filtertags=["schueler"])
     unpassend = _mini(db_session, pfarrei, gruppe, "Grundschueler", filtertags=["grundschueler"])
 
@@ -115,7 +133,9 @@ def test_zuteilung_ignoriert_erforderliche_filtertags_verletzung_nie(db_session,
     assert unpassend.id not in vorschlag[bedarf.id]
 
 
-def test_zuteilung_besetzt_stelle_nicht_mit_blockiertem_mini(db_session, pfarrei, gruppe, filtertags) -> None:
+def test_zuteilung_besetzt_stelle_nicht_mit_blockiertem_mini(
+    db_session, pfarrei, gruppe, filtertags
+) -> None:
     # "arbeiter"-Blocker: Montag 8-17 Uhr blockiert - der Gottesdienst liegt in diesem Fenster.
     db_session.add(
         FiltertagBlocker(
@@ -163,7 +183,9 @@ def test_zuteilung_verteilt_diensthaeufigkeit_fair(db_session, pfarrei, gruppe) 
     assert max(einsatz_anzahl.values()) - min(einsatz_anzahl.values()) <= 1
 
 
-def _paar_wiederholungen(vorschlag: dict[int, list[int]], bedarf_ids_je_gottesdienst: list[list[int]]) -> int:
+def _paar_wiederholungen(
+    vorschlag: dict[int, list[int]], bedarf_ids_je_gottesdienst: list[list[int]]
+) -> int:
     """Zählt, wie oft dasselbe Mini-Paar über verschiedene Gottesdienste hinweg gemeinsam
     eingeteilt ist (Summe über Paare von max(0, Auftreten-1))."""
     paare: dict[tuple[int, int], int] = {}
@@ -192,7 +214,9 @@ def test_zuteilung_mixing_reduziert_wiederholte_paare(db_session, pfarrei, grupp
         bedarf_ids: list[list[int]] = []
         for woche in range(4):
             bedarf = Dienstbedarf(name="Kreuz", anzahl=2)
-            _gottesdienst(db_session, miniplan, [bedarf], date(2026, 3, 1) + timedelta(days=7 * woche))
+            _gottesdienst(
+                db_session, miniplan, [bedarf], date(2026, 3, 1) + timedelta(days=7 * woche)
+            )
             bedarf_ids.append([bedarf.id])
         db_session.refresh(miniplan)
         vorschlag = zuteilung_vorschlagen(db_session, pfarrei.id, miniplan, zufallsstart=42)

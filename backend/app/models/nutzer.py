@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from app.models.pfarrei import Pfarrei
 
 
-class PfarreiRolle(str, enum.Enum):
+class PfarreiRolle(enum.StrEnum):
     PFARREI_VERANTWORTLICHER = "pfarrei_verantwortlicher"
     BETRACHTER = "betrachter"
 

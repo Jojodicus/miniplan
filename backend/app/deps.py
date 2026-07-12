@@ -42,7 +42,8 @@ def require_admin(current_user: Nutzer = Depends(get_current_user)) -> Nutzer:
 
 
 class RequirePfarreiRolle:
-    """Erlaubt Zugriff für Admins sowie Nutzer mit einer der angegebenen Rollen in der jeweiligen Pfarrei."""
+    """Erlaubt Zugriff für Admins sowie Nutzer mit einer der angegebenen Rollen in der
+    jeweiligen Pfarrei."""
 
     def __init__(self, *erlaubte_rollen: PfarreiRolle):
         self.erlaubte_rollen = set(erlaubte_rollen)

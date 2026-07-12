@@ -7,13 +7,7 @@ const tones: Record<Tone, string> = {
   info: 'border-pine/25 bg-pine-tint/60 text-pine-dark',
 }
 
-export function Alert({
-  tone = 'error',
-  children,
-}: {
-  tone?: Tone
-  children: React.ReactNode
-}) {
+export function Alert({ tone = 'error', children }: { tone?: Tone; children: React.ReactNode }) {
   const Icon = tone === 'error' ? AlertCircle : Info
   return (
     <div

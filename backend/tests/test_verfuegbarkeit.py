@@ -49,9 +49,7 @@ def test_ausserhalb_des_blocker_fensters_nicht_blockiert(
     assert ist_blockiert(db_session, pfarrei.id, arbeiter.id, montag, time(14, 0)) is False
 
 
-def test_innerhalb_des_blocker_fensters_blockiert(
-    db_session: Session, pfarrei: Pfarrei
-) -> None:
+def test_innerhalb_des_blocker_fensters_blockiert(db_session: Session, pfarrei: Pfarrei) -> None:
     arbeiter = _filtertag(db_session, pfarrei, "arbeiter", False)
     _blocker(db_session, pfarrei, arbeiter)
     montag = date(2026, 7, 6)
@@ -81,14 +79,11 @@ def test_schueler_blocker_in_ferien_aufgehoben(db_session: Session, pfarrei: Pfa
     db_session.commit()
 
     assert (
-        ist_blockiert(db_session, pfarrei.id, schueler.id, montag_in_ferien, time(10, 0))
-        is False
+        ist_blockiert(db_session, pfarrei.id, schueler.id, montag_in_ferien, time(10, 0)) is False
     )
 
 
-def test_arbeiter_blocker_bleibt_in_ferien_bestehen(
-    db_session: Session, pfarrei: Pfarrei
-) -> None:
+def test_arbeiter_blocker_bleibt_in_ferien_bestehen(db_session: Session, pfarrei: Pfarrei) -> None:
     arbeiter = _filtertag(db_session, pfarrei, "arbeiter", False)
     _blocker(db_session, pfarrei, arbeiter)
     montag_in_ferien = date(2026, 8, 3)
@@ -103,10 +98,7 @@ def test_arbeiter_blocker_bleibt_in_ferien_bestehen(
     )
     db_session.commit()
 
-    assert (
-        ist_blockiert(db_session, pfarrei.id, arbeiter.id, montag_in_ferien, time(10, 0))
-        is True
-    )
+    assert ist_blockiert(db_session, pfarrei.id, arbeiter.id, montag_in_ferien, time(10, 0)) is True
 
 
 def test_schueler_blocker_an_schulfreiem_feiertag_aufgehoben(
@@ -116,9 +108,7 @@ def test_schueler_blocker_an_schulfreiem_feiertag_aufgehoben(
     fronleichnam = date(2026, 6, 4)
     _blocker(db_session, pfarrei, schueler, wochentag=fronleichnam.weekday())
 
-    assert (
-        ist_blockiert(db_session, pfarrei.id, schueler.id, fronleichnam, time(10, 0)) is False
-    )
+    assert ist_blockiert(db_session, pfarrei.id, schueler.id, fronleichnam, time(10, 0)) is False
 
 
 def test_arbeiter_blocker_an_gesetzlichem_feiertag_default_aufgehoben(
@@ -131,9 +121,7 @@ def test_arbeiter_blocker_an_gesetzlichem_feiertag_default_aufgehoben(
     fronleichnam = date(2026, 6, 4)
     _blocker(db_session, pfarrei, arbeiter, wochentag=fronleichnam.weekday())
 
-    assert (
-        ist_blockiert(db_session, pfarrei.id, arbeiter.id, fronleichnam, time(10, 0)) is False
-    )
+    assert ist_blockiert(db_session, pfarrei.id, arbeiter.id, fronleichnam, time(10, 0)) is False
 
 
 def test_arbeiter_blocker_mit_expliziter_arbeiter_frei_false_einstellung_bestehen(
@@ -152,9 +140,7 @@ def test_arbeiter_blocker_mit_expliziter_arbeiter_frei_false_einstellung_bestehe
     )
     db_session.commit()
 
-    assert (
-        ist_blockiert(db_session, pfarrei.id, arbeiter.id, fronleichnam, time(10, 0)) is True
-    )
+    assert ist_blockiert(db_session, pfarrei.id, arbeiter.id, fronleichnam, time(10, 0)) is True
 
 
 def test_arbeiter_blocker_an_feiertag_mit_arbeiter_frei_aufgehoben(
@@ -173,6 +159,4 @@ def test_arbeiter_blocker_an_feiertag_mit_arbeiter_frei_aufgehoben(
     )
     db_session.commit()
 
-    assert (
-        ist_blockiert(db_session, pfarrei.id, arbeiter.id, fronleichnam, time(10, 0)) is False
-    )
+    assert ist_blockiert(db_session, pfarrei.id, arbeiter.id, fronleichnam, time(10, 0)) is False

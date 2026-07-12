@@ -131,7 +131,9 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await expect(page.getByText('mind. 1× MP-Obermini')).toBeVisible({ timeout: 15_000 })
 
   await legeMiniplanAn(page, '7', '2031')
-  await expect(page.getByRole('heading', { name: 'Miniplan Juli 2031' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Miniplan Juli 2031' })).toBeVisible({
+    timeout: 15_000,
+  })
 
   await legeGottesdienstAn(page, { tag: 6, uhrzeit: '10:00', name: 'Sonntagsmesse' })
 
@@ -201,7 +203,9 @@ test('Nutzer kann Miniplan abschließen und das finale PDF herunterladen', async
 
   await zuStammdaten(page, 'St. Beispiel')
   await legeMiniplanAn(page, '8', '2032')
-  await expect(page.getByRole('heading', { name: 'Miniplan August 2032' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Miniplan August 2032' })).toBeVisible({
+    timeout: 15_000,
+  })
 
   await expect(page.getByText('In Bearbeitung')).toBeVisible()
   await expect(page.getByRole('button', { name: 'PDF herunterladen' })).toHaveCount(0)
@@ -238,7 +242,9 @@ test('Füllen-Button teilt Minis automatisch einem Dienstbedarf zu', async ({ pa
   await legeMiniAn(page, 'FT-Mini-B', 'FT-Gruppe')
 
   await legeMiniplanAn(page, '9', '2033')
-  await expect(page.getByRole('heading', { name: 'Miniplan September 2033' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Miniplan September 2033' })).toBeVisible({
+    timeout: 15_000,
+  })
 
   await legeGottesdienstAn(page, { tag: 4, uhrzeit: '10:00', name: 'Sonntagsmesse' })
 
@@ -284,8 +290,7 @@ test('Auto-Fill-Einstellungen lassen sich im Popover ändern und speichern', asy
 
   await popover.getByLabel('Teams durchmischen').fill('5')
   const gespeichert = page.waitForResponse(
-    (resp) =>
-      resp.request().method() === 'PUT' && /\/zuteilung-einstellungen$/.test(resp.url()),
+    (resp) => resp.request().method() === 'PUT' && /\/zuteilung-einstellungen$/.test(resp.url()),
   )
   await popover.getByRole('button', { name: 'Speichern' }).click()
   await gespeichert
@@ -294,7 +299,10 @@ test('Auto-Fill-Einstellungen lassen sich im Popover ändern und speichern', asy
   // Erneut öffnen bestätigt, dass der Wert persistiert wurde.
   await page.getByRole('button', { name: 'Auto-Fill-Einstellungen' }).click()
   await expect(
-    page.getByRole('dialog').filter({ hasText: 'Auto-Fill-Einstellungen' }).getByLabel('Teams durchmischen'),
+    page
+      .getByRole('dialog')
+      .filter({ hasText: 'Auto-Fill-Einstellungen' })
+      .getByLabel('Teams durchmischen'),
   ).toHaveValue('5')
 })
 
@@ -309,7 +317,9 @@ test('Automatisch zugewiesener Mini lässt sich fest übernehmen und übersteht 
   await legeMiniAn(page, 'PIN-Mini-B', 'PIN-Gruppe')
 
   await legeMiniplanAn(page, '10', '2034')
-  await expect(page.getByRole('heading', { name: 'Miniplan Oktober 2034' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Miniplan Oktober 2034' })).toBeVisible({
+    timeout: 15_000,
+  })
 
   await legeGottesdienstAn(page, { tag: 1, uhrzeit: '10:00', name: 'Sonntagsmesse' })
 
@@ -362,7 +372,9 @@ test('Zwei fest zugewiesene Minis lassen sich über zwei Gottesdienst-Karten hin
   await legeMiniAn(page, 'SWAP-Mini-Y', 'SWAP-Gruppe')
 
   await legeMiniplanAn(page, '11', '2034')
-  await expect(page.getByRole('heading', { name: 'Miniplan November 2034' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Miniplan November 2034' })).toBeVisible({
+    timeout: 15_000,
+  })
 
   async function ergaenzeKreuzDienst(dialog: Locator) {
     await dialog.getByRole('button', { name: 'Freitext-Dienst' }).click()
@@ -405,10 +417,10 @@ test('Zwei fest zugewiesene Minis lassen sich über zwei Gottesdienst-Karten hin
 
   // Nach dem Tausch (Remount über zuteilungsRevision) stehen die getauschten Minis direkt in den
   // jeweils anderen Karten - kein Aufklappen nötig.
-  await expect(
-    ersteKarte.getByTestId('chip-fest').filter({ hasText: 'SWAP-Mini-Y' }),
-  ).toBeVisible({ timeout: 10_000 })
-  await expect(
-    zweiteKarte.getByTestId('chip-fest').filter({ hasText: 'SWAP-Mini-X' }),
-  ).toBeVisible({ timeout: 10_000 })
+  await expect(ersteKarte.getByTestId('chip-fest').filter({ hasText: 'SWAP-Mini-Y' })).toBeVisible({
+    timeout: 10_000,
+  })
+  await expect(zweiteKarte.getByTestId('chip-fest').filter({ hasText: 'SWAP-Mini-X' })).toBeVisible(
+    { timeout: 10_000 },
+  )
 })

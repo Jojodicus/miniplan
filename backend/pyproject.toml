@@ -25,6 +25,7 @@ dev = [
     "httpx2>=2.5",
     "pytest-cov>=5.0",
     "pytest-xdist>=3.6",
+    "ruff>=0.8",
 ]
 
 [build-system]
@@ -36,3 +37,13 @@ packages = ["app"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+# B008 (function-call-in-default-argument) ist ein False Positive für FastAPIs
+# `Depends(...)`-Muster, das ausdrücklich als Default-Argument verwendet wird.
+ignore = ["B008"]
