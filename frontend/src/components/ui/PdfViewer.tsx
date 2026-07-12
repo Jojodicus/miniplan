@@ -22,20 +22,22 @@ type PdfFile = { data: Uint8Array }
 type SlotName = 'a' | 'b'
 
 export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; className?: string }) {
-  // Ohne manuellen Eingriff passt sich der Zoom der Container-Breite an ("Fit Width") - auf
-  // schmalen (mobilen) Vorschau-Boxen wäre ein fester Prozentwert sonst mal zu groß (horizontales
-  // Scrollen im Viewer nötig) und mal unnötig klein. Sobald +/- geklickt wird, übernimmt der Nutzer
-  // die Kontrolle und der automatische Fit wird bis zum nächsten Dokumentwechsel deaktiviert.
-  const [manualScale, setManualScale] = useState<number | null>(null)
+  // "100%" heißt hier: die Seite füllt den (bewusst A4-förmigen) Container exakt aus - nicht die
+  // tatsächliche PDF-Punktgröße. Da der Container dasselbe Seitenverhältnis wie eine A4-Seite hat,
+  // ergibt Breite-passend automatisch auch Höhe-passend. `zoomFactor` ist der Multiplikator auf
+  // diesen Fit-Wert (1 = 100%, 1.5 = 150%, ...) - so bleibt die Prozentanzeige unabhängig von
+  // Container-/Fenstergröße konsistent (100% ist immer "eine Seite passt genau").
+  const [zoomFactor, setZoomFactor] = useState(1)
   const [containerWidth, setContainerWidth] = useState(0)
   const [nativePageWidth, setNativePageWidth] = useState<number | null>(null)
-  const fitScale = nativePageWidth
-    ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, (containerWidth - PAGE_PADDING_X) / nativePageWidth))
-    : 1.15
-  const scale = manualScale ?? fitScale
+  const fitScale =
+    nativePageWidth && containerWidth > 0 ? (containerWidth - PAGE_PADDING_X) / nativePageWidth : 1
+  const scale = fitScale * zoomFactor
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const prevScrollHeight = useRef(0)
+  const zoomFactorRef = useRef(zoomFactor)
+  zoomFactorRef.current = zoomFactor
 
   const [slotFiles, setSlotFiles] = useState<Record<SlotName, PdfFile | null>>({ a: null, b: null })
   const [slotNumPages, setSlotNumPages] = useState<Record<SlotName, number>>({ a: 0, b: 0 })
@@ -53,6 +55,11 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
 
+  // Abhängigkeit `Boolean(data)` statt `[]`: Beim allerersten Mount ist `data` noch `null`, die
+  // Komponente rendert also (noch) keinen der untenstehenden Divs - `scrollRef`/`contentRef` wären
+  // zu dem Zeitpunkt `null` und ein Effekt mit leerem Dependency-Array (läuft nur einmal beim
+  // Mount) würde die Refs nie wieder neu auswerten, selbst nachdem die erste Vorschau geladen ist
+  // und die Divs tatsächlich existieren.
   useEffect(() => {
     const scrollEl = scrollRef.current
     const contentEl = contentRef.current
@@ -70,10 +77,10 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
     })
     observer.observe(contentEl)
     return () => observer.disconnect()
-  }, [])
+  }, [Boolean(data)])
 
   // Container-Breite laufend messen (Layout-Wechsel, Fenster-/Orientierungswechsel), damit der
-  // automatische Fit-Width-Zoom aktuell bleibt.
+  // Fit-Wert (= 100%) aktuell bleibt.
   useEffect(() => {
     const scrollEl = scrollRef.current
     if (!scrollEl) return
@@ -82,18 +89,34 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
     })
     observer.observe(scrollEl)
     return () => observer.disconnect()
-  }, [])
+  }, [Boolean(data)])
 
   function zoom(delta: number) {
-    setManualScale(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scale + delta)))
+    setZoomFactor(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoomFactor + delta)))
   }
+
+  // Strg+Scrollen (bzw. das Pinch-Zoom-Gesture, das Browser als `wheel`-Event mit `ctrlKey: true`
+  // ausliefern) soll die PDF-Vorschau zoomen statt die ganze Seite - ohne `preventDefault` würde
+  // stattdessen der Browser-Zoom der gesamten Seite greifen.
+  useEffect(() => {
+    const scrollEl = scrollRef.current
+    if (!scrollEl) return
+    function handleWheel(event: WheelEvent) {
+      if (!event.ctrlKey) return
+      event.preventDefault()
+      const delta = event.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP
+      setZoomFactor(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoomFactorRef.current + delta)))
+    }
+    scrollEl.addEventListener('wheel', handleWheel, { passive: false })
+    return () => scrollEl.removeEventListener('wheel', handleWheel)
+  }, [Boolean(data)])
 
   function slotGeladen(slot: SlotName, dieseDaten: Uint8Array, numPages: number) {
     setSlotNumPages((seiten) => ({ ...seiten, [slot]: numPages }))
     setActiveSlot(slot)
-    // Bewusst weder manuellen Zoom noch native Seitenbreite zurücksetzen: die Vorschau lädt bei
-    // jeder Änderung im Editor (debounced) neu nach - ein Reset hier würde den Zoom des Nutzers
-    // bei jeder Eingabe wieder auf den Fit-Width-Wert zurückwerfen.
+    // Bewusst weder Zoom noch native Seitenbreite zurücksetzen: die Vorschau lädt bei jeder
+    // Änderung im Editor (debounced) neu nach - ein Reset hier würde den Zoom des Nutzers bei
+    // jeder Eingabe verwerfen.
     geladeneDaten.current = dieseDaten
   }
 
@@ -102,21 +125,30 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
   return (
     <div className={`relative min-h-0 ${className}`}>
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-full border border-line bg-white/85 px-1 py-1 shadow-sm backdrop-blur-sm">
-        <IconButton label="Verkleinern" onClick={() => zoom(-ZOOM_STEP)} disabled={scale <= ZOOM_MIN}>
+        <IconButton label="Verkleinern" onClick={() => zoom(-ZOOM_STEP)} disabled={zoomFactor <= ZOOM_MIN}>
           <Minus className="h-4 w-4" />
         </IconButton>
         <span className="w-11 text-center text-xs tabular-nums text-ink-soft">
-          {Math.round(scale * 100)}%
+          {Math.round(zoomFactor * 100)}%
         </span>
-        <IconButton label="Vergrößern" onClick={() => zoom(ZOOM_STEP)} disabled={scale >= ZOOM_MAX}>
+        <IconButton label="Vergrößern" onClick={() => zoom(ZOOM_STEP)} disabled={zoomFactor >= ZOOM_MAX}>
           <Plus className="h-4 w-4" />
         </IconButton>
       </div>
       <div
         ref={scrollRef}
-        className="h-full min-h-0 overflow-auto rounded-lg border border-line bg-paper-dim"
+        // `w-fit` ist entscheidend: ohne explizite Breite füllt ein Block-Element normalerweise
+        // die volle Containerbreite - das gilt für `aspect-ratio` bereits als "definite" Breite,
+        // wodurch das Seitenverhältnis nie zum Tragen käme. Mit `w-fit` bleibt die Breite offen,
+        // sodass sie aus der (durch `h-full` definitiven) Höhe abgeleitet wird.
+        className="mx-auto aspect-[210/297] h-full w-fit max-w-full overflow-auto rounded-lg border border-line bg-paper-dim"
       >
-        <div ref={contentRef} className="flex flex-col items-center gap-3 p-3">
+        {/* Kein `items-center` auf dem scrollenden Container: zentrierte Flex-Kinder, die breiter
+            als der Container werden (Zoom), lassen sich nur auf einer Seite wegscrollen - die
+            andere Hälfte des Überstands bleibt permanent abgeschnitten. `mx-auto` je Seite
+            vermeidet das (kein Überstand -> zentriert, sonst linksbündig und vollständig
+            scrollbar). */}
+        <div ref={contentRef} className="flex flex-col gap-3 p-3">
           {(['a', 'b'] as const).map((slot) => {
             const slotFile = slotFiles[slot]
             if (!slotFile) return null
@@ -135,20 +167,21 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
                 >
                   {istSichtbar &&
                     Array.from({ length: slotNumPages[slot] }, (_, index) => (
-                      <Page
-                        key={index}
-                        pageNumber={index + 1}
-                        scale={scale}
-                        className="shadow-sm"
-                        loading={null}
-                        onLoadSuccess={
-                          index === 0
-                            ? (page) => setNativePageWidth((breite) => breite ?? page.originalWidth)
-                            : undefined
-                        }
-                        renderTextLayer={false}
-                        renderAnnotationLayer={false}
-                      />
+                      <div key={index} className="w-fit mx-auto">
+                        <Page
+                          pageNumber={index + 1}
+                          scale={scale}
+                          className="shadow-sm"
+                          loading={null}
+                          onLoadSuccess={
+                            index === 0
+                              ? (page) => setNativePageWidth((breite) => breite ?? page.originalWidth)
+                              : undefined
+                          }
+                          renderTextLayer={false}
+                          renderAnnotationLayer={false}
+                        />
+                      </div>
                     ))}
                 </Document>
               </div>

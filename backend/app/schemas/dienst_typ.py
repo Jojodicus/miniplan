@@ -10,7 +10,7 @@ class GruppenAnforderung(BaseModel):
 
 class DienstTypCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
-    standard_anzahl: int = Field(ge=1)
+    standard_anzahl: int = Field(ge=0)
     gruppen_anforderungen: list[GruppenAnforderung] = []
     zeige_label: bool = False
 

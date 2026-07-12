@@ -141,14 +141,18 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await editDialog.locator('input[type="number"]').first().fill('3')
   await editDialog.getByRole('button', { name: 'Freitext-Dienst' }).click()
   await editDialog.getByLabel('Name des Dienstes').fill('Alle Ministranten')
+  // Freitext-Dienste starten standardmäßig mit Anzahl 0 (reine Hinweiszeile) - für eine
+  // zuweisbare Stelle hier explizit auf 1 setzen.
+  await editDialog.locator('input[type="number"]').last().fill('1')
   const dienstGespeichert = autosaveGottesdienst(page)
   await editDialog.getByRole('button', { name: 'Fertig' }).click()
   await dienstGespeichert
 
   // Mini-Belegung wird jetzt direkt in der (stets sichtbaren) Karte bearbeitet - kein Aufklappen
-  // mehrerer Ebenen mehr. "Alle Ministranten" hat eine offene Stelle; der durchsuchbare Adder ist
-  // dafür direkt sichtbar (kein "+ Mini"-Button mehr nötig) - MP-Mini zuweisen.
+  // mehrerer Ebenen mehr. "Alle Ministranten" hat eine offene Stelle; ein Klick darauf blendet
+  // den durchsuchbaren Adder ein - MP-Mini zuweisen.
   const alleBelegung = page.getByTestId('dienst-belegung').filter({ hasText: 'Alle Ministranten' })
+  await alleBelegung.getByRole('button', { name: /^offen/ }).click()
   await alleBelegung.getByLabel('Minis durchsuchen').fill('MP-Mini')
   const zuweisungGespeichert = autosaveGottesdienst(page)
   await alleBelegung.getByRole('button', { name: 'MP-Mini', exact: true }).click()
@@ -363,6 +367,9 @@ test('Zwei fest zugewiesene Minis lassen sich über zwei Gottesdienst-Karten hin
   async function ergaenzeKreuzDienst(dialog: Locator) {
     await dialog.getByRole('button', { name: 'Freitext-Dienst' }).click()
     await dialog.getByLabel('Name des Dienstes').fill('Kreuz')
+    // Freitext-Dienste starten standardmäßig mit Anzahl 0 (reine Hinweiszeile) - für eine
+    // zuweisbare Stelle hier explizit auf 1 setzen.
+    await dialog.locator('input[type="number"]').last().fill('1')
     const gespeichert = autosaveGottesdienst(page)
     await dialog.getByRole('button', { name: 'Fertig' }).click()
     await gespeichert
@@ -370,6 +377,7 @@ test('Zwei fest zugewiesene Minis lassen sich über zwei Gottesdienst-Karten hin
 
   async function fixiereMini(karte: Locator, miniName: string) {
     const belegung = karte.getByTestId('dienst-belegung').filter({ hasText: 'Kreuz' })
+    await belegung.getByRole('button', { name: /^offen/ }).click()
     await belegung.getByLabel('Minis durchsuchen').fill(miniName)
     const gespeichert = autosaveGottesdienst(page)
     await belegung.getByRole('button', { name: miniName, exact: true }).click()

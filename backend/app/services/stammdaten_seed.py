@@ -74,4 +74,11 @@ def seed_default_stammdaten(db: Session, pfarrei: Pfarrei) -> None:
     )
     db.add(wochentagsmesse)
 
+    # Anzahl 0: reine Hinweiszeile ohne eigene Zuweisungen (z. B. "Alle Ministranten bitte
+    # pünktlich da sein"), zeigt auf dem Plan nur den Namen statt einer Minis-Liste.
+    alle_ministranten = DienstTyp(
+        pfarrei_id=pfarrei.id, name="Alle Ministranten", standard_anzahl=0, zeige_label=True
+    )
+    db.add(alle_ministranten)
+
     db.commit()

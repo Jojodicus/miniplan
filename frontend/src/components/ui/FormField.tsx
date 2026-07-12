@@ -31,21 +31,21 @@ export const Input = forwardRef<
   HTMLInputElement,
   InputHTMLAttributes<HTMLInputElement> & { error?: string }
 >(({ className = '', error, ...props }, ref) => {
-  const input = (
-    <input
-      ref={ref}
-      aria-invalid={error ? true : undefined}
-      className={`${fieldChrome} ${
-        error ? 'border-wine focus:border-wine focus:ring-wine/15' : ''
-      } ${className}`}
-      {...props}
-    />
-  )
-  if (!error) return input
+  // Immer denselben Wrapper rendern (nicht nur, wenn `error` gesetzt ist): würde das <input> je
+  // nach Fehlerstatus mal direkt, mal in einem <div> stehen, sieht React darin unterschiedliche
+  // Elementtypen an derselben Position und mountet das Feld neu - der Cursor springt dann beim
+  // Tippen aus dem Feld, sobald sich der Fehlerstatus zwischen Tastenanschlägen ändert.
   return (
     <div>
-      {input}
-      <p className="mt-1 text-xs text-wine">{error}</p>
+      <input
+        ref={ref}
+        aria-invalid={error ? true : undefined}
+        className={`${fieldChrome} ${
+          error ? 'border-wine focus:border-wine focus:ring-wine/15' : ''
+        } ${className}`}
+        {...props}
+      />
+      {error && <p className="mt-1 text-xs text-wine">{error}</p>}
     </div>
   )
 })

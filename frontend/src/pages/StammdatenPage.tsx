@@ -886,7 +886,7 @@ function DienstTypenSection({
             <Input
               id="dienst-typ-anzahl"
               type="number"
-              min={1}
+              min={0}
               value={standardAnzahl}
               onChange={(e) => setStandardAnzahl(Number(e.target.value))}
               required

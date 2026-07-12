@@ -179,7 +179,7 @@ function bedarfFreitext(): WorkingBedarf {
     dienst_typ_id: null,
     dienst_typ_name: null,
     name: '',
-    anzahl: 1,
+    anzahl: 0,
     erforderliche_filtertags: [],
     gruppen_anforderungen: [],
     fixierteMiniIds: [],
@@ -473,6 +473,10 @@ function DienstbedarfBelegung({
     })
   }
 
+  // Die Mini-Suche ist standardmäßig verborgen (weniger Unruhe, wenn mehrere Dienste
+  // gleichzeitig sichtbar sind) - ein Klick auf einen "offen"-Platzhalter blendet sie ein.
+  const [sucheOffen, setSucheOffen] = useState(false)
+
   const autoZuweisungen = serverZuweisungen.filter((z) => !z.manuell_fixiert)
   const belegteMiniIds = new Set([
     ...bedarf.fixierteMiniIds,
@@ -547,18 +551,32 @@ function DienstbedarfBelegung({
                 onPin={readonly ? undefined : () => onPinAuto(zuweisung.id)}
               />
             ))}
-            {/* Reine Anzeige unbesetzter Stellen - kein zweiter Klick-Trigger mehr für den Picker
-                (vorher lösten diese Chips und der MiniAdder dieselbe Aktion redundant aus). */}
-            {Array.from({ length: offeneStellen }, (_, i) => (
-              <span
-                key={`offen-${i}`}
-                className="inline-flex items-center rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine"
-              >
-                offen
-              </span>
-            ))}
+            {/* "offen"-Platzhalter sind der einzige Einstiegspunkt zur Suche - als Button statt
+                reiner Anzeige, damit die Suche nicht dauerhaft sichtbar sein muss (weniger
+                Unruhe bei vielen Diensten). */}
+            {Array.from({ length: offeneStellen }, (_, i) =>
+              readonly ? (
+                <span
+                  key={`offen-${i}`}
+                  className="inline-flex items-center rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine"
+                >
+                  offen
+                </span>
+              ) : (
+                <button
+                  key={`offen-${i}`}
+                  type="button"
+                  onClick={() => setSucheOffen((wert) => !wert)}
+                  aria-expanded={sucheOffen}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine transition-colors hover:bg-wine-tint"
+                >
+                  offen
+                  <Pencil className="h-3 w-3" />
+                </button>
+              ),
+            )}
           </div>
-          {!readonly && (
+          {!readonly && sucheOffen && !voll && (
             <div className="mt-2">
               <MiniAdder
                 minis={minis}
@@ -659,11 +677,16 @@ function DienstbedarfEinstellungen({
           />
         )}
         <div className="flex items-center gap-1.5">
-          <Label htmlFor={`${bedarf.schluessel}-anzahl`}>Anzahl</Label>
+          {/* Bewusst kein `Label` hier: das trägt für die übliche Stapelung (Label über Feld) ein
+              `mb-1.5`, das in dieser einzeiligen Anordnung Label und Feld vertikal gegeneinander
+              verschieben würde. */}
+          <label htmlFor={`${bedarf.schluessel}-anzahl`} className="shrink-0 text-sm font-medium text-ink-soft">
+            Anzahl
+          </label>
           <Input
             id={`${bedarf.schluessel}-anzahl`}
             type="number"
-            min={1}
+            min={0}
             value={bedarf.anzahl}
             onChange={(e) => onChange({ anzahl: Number(e.target.value) })}
             className="!w-16"
@@ -1900,16 +1923,6 @@ export function MiniplanEditorPage() {
         <div className="flex flex-wrap items-center justify-end gap-2">
           {!readonly && (
             <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setNeuGottesdienstOffen(true)}
-            >
-              <CalendarPlus className="h-4 w-4" />
-              Gottesdienst
-            </Button>
-          )}
-          {!readonly && (
-            <Button
               ref={fuellenButtonRef}
               variant="secondary"
               size="sm"
@@ -1974,7 +1987,13 @@ export function MiniplanEditorPage() {
         </div>
       )}
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] lg:items-start">
+      {/* Kein `items-start`: `position: sticky` auf der PDF-Vorschau (rechte Spalte) braucht eine
+          Containing Block, die höher ist als die Vorschau selbst, um beim Scrollen tatsächlich
+          "hängen" zu bleiben - mit `items-start` bleibt der Grid-Item exakt so hoch wie sein Inhalt
+          (die Vorschau-Karte), wodurch nie Spielraum zum Sticken entsteht und die Karte einfach
+          normal mitscrollt. Der Default `stretch` lässt das Grid-Item auf die Höhe der linken
+          Spalte anwachsen, in der die (selbst begrenzt hohe) Karte dann sticky bleiben kann. */}
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
         <DndContext sensors={dndSensoren} onDragEnd={handleDragEnd}>
         <div className="flex min-w-0 flex-col gap-6">
           {miniplan.gottesdienste.map((gottesdienst) => (
@@ -2020,9 +2039,6 @@ export function MiniplanEditorPage() {
             </Card>
           )}
 
-          {/* Zusätzlicher, stets sichtbarer Einstiegspunkt am Ende der Liste - der Toolbar-Button
-              oben bleibt (nützlich bei langer, gescrollter Liste), ist danach aber leicht aus dem
-              Blick, sobald schon Gottesdienste existieren. */}
           {!readonly && miniplan.gottesdienste.length > 0 && (
             <button
               type="button"

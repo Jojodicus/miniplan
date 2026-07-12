@@ -55,7 +55,12 @@ def test_seed_default_stammdaten_legt_dienst_typen_an(
         dt.name: dt
         for dt in db_session.query(DienstTyp).filter(DienstTyp.pfarrei_id == pfarrei.id).all()
     }
-    assert set(dienst_typen) == {"Sonntagsmesse", "Weihrauch", "Wochentagsmesse"}
+    assert set(dienst_typen) == {
+        "Sonntagsmesse",
+        "Weihrauch",
+        "Wochentagsmesse",
+        "Alle Ministranten",
+    }
 
     sonntagsmesse = dienst_typen["Sonntagsmesse"]
     assert sonntagsmesse.standard_anzahl == 4
@@ -72,3 +77,8 @@ def test_seed_default_stammdaten_legt_dienst_typen_an(
     assert wochentagsmesse.standard_anzahl == 3
     assert wochentagsmesse.zeige_label is False
     assert wochentagsmesse.gruppen_anforderungen == []
+
+    alle_ministranten = dienst_typen["Alle Ministranten"]
+    assert alle_ministranten.standard_anzahl == 0
+    assert alle_ministranten.zeige_label is True
+    assert alle_ministranten.gruppen_anforderungen == []

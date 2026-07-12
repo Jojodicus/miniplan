@@ -7,7 +7,7 @@ from app.schemas.mini import MiniOut
 class DienstbedarfIn(BaseModel):
     dienst_typ_id: int | None = None
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    anzahl: int = Field(ge=1)
+    anzahl: int = Field(ge=0)
     erforderliche_filtertags: list[str] = []
     gruppen_anforderungen: list[GruppenAnforderung] = []
     fixierte_mini_ids: list[int] = []

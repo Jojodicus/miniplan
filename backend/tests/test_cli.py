@@ -41,7 +41,12 @@ def test_create_pfarrei_seedet_default_stammdaten(db_session: Session) -> None:
     dienst_typ_namen = {
         dt.name for dt in db_session.query(DienstTyp).filter(DienstTyp.pfarrei_id == pfarrei.id)
     }
-    assert dienst_typ_namen == {"Sonntagsmesse", "Weihrauch", "Wochentagsmesse"}
+    assert dienst_typ_namen == {
+        "Sonntagsmesse",
+        "Weihrauch",
+        "Wochentagsmesse",
+        "Alle Ministranten",
+    }
 
 
 def test_create_pfarrei_doppelt_schlaegt_fehl(db_session: Session) -> None:

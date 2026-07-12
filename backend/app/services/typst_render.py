@@ -124,37 +124,37 @@ def markdown_to_typst(text: str) -> str:
     return "\n#linebreak()\n".join(bloecke)
 
 
-# Weinrot (identisch zur Frontend-Palette --color-wine) für offene Stellen, gedecktes Pine-Grün
-# für vergebene Namen - beides angelehnt an die Zuweisungs-Chips im Editor (ZuweisungsChip), damit
-# PDF und Editor optisch zusammenpassen.
+# Weinrot (identisch zur Frontend-Palette --color-wine) für offene Stellen - vergebene Namen
+# bleiben bewusst ungefärbt (schwarz auf weiß): eingefärbte Boxen für jeden vergebenen Namen
+# kosten beim Druck unnötig Tinte, ohne die Lesbarkeit zu verbessern. Offene Stellen sollen
+# dagegen weiterhin auffallen, damit sie beim Blick auf den Plan nicht übersehen werden.
 _OFFEN_FARBE = '#7c2f3b'
 _OFFEN_FUELLUNG = '#f4e6ea'
-_VERGEBEN_FARBE = '#2f4a3a'
-_VERGEBEN_FUELLUNG = '#e8efe9'
 
 
 def _mini_chip(name: str, *, offen: bool) -> str:
-    """Ein einzelner Mini-Name als abgesetzter, farbig hinterlegter Chip - klar abgegrenzte
-    Ränder statt einer reinen Komma-Liste, damit Namensgrenzen auch bei ähnlich klingenden oder
-    direkt aufeinanderfolgenden Namen eindeutig erkennbar bleiben."""
-    farbe = _OFFEN_FARBE if offen else _VERGEBEN_FARBE
-    fuellung = _OFFEN_FUELLUNG if offen else _VERGEBEN_FUELLUNG
+    """Ein vergebener Name erscheint als schlichter schwarzer Text; eine offene Stelle als
+    abgesetzter, farbig hinterlegter Chip, damit sie auf dem Plan sofort auffällt."""
+    if not offen:
+        return f"#{_typst_str(name)}"
     return (
-        f'#box(fill: rgb("{fuellung}"), inset: (x: 5pt, y: 2pt), radius: 2pt, '
-        f'outset: (y: 1pt))[#text(fill: rgb("{farbe}"), size: 9.5pt)[#{_typst_str(name)}]]'
+        f'#box(fill: rgb("{_OFFEN_FUELLUNG}"), inset: (x: 5pt, y: 2pt), radius: 2pt, '
+        f'outset: (y: 1pt))[#text(fill: rgb("{_OFFEN_FARBE}"), size: 9.5pt)[#{_typst_str(name)}]]'
     )
 
 
 def _minis_zeile(bedarf: VorschauDienstbedarf) -> str:
-    """Baut die Chip-Reihe der zugewiesenen Minis: vergebene Namen grün, für jede noch unbesetzte
-    Stelle ein weinrot eingefärbter „offen“-Chip (analog zu den Platzhaltern im Editor)."""
+    """Baut die Namensliste der zugewiesenen Minis, kommagetrennt für Lesbarkeit (vergebene Namen
+    tragen keinen Chip-Hintergrund mehr, der sonst Namensgrenzen markiert hätte); für jede noch
+    unbesetzte Stelle ein weinrot eingefärbter „offen“-Chip (analog zu den Platzhaltern im
+    Editor)."""
     namen = bedarf.zugewiesene_minis
     fehlend = max(bedarf.anzahl - len(namen), 0)
     if not namen and fehlend == 0:
         return '#text(fill: rgb("#6a6a6a"))[—]'
-    chips = [_mini_chip(name, offen=False) for name in namen]
-    chips += [_mini_chip("offen", offen=True) for _ in range(fehlend)]
-    return "#h(3pt)".join(chips)
+    eintraege = [_mini_chip(name, offen=False) for name in namen]
+    eintraege += [_mini_chip("offen", offen=True) for _ in range(fehlend)]
+    return '#text(fill: rgb("#8a8a8a"))[, ]'.join(eintraege)
 
 
 def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
@@ -181,7 +181,7 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
         gd_kopf = f"{wochentag}, {gd.datum.strftime('%d.%m.%Y')} {gd.uhrzeit.strftime('%H:%M')} Uhr"
         if gd.name:
             gd_kopf += f" {gd.name}"
-        zeilen.append("#block(above: 1.1em, below: 0.6em, breakable: false)[")
+        zeilen.append("#block(above: 0.6em, below: 0.6em, breakable: false)[")
         zeilen.append("  #grid(")
         zeilen.append("    columns: (1fr, auto),")
         zeilen.append("    column-gutter: 0.6em,")
@@ -197,19 +197,36 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
         zeilen.append("  )")
         zeilen.append("  #v(0.35em)")
         if gd.dienstbedarf:
+            # Ein gemeinsames Grid statt eines Blocks je Dienst: nur so teilen sich alle Zeilen
+            # eines Gottesdienstes dieselbe Spaltenbreite für die Namen - die Minis-Liste beginnt
+            # dadurch unabhängig von der Länge des jeweiligen Dienstnamens auf gleicher Höhe.
+            zeilen.append("  #grid(")
+            zeilen.append("    columns: (auto, 1fr),")
+            zeilen.append("    column-gutter: 4pt,")
+            zeilen.append("    row-gutter: 0.3em,")
             for bedarf in gd.dienstbedarf:
-                zeilen.append("  #block(above: 0.2em, below: 0.2em)[")
-                if bedarf.zeige_label:
-                    zeilen.append(
-                        f'    #text(weight: "medium", fill: rgb("#3a3a3a"))[#{_typst_str(bedarf.name)}]'
-                        '#text(fill: rgb("#3a3a3a"))[:]#h(4pt)'
+                # Ein Dienst ohne Minis (anzahl 0, nichts zugewiesen) dient nur als Hinweiszeile
+                # (z. B. "Alle Ministranten") - ohne Doppelpunkt, der sonst ins Leere zeigen würde.
+                keine_minis = bedarf.anzahl <= 0 and not bedarf.zugewiesene_minis
+                if bedarf.zeige_label and not keine_minis:
+                    label_zelle = (
+                        f'text(weight: "medium", fill: rgb("#3a3a3a"))[#{_typst_str(bedarf.name)}'
+                        f'#{_typst_str(":")}]'
                     )
-                zeilen.append(f"    {_minis_zeile(bedarf)}")
-                zeilen.append("  ]")
+                elif bedarf.zeige_label:
+                    label_zelle = f'text(weight: "medium", fill: rgb("#3a3a3a"))[#{_typst_str(bedarf.name)}]'
+                else:
+                    label_zelle = "[]"
+                # Als Grid-Argument muss die Zelle ein gültiger Ausdruck sein, nicht rohes Markup -
+                # `_minis_zeile` liefert Markup-Fragmente (führendes `#`), daher in `[...]` gehüllt.
+                minis_zelle = "[]" if keine_minis else f"[{_minis_zeile(bedarf)}]"
+                zeilen.append(f"    {label_zelle}, {minis_zelle},")
+            zeilen.append("  )")
         else:
             zeilen.append('  #text(style: "italic", size: 9pt, fill: rgb("#6a6a6a"))[Kein Dienstbedarf hinterlegt.]')
-        zeilen.append("  #v(0.4em)")
+        zeilen.append("  #v(0.5em)")
         zeilen.append('  #line(length: 100%, stroke: 0.4pt + rgb("#d6d0c4"))')
+        zeilen.append("  #v(0.5em)")
         zeilen.append("]")
 
     # Jeder Gottesdienst-Block schließt bereits mit einem Trenner ab (siehe oben) - vor

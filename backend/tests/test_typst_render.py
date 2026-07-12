@@ -10,6 +10,7 @@ from app.schemas.miniplan_vorschau import (
 )
 from app.services.typst_render import (
     TypstCompileError,
+    _build_source,
     _minis_zeile,
     markdown_to_typst,
     render_miniplan_pdf,
@@ -136,6 +137,28 @@ def test_render_mit_offenen_stellen_liefert_pdf() -> None:
             )
         ],
     )
+    pdf = render_miniplan_pdf("St. Beispiel", plan)
+    assert pdf.startswith(b"%PDF")
+
+
+def test_render_dienst_ohne_minis_zeigt_namen_ohne_doppelpunkt() -> None:
+    # Ein Dienst mit anzahl=0 und ohne Zuweisungen dient nur als Hinweiszeile (z. B. "Alle
+    # Ministranten") - ein Doppelpunkt oder ein Leerstellen-Platzhalter wäre hier irreführend.
+    plan = _plan(
+        gottesdienste=[
+            VorschauGottesdienst(
+                datum=date(2026, 7, 5),
+                uhrzeit=time(10, 0),
+                name="Sonntagsmesse",
+                dienstbedarf=[
+                    VorschauDienstbedarf(name="Alle Ministranten", anzahl=0, zugewiesene_minis=[])
+                ],
+            )
+        ],
+    )
+    quelltext = _build_source("St. Beispiel", plan)
+    assert '#"Alle Ministranten"]' in quelltext
+    assert '#"Alle Ministranten"#":"]' not in quelltext
     pdf = render_miniplan_pdf("St. Beispiel", plan)
     assert pdf.startswith(b"%PDF")
 
