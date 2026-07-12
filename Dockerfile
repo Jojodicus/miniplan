@@ -1,8 +1,10 @@
+# syntax=docker/dockerfile:1
 FROM node:22-alpine AS frontend-build
 WORKDIR /frontend
 RUN corepack enable
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm run build
 
@@ -13,6 +15,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
+
 ARG TYPST_VERSION=0.14.2
 RUN curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
     | tar -xJ -C /tmp \
@@ -20,13 +24,27 @@ RUN curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSIO
     && rm -rf /tmp/typst-x86_64-unknown-linux-musl \
     && typst --version
 
-COPY backend/pyproject.toml ./
+# venv statt System-Python, damit `uv sync` unter dem späteren non-root User (miniplan) nicht
+# gegen /usr/lib/python3.12/site-packages schreiben muss.
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:${PATH}"
+
+# Dependencies vor dem App-Code installieren (eigener Layer, per uv.lock reproduzierbar) - ein
+# reiner Code-Änderung invalidiert diesen Layer nicht, und der `uv`-Cache-Mount überlebt auch
+# einen invalidierten Layer über mehrere Builds hinweg.
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-install-project --no-dev
+
 COPY backend/app ./app
 COPY backend/alembic ./alembic
 COPY backend/alembic.ini ./
 COPY backend/docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh \
-    && pip install --no-cache-dir .
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev \
+    && chmod +x docker-entrypoint.sh
 
 COPY --from=frontend-build /frontend/dist ./static
 

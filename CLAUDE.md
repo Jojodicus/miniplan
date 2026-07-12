@@ -205,7 +205,7 @@ Bearbeiten-Zeile). Listen zeigen bis zum ersten Laden `ListSkeleton` statt kurz 
 
 **Backend (aus `backend/`):**
 ```
-uv venv .venv && uv pip install -e ".[dev]" --python .venv/bin/python   # Setup
+uv sync --extra dev                                                     # Setup (erzeugt .venv, nutzt uv.lock)
 .venv/bin/alembic upgrade head                                          # Migrationen anwenden
 .venv/bin/alembic revision --autogenerate -m "..."                      # neue Migration
 .venv/bin/uvicorn app.main:app --reload                                 # Dev-Server
