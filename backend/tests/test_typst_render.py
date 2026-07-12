@@ -10,7 +10,7 @@ from app.schemas.miniplan_vorschau import (
 )
 from app.services.typst_render import (
     TypstCompileError,
-    _minis_zelle,
+    _minis_zeile,
     markdown_to_typst,
     render_miniplan_pdf,
 )
@@ -99,29 +99,28 @@ def test_render_mit_zeige_label_false_und_notiz_liefert_pdf() -> None:
     assert pdf.startswith(b"%PDF")
 
 
-def test_minis_zelle_leere_stelle_ohne_zuweisung_zeigt_trennwert() -> None:
+def test_minis_zeile_leere_stelle_ohne_zuweisung_zeigt_trennwert() -> None:
     # Anzahl 0 und keine Minis: neutraler Trennwert, kein Platzhalter.
     bedarf = VorschauDienstbedarf(name="Weihrauch", anzahl=0, zugewiesene_minis=[])
-    assert _minis_zelle(bedarf) == "—"
+    assert _minis_zeile(bedarf) == '#text(fill: rgb("#6a6a6a"))[—]'
 
 
-def test_minis_zelle_offene_stellen_als_weinrote_platzhalter() -> None:
-    # Zwei von drei Stellen besetzt -> ein weinroter "offen"-Platzhalter, Namen escaped.
+def test_minis_zeile_offene_stellen_als_weinrote_chips() -> None:
+    # Zwei von drei Stellen besetzt -> ein weinroter "offen"-Chip, Namen escaped.
     bedarf = VorschauDienstbedarf(
         name="Messdiener", anzahl=3, zugewiesene_minis=["Anna", "Bea"]
     )
-    zelle = _minis_zelle(bedarf)
-    assert '#"Anna"' in zelle
-    assert '#"Bea"' in zelle
-    assert zelle.count('rgb("#7c2f3b")') == 1
-    assert '[#"offen"]' in zelle
+    zeile = _minis_zeile(bedarf)
+    assert '#"Anna"' in zeile
+    assert '#"Bea"' in zeile
+    assert zeile.count('rgb("#7c2f3b")') == 1
+    assert '#"offen"' in zeile
 
 
-def test_minis_zelle_alle_stellen_offen() -> None:
+def test_minis_zeile_alle_stellen_offen() -> None:
     bedarf = VorschauDienstbedarf(name="Messdiener", anzahl=2, zugewiesene_minis=[])
-    zelle = _minis_zelle(bedarf)
-    assert zelle.count('[#"offen"]') == 2
-    assert '#", "' in zelle  # Platzhalter durch Komma getrennt
+    zeile = _minis_zeile(bedarf)
+    assert zeile.count('#"offen"') == 2
 
 
 def test_render_mit_offenen_stellen_liefert_pdf() -> None:

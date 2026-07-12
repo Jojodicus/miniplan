@@ -21,13 +21,6 @@ class FerienSyncFehler(Exception):
     """Wird geworfen, wenn die externe Ferien-Quelle nicht erreichbar ist."""
 
 
-# `sync_ferien` wird aktuell bei jeder Bundesland-Änderung aufgerufen (siehe
-# app/api/pfarreien.py:bundesland_setzen). Sobald es eine automatische Miniplan-Erstellung/
-# ein "Miniplan generieren" gibt, sollte diese vor der Zuteilung ebenfalls zuerst `sync_ferien`
-# aufrufen, damit Verfügbarkeitsprüfungen (siehe services/verfuegbarkeit.py) nicht auf veralteten
-# Ferienzeiten basieren.
-
-
 def _schuljahr(datum: date) -> str:
     if datum.month >= 9:
         return f"{datum.year}/{datum.year + 1}"
@@ -49,9 +42,10 @@ def _ferien_fuer_jahr(bundesland: str, jahr: int, client: httpx.Client) -> list[
     return daten
 
 
-def sync_ferien(pfarrei: Pfarrei, db: Session) -> list[Ferienzeitraum]:
-    heute = date.today()
-    jahre = {heute.year, (heute.year + 1)}
+def sync_ferien(pfarrei: Pfarrei, db: Session, jahre: set[int] | None = None) -> list[Ferienzeitraum]:
+    if jahre is None:
+        heute = date.today()
+        jahre = {heute.year, (heute.year + 1)}
 
     try:
         with httpx.Client(timeout=10.0) as client:

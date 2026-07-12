@@ -20,6 +20,7 @@ from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.rate_limit import _attempts
 from app.security import hash_password
+from app.services import ferien_sync
 
 engine = create_engine(
     "sqlite:///:memory:",
@@ -41,6 +42,20 @@ def _reset_rate_limit() -> Generator[None, None, None]:
     _attempts.clear()
     yield
     _attempts.clear()
+
+
+# Referenz auf die echte Implementierung, bevor der Autouse-Stub unten sie ersetzt - für Tests,
+# die (wie test_ferien_fuer_jahr_wird_fuer_ttl_gecached) genau diese Funktion selbst prüfen wollen.
+echte_ferien_fuer_jahr = ferien_sync._ferien_fuer_jahr
+
+
+@pytest.fixture(autouse=True)
+def _keine_echten_ferien_api_aufrufe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`fuellen` und `bundesland_setzen` rufen `sync_ferien` best-effort auf - ohne diesen Stub
+    würde jeder entsprechende Test eine echte Anfrage an ferien-api.de auslösen (langsam,
+    netzwerkabhängig, nicht deterministisch). Tests, die die echte Sync-Logik prüfen wollen,
+    überschreiben `_ferien_fuer_jahr` selbst wieder."""
+    monkeypatch.setattr(ferien_sync, "_ferien_fuer_jahr", lambda *a, **k: [])
 
 
 @pytest.fixture

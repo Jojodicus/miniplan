@@ -1,4 +1,5 @@
 import {
+  closestCenter,
   DndContext,
   PointerSensor,
   useDraggable,
@@ -8,10 +9,20 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
   CalendarPlus,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   Eraser,
+  GripVertical,
   Pencil,
   Pin,
   Plus,
@@ -71,7 +82,7 @@ import { PdfViewer } from '../components/ui/PdfViewer'
 import { Popover } from '../components/ui/Popover'
 import { TimeInput } from '../components/ui/TimeInput'
 import { useToast } from '../components/ui/Toast'
-import { formatDatum, monatsName } from '../lib/datum'
+import { formatDatumMitWochentag, monatsName } from '../lib/datum'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -432,6 +443,8 @@ function DienstbedarfBelegung({
   gottesdienstBelegteMiniIds,
   dienstbedarfId,
   readonly,
+  collapsed,
+  onToggleCollapsed,
   onChange,
   onClearAuto,
   onPinAuto,
@@ -446,6 +459,8 @@ function DienstbedarfBelegung({
   gottesdienstBelegteMiniIds: Set<number>
   dienstbedarfId: number | null
   readonly: boolean
+  collapsed: boolean
+  onToggleCollapsed: () => void
   onChange: (patch: Partial<WorkingBedarf>) => void
   onClearAuto: () => void
   onPinAuto: (zuweisungId: number) => void
@@ -470,8 +485,18 @@ function DienstbedarfBelegung({
 
   return (
     <div data-testid="dienst-belegung" className="rounded-lg border border-line p-3">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-baseline gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-expanded={!collapsed}
+          className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2 text-left"
+        >
+          {collapsed ? (
+            <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
+          ) : (
+            <ChevronDown className="h-4 w-4 shrink-0 text-ink-faint" />
+          )}
           <span className="text-sm font-medium text-ink">{anzeigeName}</span>
           <span className="text-xs text-ink-faint">
             {belegteMiniIds.size}/{bedarf.anzahl}
@@ -479,7 +504,7 @@ function DienstbedarfBelegung({
           {einschraenkungen.length > 0 && (
             <span className="text-xs text-ink-faint">· {einschraenkungen.join(', ')}</span>
           )}
-        </div>
+        </button>
         {!readonly && autoZuweisungen.length > 0 && (
           <button
             type="button"
@@ -491,55 +516,59 @@ function DienstbedarfBelegung({
           </button>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {bedarf.fixierteMiniIds.map((miniId) => {
-          const mini = minis.find((m) => m.id === miniId)
-          if (!mini) return null
-          const zuweisung =
-            serverZuweisungen.find((z) => z.manuell_fixiert && z.mini.id === miniId) ?? null
-          return (
-            <ZuweisungsChip
-              key={`fest-${miniId}`}
-              name={mini.name}
-              tone="fest"
-              dienstbedarfId={dienstbedarfId}
-              zuweisung={zuweisung}
-              readonly={readonly}
-              onRemove={readonly ? undefined : () => toggleMini(miniId)}
-            />
-          )
-        })}
-        {autoZuweisungen.map((zuweisung) => (
-          <ZuweisungsChip
-            key={`auto-${zuweisung.id}`}
-            name={zuweisung.mini.name}
-            tone="auto"
-            dienstbedarfId={dienstbedarfId}
-            zuweisung={zuweisung}
-            readonly={readonly}
-            onPin={readonly ? undefined : () => onPinAuto(zuweisung.id)}
-          />
-        ))}
-        {/* Reine Anzeige unbesetzter Stellen - kein zweiter Klick-Trigger mehr für den Picker
-            (vorher lösten diese Chips und der MiniAdder dieselbe Aktion redundant aus). */}
-        {Array.from({ length: offeneStellen }, (_, i) => (
-          <span
-            key={`offen-${i}`}
-            className="inline-flex items-center rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine"
-          >
-            offen
-          </span>
-        ))}
-      </div>
-      {!readonly && (
-        <div className="mt-2">
-          <MiniAdder
-            minis={minis}
-            belegteMiniIds={gottesdienstBelegteMiniIds}
-            disabled={voll}
-            onAdd={(miniId) => toggleMini(miniId)}
-          />
-        </div>
+      {!collapsed && (
+        <>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {bedarf.fixierteMiniIds.map((miniId) => {
+              const mini = minis.find((m) => m.id === miniId)
+              if (!mini) return null
+              const zuweisung =
+                serverZuweisungen.find((z) => z.manuell_fixiert && z.mini.id === miniId) ?? null
+              return (
+                <ZuweisungsChip
+                  key={`fest-${miniId}`}
+                  name={mini.name}
+                  tone="fest"
+                  dienstbedarfId={dienstbedarfId}
+                  zuweisung={zuweisung}
+                  readonly={readonly}
+                  onRemove={readonly ? undefined : () => toggleMini(miniId)}
+                />
+              )
+            })}
+            {autoZuweisungen.map((zuweisung) => (
+              <ZuweisungsChip
+                key={`auto-${zuweisung.id}`}
+                name={zuweisung.mini.name}
+                tone="auto"
+                dienstbedarfId={dienstbedarfId}
+                zuweisung={zuweisung}
+                readonly={readonly}
+                onPin={readonly ? undefined : () => onPinAuto(zuweisung.id)}
+              />
+            ))}
+            {/* Reine Anzeige unbesetzter Stellen - kein zweiter Klick-Trigger mehr für den Picker
+                (vorher lösten diese Chips und der MiniAdder dieselbe Aktion redundant aus). */}
+            {Array.from({ length: offeneStellen }, (_, i) => (
+              <span
+                key={`offen-${i}`}
+                className="inline-flex items-center rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine"
+              >
+                offen
+              </span>
+            ))}
+          </div>
+          {!readonly && (
+            <div className="mt-2">
+              <MiniAdder
+                minis={minis}
+                belegteMiniIds={gottesdienstBelegteMiniIds}
+                disabled={voll}
+                onAdd={(miniId) => toggleMini(miniId)}
+              />
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -594,46 +623,62 @@ function DienstbedarfEinstellungen({
     })
   }
 
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: bedarf.schluessel,
+  })
+  const style = { transform: CSS.Transform.toString(transform), transition }
+
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-line p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-1 flex-wrap items-center gap-3">
-          {bedarf.dienst_typ_id !== null ? (
-            <span className="text-sm font-medium text-ink">{bedarf.dienst_typ_name}</span>
-          ) : (
-            <Input
-              aria-label="Name des Dienstes"
-              placeholder="z. B. Alle Ministranten"
-              value={bedarf.name ?? ''}
-              onChange={(e) => onChange({ name: e.target.value })}
-              required
-              className="max-w-xs"
-              error={!(bedarf.name ?? '').trim() ? 'Name darf nicht leer sein' : undefined}
-            />
-          )}
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor={`${bedarf.schluessel}-anzahl`}>Anzahl</Label>
-            <Input
-              id={`${bedarf.schluessel}-anzahl`}
-              type="number"
-              min={1}
-              value={bedarf.anzahl}
-              onChange={(e) => onChange({ anzahl: Number(e.target.value) })}
-              className="!w-20"
-            />
-          </div>
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex flex-col gap-3 rounded-lg border border-line bg-paper p-3 ${isDragging ? 'z-10 opacity-60' : ''}`}
+    >
+      <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-3">
+        <button
+          type="button"
+          aria-label="Dienst verschieben"
+          className="cursor-grab touch-none text-ink-faint hover:text-ink-soft active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+        {bedarf.dienst_typ_id !== null ? (
+          <span className="min-w-0 truncate text-sm font-medium text-ink">
+            {bedarf.dienst_typ_name}
+          </span>
+        ) : (
+          <Input
+            aria-label="Name des Dienstes"
+            placeholder="z. B. Alle Ministranten"
+            value={bedarf.name ?? ''}
+            onChange={(e) => onChange({ name: e.target.value })}
+            required
+            error={!(bedarf.name ?? '').trim() ? 'Name darf nicht leer sein' : undefined}
+          />
+        )}
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor={`${bedarf.schluessel}-anzahl`}>Anzahl</Label>
+          <Input
+            id={`${bedarf.schluessel}-anzahl`}
+            type="number"
+            min={1}
+            value={bedarf.anzahl}
+            onChange={(e) => onChange({ anzahl: Number(e.target.value) })}
+            className="!w-16"
+          />
         </div>
+        <CheckboxChip
+          id={`${bedarf.schluessel}-zeige-label`}
+          checked={bedarf.zeige_label}
+          onChange={() => onChange({ zeige_label: !bedarf.zeige_label })}
+          title="Ist dies aus, erscheint auf dem Plan nur die Anzahl/Einschränkung, nicht der Name."
+        >
+          Auf Plan
+        </CheckboxChip>
         <InlineConfirmButton onConfirm={onRemove} label="Dienst entfernen" size="sm" />
       </div>
-
-      <CheckboxChip
-        id={`${bedarf.schluessel}-zeige-label`}
-        checked={bedarf.zeige_label}
-        onChange={() => onChange({ zeige_label: !bedarf.zeige_label })}
-        title="Ist dies aus, erscheint auf dem Plan nur die Anzahl/Einschränkung, nicht der Name."
-      >
-        Name auf dem Plan zeigen
-      </CheckboxChip>
 
       {filtertags.length > 0 && (
         <div>
@@ -711,6 +756,185 @@ function DienstbedarfEinstellungen({
   )
 }
 
+// Gemeinsames Formular für Anlegen und Bearbeiten eines Gottesdienstes (Metadaten + Dienste in
+// einem Schritt statt getrennter Anlege-/Bearbeiten-Modale) - Zustand/Setter kommen als Props,
+// damit sowohl `GottesdienstKarte` (bestehender State, Autosave) als auch `NeuerGottesdienstModal`
+// (frischer lokaler State) dieselbe Form nutzen können.
+function GottesdienstDetailsForm({
+  idPrefix,
+  pfarreiId,
+  jahr,
+  monat,
+  datum,
+  setDatum,
+  uhrzeit,
+  setUhrzeit,
+  name,
+  setName,
+  notiz,
+  setNotiz,
+  bedarfListe,
+  setBedarfListe,
+  gruppen,
+  filtertags,
+  dienstTypen,
+  zeigeFehler,
+}: {
+  idPrefix: string
+  pfarreiId: number
+  jahr: number
+  monat: number
+  datum: string
+  setDatum: (v: string) => void
+  uhrzeit: string
+  setUhrzeit: (v: string) => void
+  name: string
+  setName: (v: string) => void
+  notiz: string
+  setNotiz: (v: string) => void
+  bedarfListe: WorkingBedarf[]
+  setBedarfListe: React.Dispatch<React.SetStateAction<WorkingBedarf[]>>
+  gruppen: Gruppe[]
+  filtertags: FiltertagDef[]
+  dienstTypen: DienstTyp[]
+  zeigeFehler: boolean
+}) {
+  const dndSensoren = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  )
+
+  function updateBedarf(schluessel: string, patch: Partial<WorkingBedarf>) {
+    setBedarfListe((liste) =>
+      liste.map((b) => (b.schluessel === schluessel ? { ...b, ...patch } : b)),
+    )
+  }
+
+  function removeBedarf(schluessel: string) {
+    setBedarfListe((liste) => liste.filter((b) => b.schluessel !== schluessel))
+  }
+
+  function addDienstTyp(dienstTyp: DienstTyp) {
+    setBedarfListe((liste) => [...liste, bedarfAusDienstTyp(dienstTyp)])
+  }
+
+  function addFreitext() {
+    setBedarfListe((liste) => [...liste, bedarfFreitext()])
+  }
+
+  function handleDienstDragEnd(event: DragEndEvent) {
+    const aktivId = event.active.id
+    const zielId = event.over?.id
+    if (!zielId || aktivId === zielId) return
+    setBedarfListe((liste) => {
+      const von = liste.findIndex((b) => b.schluessel === aktivId)
+      const zu = liste.findIndex((b) => b.schluessel === zielId)
+      if (von === -1 || zu === -1) return liste
+      return arrayMove(liste, von, zu)
+    })
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div>
+          <Label htmlFor={`${idPrefix}-datum`}>Datum</Label>
+          <DateInput
+            id={`${idPrefix}-datum`}
+            pfarreiId={pfarreiId}
+            jahr={jahr}
+            monat={monat}
+            value={datum}
+            onChange={setDatum}
+            required
+            error={zeigeFehler && !datum ? 'Datum wird benötigt' : undefined}
+          />
+        </div>
+        <div>
+          <Label htmlFor={`${idPrefix}-uhrzeit`}>Uhrzeit</Label>
+          <TimeInput
+            id={`${idPrefix}-uhrzeit`}
+            value={uhrzeit}
+            onChange={setUhrzeit}
+            required
+            error={zeigeFehler && !uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
+          />
+        </div>
+        <div>
+          <Label htmlFor={`${idPrefix}-name`} hint="optional">
+            Name
+          </Label>
+          <Input
+            id={`${idPrefix}-name`}
+            placeholder="z. B. Sonntagsmesse"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div>
+        <Label htmlFor={`${idPrefix}-notiz`} hint="optional">
+          Notiz
+        </Label>
+        <textarea
+          id={`${idPrefix}-notiz`}
+          value={notiz}
+          onChange={(e) => setNotiz(e.target.value)}
+          rows={2}
+          placeholder="z. B. Bitte Kerzen mitbringen"
+          className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15"
+        />
+      </div>
+
+      <DndContext
+        sensors={dndSensoren}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDienstDragEnd}
+      >
+        <SortableContext
+          items={bedarfListe.map((b) => b.schluessel)}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className="flex flex-col gap-3">
+            {bedarfListe.map((bedarf) => (
+              <DienstbedarfEinstellungen
+                key={bedarf.schluessel}
+                bedarf={bedarf}
+                gruppen={gruppen}
+                filtertags={filtertags}
+                onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
+                onRemove={() => removeBedarf(bedarf.schluessel)}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      <div>
+        <Label>Dienst hinzufügen</Label>
+        <div className="flex flex-wrap gap-2">
+          {dienstTypen.map((dt) => (
+            <Button
+              key={dt.id}
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => addDienstTyp(dt)}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {dt.name}
+            </Button>
+          ))}
+          <Button type="button" variant="secondary" size="sm" onClick={addFreitext}>
+            <Plus className="h-3.5 w-3.5" />
+            Freitext-Dienst
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const AUTOSAVE_DEBOUNCE_MS = 800
 
 // Datum um ganze Tage verschieben (für "Duplizieren": gleicher Gottesdienst eine Woche später).
@@ -780,6 +1004,9 @@ function GottesdienstKarte({
   )
   const [status, setStatus] = useState<SpeicherStatus>('gespeichert')
   const [editorOffen, setEditorOffen] = useState(oeffneEditor)
+  // Klapp-Zustand je Dienst in der stets sichtbaren Belegungs-Liste (Default: ausgeklappt) -
+  // reduziert Unübersichtlichkeit bei vielen Diensten, ohne Informationen dauerhaft zu verstecken.
+  const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>({})
   const { showToast } = useToast()
   const istErstesRendern = useRef(true)
 
@@ -811,16 +1038,8 @@ function GottesdienstKarte({
     return ids
   }, [bedarfListe, serverZuweisungenMap])
 
-  function removeBedarf(schluessel: string) {
-    setBedarfListe((liste) => liste.filter((b) => b.schluessel !== schluessel))
-  }
-
-  function addDienstTyp(dienstTyp: DienstTyp) {
-    setBedarfListe((liste) => [...liste, bedarfAusDienstTyp(dienstTyp)])
-  }
-
-  function addFreitext() {
-    setBedarfListe((liste) => [...liste, bedarfFreitext()])
+  function toggleCollapsed(schluessel: string) {
+    setCollapsedMap((karte) => ({ ...karte, [schluessel]: !karte[schluessel] }))
   }
 
   useEffect(() => {
@@ -944,7 +1163,7 @@ function GottesdienstKarte({
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-2">
             <span className="font-medium text-ink">
-              {datum ? formatDatum(datum) : 'Kein Datum'}
+              {datum ? formatDatumMitWochentag(datum) : 'Kein Datum'}
               {uhrzeit && `, ${uhrzeit} Uhr`}
             </span>
             {name && <span className="text-sm text-ink-soft">{name}</span>}
@@ -975,6 +1194,13 @@ function GottesdienstKarte({
               <Pencil className="h-4 w-4" />
             </IconButton>
           )}
+          {!readonly && (
+            <InlineConfirmButton
+              onConfirm={handleDelete}
+              label="Gottesdienst löschen"
+              confirmLabel="Wirklich löschen?"
+            />
+          )}
         </div>
       </div>
 
@@ -997,6 +1223,8 @@ function GottesdienstKarte({
               gottesdienstBelegteMiniIds={gottesdienstBelegteMiniIds}
               dienstbedarfId={dienstbedarfIdMap[bedarf.schluessel] ?? bedarf.dienstbedarfId}
               readonly={readonly}
+              collapsed={collapsedMap[bedarf.schluessel] ?? false}
+              onToggleCollapsed={() => toggleCollapsed(bedarf.schluessel)}
               onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
               onClearAuto={() => {
                 const id = dienstbedarfIdMap[bedarf.schluessel] ?? bedarf.dienstbedarfId
@@ -1015,98 +1243,28 @@ function GottesdienstKarte({
         maxWidth="max-w-2xl"
       >
         <div className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <Label htmlFor={`gottesdienst-${gottesdienst.id}-datum`}>Datum</Label>
-              <DateInput
-                id={`gottesdienst-${gottesdienst.id}-datum`}
-                pfarreiId={pfarreiId}
-                jahr={jahr}
-                monat={monat}
-                value={datum}
-                onChange={setDatum}
-                required
-                error={!datum ? 'Datum wird benötigt' : undefined}
-              />
-            </div>
-            <div>
-              <Label htmlFor={`gottesdienst-${gottesdienst.id}-uhrzeit`}>Uhrzeit</Label>
-              <TimeInput
-                id={`gottesdienst-${gottesdienst.id}-uhrzeit`}
-                value={uhrzeit}
-                onChange={setUhrzeit}
-                required
-                error={!uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
-              />
-            </div>
-            <div>
-              <Label htmlFor={`gottesdienst-${gottesdienst.id}-name`} hint="optional">
-                Name
-              </Label>
-              <Input
-                id={`gottesdienst-${gottesdienst.id}-name`}
-                placeholder="z. B. Sonntagsmesse"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-          </div>
+          <GottesdienstDetailsForm
+            idPrefix={`gottesdienst-${gottesdienst.id}`}
+            pfarreiId={pfarreiId}
+            jahr={jahr}
+            monat={monat}
+            datum={datum}
+            setDatum={setDatum}
+            uhrzeit={uhrzeit}
+            setUhrzeit={setUhrzeit}
+            name={name}
+            setName={setName}
+            notiz={notiz}
+            setNotiz={setNotiz}
+            bedarfListe={bedarfListe}
+            setBedarfListe={setBedarfListe}
+            gruppen={gruppen}
+            filtertags={filtertags}
+            dienstTypen={dienstTypen}
+            zeigeFehler
+          />
 
-          <div>
-            <Label htmlFor={`gottesdienst-${gottesdienst.id}-notiz`} hint="optional">
-              Notiz
-            </Label>
-            <textarea
-              id={`gottesdienst-${gottesdienst.id}-notiz`}
-              value={notiz}
-              onChange={(e) => setNotiz(e.target.value)}
-              rows={2}
-              placeholder="z. B. Bitte Kerzen mitbringen"
-              className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15"
-            />
-          </div>
-
-          <div className="flex flex-col gap-3">
-            {bedarfListe.map((bedarf) => (
-              <DienstbedarfEinstellungen
-                key={bedarf.schluessel}
-                bedarf={bedarf}
-                gruppen={gruppen}
-                filtertags={filtertags}
-                onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
-                onRemove={() => removeBedarf(bedarf.schluessel)}
-              />
-            ))}
-          </div>
-
-          <div>
-            <Label>Dienst hinzufügen</Label>
-            <div className="flex flex-wrap gap-2">
-              {dienstTypen.map((dt) => (
-                <Button
-                  key={dt.id}
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => addDienstTyp(dt)}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  {dt.name}
-                </Button>
-              ))}
-              <Button type="button" variant="secondary" size="sm" onClick={addFreitext}>
-                <Plus className="h-3.5 w-3.5" />
-                Freitext-Dienst
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between border-t border-line pt-4">
-            <InlineConfirmButton
-              onConfirm={handleDelete}
-              label="Gottesdienst löschen"
-              confirmLabel="Gottesdienst wirklich löschen?"
-            />
+          <div className="flex justify-end border-t border-line pt-4">
             <Button type="button" onClick={() => setEditorOffen(false)}>
               Fertig
             </Button>
@@ -1122,6 +1280,9 @@ function NeuerGottesdienstModal({
   miniplanId,
   jahr,
   monat,
+  gruppen,
+  filtertags,
+  dienstTypen,
   open,
   onClose,
   onCreated,
@@ -1130,6 +1291,9 @@ function NeuerGottesdienstModal({
   miniplanId: number
   jahr: number
   monat: number
+  gruppen: Gruppe[]
+  filtertags: FiltertagDef[]
+  dienstTypen: DienstTyp[]
   open: boolean
   onClose: () => void
   onCreated: (gottesdienstId: number) => void
@@ -1138,6 +1302,7 @@ function NeuerGottesdienstModal({
   const [uhrzeit, setUhrzeit] = useState('')
   const [name, setName] = useState('')
   const [notiz, setNotiz] = useState('')
+  const [bedarfListe, setBedarfListe] = useState<WorkingBedarf[]>([])
   const [error, setError] = useState<string | null>(null)
   const [versucht, setVersucht] = useState(false)
 
@@ -1146,6 +1311,7 @@ function NeuerGottesdienstModal({
     setUhrzeit('')
     setName('')
     setNotiz('')
+    setBedarfListe([])
     setVersucht(false)
     setError(null)
   }
@@ -1153,7 +1319,10 @@ function NeuerGottesdienstModal({
   async function handleCreate(event: SubmitEvent) {
     event.preventDefault()
     setVersucht(true)
-    if (!datum || !uhrzeit) {
+    const bedarfOhneName = bedarfListe.some(
+      (b) => b.dienst_typ_id === null && !(b.name ?? '').trim(),
+    )
+    if (!datum || !uhrzeit || bedarfOhneName) {
       return
     }
     setError(null)
@@ -1163,7 +1332,7 @@ function NeuerGottesdienstModal({
         uhrzeit,
         name,
         notiz: notiz.trim() ? notiz : null,
-        dienstbedarf: [],
+        dienstbedarf: bedarfListe.map((bedarf) => zuEingabe(bedarf, [])),
       })
       reset()
       onCreated(erstellt.id)
@@ -1173,62 +1342,41 @@ function NeuerGottesdienstModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Neuer Gottesdienst">
+    <Modal
+      open={open}
+      onClose={() => {
+        reset()
+        onClose()
+      }}
+      title="Neuer Gottesdienst"
+      maxWidth="max-w-2xl"
+    >
       {error && (
         <div className="mb-4">
           <Alert>{error}</Alert>
         </div>
       )}
       <form onSubmit={handleCreate} aria-label="Gottesdienst anlegen" className="flex flex-col gap-4">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div>
-            <Label htmlFor="neuer-gottesdienst-datum">Datum</Label>
-            <DateInput
-              id="neuer-gottesdienst-datum"
-              pfarreiId={pfarreiId}
-              jahr={jahr}
-              monat={monat}
-              value={datum}
-              onChange={setDatum}
-              required
-              error={versucht && !datum ? 'Datum wird benötigt' : undefined}
-            />
-          </div>
-          <div>
-            <Label htmlFor="neuer-gottesdienst-uhrzeit">Uhrzeit</Label>
-            <TimeInput
-              id="neuer-gottesdienst-uhrzeit"
-              value={uhrzeit}
-              onChange={setUhrzeit}
-              required
-              error={versucht && !uhrzeit ? 'Uhrzeit wird benötigt' : undefined}
-            />
-          </div>
-          <div>
-            <Label htmlFor="neuer-gottesdienst-name" hint="optional">
-              Name
-            </Label>
-            <Input
-              id="neuer-gottesdienst-name"
-              placeholder="z. B. Sonntagsmesse"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-        </div>
-        <div>
-          <Label htmlFor="neuer-gottesdienst-notiz" hint="optional">
-            Notiz
-          </Label>
-          <textarea
-            id="neuer-gottesdienst-notiz"
-            value={notiz}
-            onChange={(e) => setNotiz(e.target.value)}
-            rows={2}
-            placeholder="z. B. Bitte Kerzen mitbringen"
-            className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15"
-          />
-        </div>
+        <GottesdienstDetailsForm
+          idPrefix="neuer-gottesdienst"
+          pfarreiId={pfarreiId}
+          jahr={jahr}
+          monat={monat}
+          datum={datum}
+          setDatum={setDatum}
+          uhrzeit={uhrzeit}
+          setUhrzeit={setUhrzeit}
+          name={name}
+          setName={setName}
+          notiz={notiz}
+          setNotiz={setNotiz}
+          bedarfListe={bedarfListe}
+          setBedarfListe={setBedarfListe}
+          gruppen={gruppen}
+          filtertags={filtertags}
+          dienstTypen={dienstTypen}
+          zeigeFehler={versucht}
+        />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>
             Abbrechen
@@ -1353,9 +1501,14 @@ function VorschauPanel({
     let abgebrochen = false
     setLadend(true)
     const timer = setTimeout(() => {
-      letzteEingabe.current = eingabeJson
       miniplanVorschau(pfarreiId, miniplanId, eingabe).then((ergebnis) => {
         if (abgebrochen) return
+        // Erst nach erfolgreich angewendetem Ergebnis als "aktuell" markieren - sonst würde ein
+        // zwischenzeitlich abgebrochener Aufruf (abgebrochen=true, s.u.) fälschlich als erledigt
+        // gelten und ein späterer Effect-Lauf mit demselben Inhalt gar keinen neuen Request mehr
+        // auslösen, obwohl `pdfDaten`/`ladend` nie aktualisiert wurden (Vorschau bliebe für immer
+        // auf "wird geladen" stehen).
+        letzteEingabe.current = eingabeJson
         if (ergebnis.ok) {
           setPdfDaten(ergebnis.daten)
           setFehler(null)
@@ -1389,7 +1542,7 @@ function VorschauPanel({
           </Alert>
         )}
         {!pdfDaten && !fehler && <p className="text-sm text-ink-soft">Vorschau wird geladen…</p>}
-        <PdfViewer data={pdfDaten} className="mx-auto aspect-[210/297] max-h-full self-center" />
+        <PdfViewer data={pdfDaten} className="w-full min-h-0 flex-1" />
       </div>
     </Card>
   )
@@ -1867,6 +2020,20 @@ export function MiniplanEditorPage() {
             </Card>
           )}
 
+          {/* Zusätzlicher, stets sichtbarer Einstiegspunkt am Ende der Liste - der Toolbar-Button
+              oben bleibt (nützlich bei langer, gescrollter Liste), ist danach aber leicht aus dem
+              Blick, sobald schon Gottesdienste existieren. */}
+          {!readonly && miniplan.gottesdienste.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setNeuGottesdienstOffen(true)}
+              className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-line px-4 py-3 text-sm text-ink-soft transition-colors hover:border-pine hover:bg-pine-tint hover:text-pine-dark"
+            >
+              <CalendarPlus className="h-4 w-4" />
+              Gottesdienst hinzufügen
+            </button>
+          )}
+
           <FreitextSection
             pfarreiId={id}
             miniplan={miniplan}
@@ -1888,11 +2055,13 @@ export function MiniplanEditorPage() {
         miniplanId={planId}
         jahr={miniplan.jahr}
         monat={miniplan.monat}
+        gruppen={gruppen}
+        filtertags={filtertags}
+        dienstTypen={dienstTypen}
         open={neuGottesdienstOffen}
         onClose={() => setNeuGottesdienstOffen(false)}
-        onCreated={(gottesdienstId) => {
+        onCreated={() => {
           setNeuGottesdienstOffen(false)
-          setNeuesterGottesdienstId(gottesdienstId)
           reload()
         }}
       />

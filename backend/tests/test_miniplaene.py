@@ -1,7 +1,9 @@
 from datetime import date, time
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.api import miniplaene as miniplaene_api
 from app.models.dienstbedarf import (
     Dienstbedarf,
     DienstbedarfGruppenAnforderung,
@@ -254,6 +256,58 @@ def test_miniplan_fuellen_besetzt_freie_stellen(
     assert len(zuweisungen) == 2
     assert {z["mini"]["name"] for z in zuweisungen} == {"Mini 0", "Mini 1"}
     assert {z["manuell_fixiert"] for z in zuweisungen} == {False}
+
+
+def test_miniplan_fuellen_synchronisiert_ferien_fuer_planjahr(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=8, jahr=2028)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+
+    aufrufe: list[set[int]] = []
+
+    def fake_sync_ferien(pfarrei_arg, db, jahre=None):
+        aufrufe.append(jahre)
+        return []
+
+    monkeypatch.setattr(miniplaene_api, "sync_ferien", fake_sync_ferien)
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/fuellen", headers=headers
+    )
+    assert response.status_code == 200
+    assert aufrufe == [{2028, 2029}]
+
+
+def test_miniplan_fuellen_ignoriert_ferien_sync_fehler(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=9, jahr=2028)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+
+    def failing_sync_ferien(pfarrei_arg, db, jahre=None):
+        raise miniplaene_api.FerienSyncFehler("keine Verbindung")
+
+    monkeypatch.setattr(miniplaene_api, "sync_ferien", failing_sync_ferien)
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/fuellen", headers=headers
+    )
+    assert response.status_code == 200
 
 
 def test_miniplan_fuellen_erfordert_verantwortlich(

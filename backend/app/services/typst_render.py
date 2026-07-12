@@ -124,29 +124,37 @@ def markdown_to_typst(text: str) -> str:
     return "\n#linebreak()\n".join(bloecke)
 
 
-# Weinrot (identisch zur Frontend-Palette --color-wine), damit noch offene Stellen auf dem PDF
-# genauso hervorstechen wie die Platzhalter im Editor.
+# Weinrot (identisch zur Frontend-Palette --color-wine) für offene Stellen, gedecktes Pine-Grün
+# für vergebene Namen - beides angelehnt an die Zuweisungs-Chips im Editor (ZuweisungsChip), damit
+# PDF und Editor optisch zusammenpassen.
 _OFFEN_FARBE = '#7c2f3b'
+_OFFEN_FUELLUNG = '#f4e6ea'
+_VERGEBEN_FARBE = '#2f4a3a'
+_VERGEBEN_FUELLUNG = '#e8efe9'
 
 
-def _minis_zelle(bedarf: VorschauDienstbedarf) -> str:
-    """Baut den Inhalt der „Zugewiesene Minis“-Zelle: vergebene Namen in Normalschrift, für jede
-    noch unbesetzte Stelle einen weinrot eingefärbten „offen“-Platzhalter (analog zu den
-    Platzhaltern im Editor)."""
+def _mini_chip(name: str, *, offen: bool) -> str:
+    """Ein einzelner Mini-Name als abgesetzter, farbig hinterlegter Chip - klar abgegrenzte
+    Ränder statt einer reinen Komma-Liste, damit Namensgrenzen auch bei ähnlich klingenden oder
+    direkt aufeinanderfolgenden Namen eindeutig erkennbar bleiben."""
+    farbe = _OFFEN_FARBE if offen else _VERGEBEN_FARBE
+    fuellung = _OFFEN_FUELLUNG if offen else _VERGEBEN_FUELLUNG
+    return (
+        f'#box(fill: rgb("{fuellung}"), inset: (x: 5pt, y: 2pt), radius: 2pt, '
+        f'outset: (y: 1pt))[#text(fill: rgb("{farbe}"), size: 9.5pt)[#{_typst_str(name)}]]'
+    )
+
+
+def _minis_zeile(bedarf: VorschauDienstbedarf) -> str:
+    """Baut die Chip-Reihe der zugewiesenen Minis: vergebene Namen grün, für jede noch unbesetzte
+    Stelle ein weinrot eingefärbter „offen“-Chip (analog zu den Platzhaltern im Editor)."""
     namen = bedarf.zugewiesene_minis
     fehlend = max(bedarf.anzahl - len(namen), 0)
     if not namen and fehlend == 0:
-        return "—"
-    teile: list[str] = []
-    for i, name in enumerate(namen):
-        if i > 0:
-            teile.append('#", "')
-        teile.append(f"#{_typst_str(name)}")
-    for j in range(fehlend):
-        if teile or j > 0:
-            teile.append('#", "')
-        teile.append(f'#text(fill: rgb("{_OFFEN_FARBE}"))[#{_typst_str("offen")}]')
-    return "".join(teile)
+        return '#text(fill: rgb("#6a6a6a"))[—]'
+    chips = [_mini_chip(name, offen=False) for name in namen]
+    chips += [_mini_chip("offen", offen=True) for _ in range(fehlend)]
+    return "#h(3pt)".join(chips)
 
 
 def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
@@ -154,66 +162,64 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
     zeilen.append('#set page(paper: "a4", margin: (x: 2.4cm, y: 2.2cm))')
     zeilen.append('#set text(size: 10.5pt, lang: "de")')
     zeilen.append('#set par(justify: false)')
-    zeilen.append("#align(center)[")
-    zeilen.append('  #text(size: 20pt, weight: "bold", tracking: 0.5pt)[Dienstplan]')
-    zeilen.append("  #v(0.15em)")
     titel = f"{pfarrei_name} · {_MONATSNAMEN[plan.monat - 1]} {plan.jahr}"
-    zeilen.append(f'  #text(size: 12.5pt, style: "italic", fill: rgb("#4a4a4a"))[#{_typst_str(titel)}]')
+    zeilen.append("#align(center)[")
+    zeilen.append(
+        '  #text(size: 16pt, weight: "bold", tracking: 0.3pt)[Dienstplan]'
+        f'#h(0.6em)#text(size: 12pt, style: "italic", fill: rgb("#4a4a4a"))[#{_typst_str(titel)}]'
+    )
     zeilen.append("]")
-    zeilen.append("#v(0.5em)")
+    zeilen.append("#v(0.4em)")
     zeilen.append('#line(length: 100%, stroke: 0.6pt + rgb("#8a8a8a"))')
-    zeilen.append("#v(1.1em)")
+    zeilen.append("#v(0.9em)")
 
     if not plan.gottesdienste:
         zeilen.append('#align(center)[#text(style: "italic", fill: rgb("#6a6a6a"))[Keine Gottesdienste geplant.]]')
 
     for gd in plan.gottesdienste:
         wochentag = _WOCHENTAGE[gd.datum.weekday()]
-        gd_datum = f"{wochentag}, {gd.datum.strftime('%d.%m.%Y')}"
-        gd_uhrzeit = f"{gd.uhrzeit.strftime('%H:%M')} Uhr"
-        zeilen.append("#block(above: 1.3em, below: 0.9em, breakable: false)[")
-        zeilen.append("  #grid(")
-        zeilen.append("    columns: (auto, 1fr),")
-        zeilen.append("    column-gutter: 0.6em,")
-        zeilen.append(
-            f'    text(size: 12pt, weight: "bold")[#{_typst_str(gd_datum)}],'
-        )
+        gd_kopf = f"{wochentag}, {gd.datum.strftime('%d.%m.%Y')} {gd.uhrzeit.strftime('%H:%M')} Uhr"
         if gd.name:
-            gd_name_zelle = f'text(size: 11pt, fill: rgb("#4a4a4a"))[#{_typst_str(gd.name)}]'
-        else:
-            gd_name_zelle = "[]"
-        zeilen.append(f"    {gd_name_zelle},")
-        zeilen.append("  )")
-        zeilen.append(f'  #text(size: 10pt, fill: rgb("#6a6a6a"))[#{_typst_str(gd_uhrzeit)}]')
+            gd_kopf += f" {gd.name}"
+        zeilen.append("#block(above: 1.1em, below: 0.6em, breakable: false)[")
+        zeilen.append("  #grid(")
+        zeilen.append("    columns: (1fr, auto),")
+        zeilen.append("    column-gutter: 0.6em,")
+        zeilen.append("    align: (left, right),")
+        zeilen.append(f'    text(size: 11.5pt, weight: "bold")[#{_typst_str(gd_kopf)}],')
         if gd.notiz:
-            zeilen.append(
-                '  #text(style: "italic", size: 9pt, fill: rgb("#6a6a6a"))[' + _text_zeilen(gd.notiz) + "]"
+            gd_notiz_zelle = (
+                f'text(style: "italic", size: 9pt, fill: rgb("#6a6a6a"))[' + _text_zeilen(gd.notiz) + "]"
             )
-        zeilen.append("  #v(0.5em)")
+        else:
+            gd_notiz_zelle = "[]"
+        zeilen.append(f"    {gd_notiz_zelle},")
+        zeilen.append("  )")
+        zeilen.append("  #v(0.35em)")
         if gd.dienstbedarf:
-            zeilen.append("  #table(")
-            zeilen.append("    columns: (5.2cm, 1fr),")
-            zeilen.append("    stroke: (x, y) => (bottom: 0.4pt + rgb(\"#d6d0c4\")),")
-            zeilen.append("    inset: (x: 0pt, y: 5pt),")
-            zeilen.append("    align: (left + horizon, left + horizon),")
             for bedarf in gd.dienstbedarf:
-                minis_zelle = _minis_zelle(bedarf)
+                zeilen.append("  #block(above: 0.2em, below: 0.2em)[")
                 if bedarf.zeige_label:
-                    dienst_zelle = (
-                        f'#text(weight: "medium", fill: rgb("#3a3a3a"))[#{_typst_str(bedarf.name)}]'
+                    zeilen.append(
+                        f'    #text(weight: "medium", fill: rgb("#3a3a3a"))[#{_typst_str(bedarf.name)}]'
+                        '#text(fill: rgb("#3a3a3a"))[:]#h(4pt)'
                     )
-                else:
-                    dienst_zelle = ""
-                zeilen.append(f"    [{dienst_zelle}], [{minis_zelle}],")
-            zeilen.append("  )")
+                zeilen.append(f"    {_minis_zeile(bedarf)}")
+                zeilen.append("  ]")
         else:
             zeilen.append('  #text(style: "italic", size: 9pt, fill: rgb("#6a6a6a"))[Kein Dienstbedarf hinterlegt.]')
+        zeilen.append("  #v(0.4em)")
+        zeilen.append('  #line(length: 100%, stroke: 0.4pt + rgb("#d6d0c4"))')
         zeilen.append("]")
 
+    # Jeder Gottesdienst-Block schließt bereits mit einem Trenner ab (siehe oben) - vor
+    # Veranstaltungen/Ankündigungen braucht es nur dann einen eigenen, wenn keine Gottesdienste
+    # gerendert wurden (sonst doppelte Linie direkt untereinander).
     if plan.veranstaltungen:
-        zeilen.append("#v(1.3em)")
-        zeilen.append('#line(length: 100%, stroke: 0.4pt + rgb("#d6d0c4"))')
-        zeilen.append('#v(0.7em)')
+        zeilen.append("#v(0.7em)" if plan.gottesdienste else "#v(1.3em)")
+        if not plan.gottesdienste:
+            zeilen.append('#line(length: 100%, stroke: 0.4pt + rgb("#d6d0c4"))')
+            zeilen.append('#v(0.7em)')
         zeilen.append('#text(size: 12pt, weight: "bold")[Veranstaltungen]')
         zeilen.append("#block(above: 0.5em)[" + markdown_to_typst(plan.veranstaltungen) + "]")
 

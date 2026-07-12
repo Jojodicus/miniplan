@@ -26,6 +26,7 @@ from app.schemas.miniplan import (
     ZuteilungEinstellungen,
 )
 from app.schemas.miniplan_vorschau import MiniplanVorschauIn, miniplan_zu_vorschau
+from app.services.ferien_sync import FerienSyncFehler, sync_ferien
 from app.services.typst_render import TypstCompileError, render_miniplan_pdf
 from app.services.zuteilung import zuteilung_vorschlagen
 
@@ -214,11 +215,19 @@ def fuellen(
     pfarrei_id: int,
     miniplan_id: int,
     db: Session = Depends(get_db),
-    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
 ) -> Miniplan:
     miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
     schreibschutz_pruefen(miniplan)
+    # Best-effort: schlägt die externe Ferien-Quelle fehl, bleiben bestehende Ferienzeiten
+    # erhalten (siehe sync_ferien) - das Füllen soll dadurch nicht scheitern. Jahre aus dem
+    # Miniplan selbst statt dem heutigen Datum, damit auch mit Vorlauf geplante Monate
+    # (z.B. kurz vor Schuljahresbeginn) aktuelle Ferienzeiten für ihr eigenes Jahr bekommen.
+    try:
+        sync_ferien(pfarrei, db, jahre={miniplan.jahr, miniplan.jahr + 1})
+    except FerienSyncFehler:
+        pass
     vorschlag = zuteilung_vorschlagen(db, pfarrei_id, miniplan)
     # Erst alle nicht fixierten Zuweisungen löschen und flushen, bevor die neu vorgeschlagenen
     # eingefügt werden: bei einem erneuten Füllen-Lauf kann derselbe Mini wieder demselben

@@ -60,6 +60,9 @@ def test_sync_ferien_ersetzt_bestehende_eintraege(
 
 
 def test_ferien_fuer_jahr_wird_fuer_ttl_gecached(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.conftest import echte_ferien_fuer_jahr
+
+    monkeypatch.setattr(ferien_sync, "_ferien_fuer_jahr", echte_ferien_fuer_jahr)
     ferien_sync._cache.clear()
     aufrufe = []
 
