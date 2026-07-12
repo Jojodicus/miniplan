@@ -10,10 +10,11 @@ ACCESS_TOKEN_COOKIE_NAME = "miniplan_token"
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    salt = bcrypt.gensalt(rounds=settings.bcrypt_rounds)
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
-_DUMMY_HASH = bcrypt.hashpw(b"dummy-password", bcrypt.gensalt()).decode("utf-8")
+_DUMMY_HASH = hash_password("dummy-password")
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:

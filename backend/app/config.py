@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # docker-compose.yml liefert standardmäßig reines HTTP aus; auf true setzen, sobald ein
     # TLS-Reverse-Proxy davorsteht, damit der Browser das Auth-Cookie nur noch über HTTPS sendet.
     cookie_secure: bool = False
+    # bcrypt-Kostenfaktor. Tests setzen das über MINIPLAN_BCRYPT_ROUNDS auf einen niedrigen Wert
+    # (siehe tests/conftest.py) - bei Default-12 kostet jeder Testnutzer-Login/-Fixture ~170ms,
+    # was bei >100 Aufrufen in der Suite den Großteil der Laufzeit ausmacht.
+    bcrypt_rounds: int = 12
 
     def model_post_init(self, __context: object) -> None:
         if self.secret_key:

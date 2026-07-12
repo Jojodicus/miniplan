@@ -210,6 +210,7 @@ uv sync --extra dev                                                     # Setup 
 .venv/bin/alembic revision --autogenerate -m "..."                      # neue Migration
 .venv/bin/uvicorn app.main:app --reload                                 # Dev-Server
 .venv/bin/pytest                                                        # Tests
+.venv/bin/pytest -n auto                                                 # Tests, parallelisiert (pytest-xdist)
 .venv/bin/python -m app.cli create-pfarrei --name "..."
 .venv/bin/python -m app.cli create-user --email ... --password ... --role admin|pfarrei_verantwortlicher|betrachter [--pfarrei "..."]
 ```

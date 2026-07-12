@@ -1,4 +1,10 @@
+import os
 from collections.abc import Generator
+
+# Muss vor jedem `app.*`-Import gesetzt werden, da `app.config.settings` beim ersten Import
+# einmalig aus den Umgebungsvariablen gebaut wird. Ein niedriger bcrypt-Kostenfaktor spart in der
+# Suite mehrere hundert bcrypt-Hashes à ~170ms (Default-Kostenfaktor 12) ein.
+os.environ.setdefault("MINIPLAN_BCRYPT_ROUNDS", "4")
 
 import pytest
 from fastapi.testclient import TestClient
