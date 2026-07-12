@@ -375,6 +375,47 @@ def test_zuweisungen_tauschen_ueber_zwei_gottesdienste(
     assert gottesdienste_nach_datum[1]["dienstbedarf"][0]["zuweisungen"][0]["mini"]["id"] == mini_a.id
 
 
+def test_zuweisungen_tauschen_innerhalb_desselben_gottesdienstes(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe, db_session
+) -> None:
+    mini_a = Mini(pfarrei_id=pfarrei.id, gruppe_id=gruppe.id, name="Mini A")
+    mini_b = Mini(pfarrei_id=pfarrei.id, gruppe_id=gruppe.id, name="Mini B")
+    db_session.add_all([mini_a, mini_b])
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=7, jahr=2027)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+
+    bedarf_1 = Dienstbedarf(
+        name="Kreuz", anzahl=1, zuweisungen=[DienstbedarfZuweisung(mini_id=mini_a.id)]
+    )
+    bedarf_2 = Dienstbedarf(
+        name="Weihrauch", anzahl=1, zuweisungen=[DienstbedarfZuweisung(mini_id=mini_b.id)]
+    )
+    gottesdienst = Gottesdienst(
+        miniplan_id=miniplan.id,
+        datum=date(2027, 7, 4),
+        uhrzeit=time(10, 0),
+        dienstbedarf=[bedarf_1, bedarf_2],
+    )
+    db_session.add(gottesdienst)
+    db_session.commit()
+    db_session.refresh(miniplan)
+    zuweisung_a = bedarf_1.zuweisungen[0]
+    zuweisung_b = bedarf_2.zuweisungen[0]
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}/zuweisungen/tauschen",
+        json={"zuweisung_id_a": zuweisung_a.id, "zuweisung_id_b": zuweisung_b.id},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    bedarf_nach_name = {b["name"]: b for b in response.json()["gottesdienste"][0]["dienstbedarf"]}
+    assert bedarf_nach_name["Kreuz"]["zuweisungen"][0]["mini"]["id"] == mini_b.id
+    assert bedarf_nach_name["Weihrauch"]["zuweisungen"][0]["mini"]["id"] == mini_a.id
+
+
 def test_zuweisungen_tauschen_lehnt_duplikat_im_ziel_gottesdienst_ab(
     client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe, db_session
 ) -> None:

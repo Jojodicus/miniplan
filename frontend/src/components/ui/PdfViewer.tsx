@@ -137,11 +137,16 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
       </div>
       <div
         ref={scrollRef}
-        // `w-fit` ist entscheidend: ohne explizite Breite füllt ein Block-Element normalerweise
-        // die volle Containerbreite - das gilt für `aspect-ratio` bereits als "definite" Breite,
-        // wodurch das Seitenverhältnis nie zum Tragen käme. Mit `w-fit` bleibt die Breite offen,
-        // sodass sie aus der (durch `h-full` definitiven) Höhe abgeleitet wird.
-        className="mx-auto aspect-[210/297] h-full w-fit max-w-full overflow-auto rounded-lg border border-line bg-paper-dim"
+        // Mobil (gestapeltes, nicht-sticky Layout): Breite bestimmt die Höhe über
+        // `aspect-ratio` (`w-full`) - der Container ist dort durch die schmale Viewport-Breite
+        // begrenzt, nicht durch Höhe. Ab `lg:` (sticky Sidebar mit reichlich Breite, aber
+        // begrenzter Höhe) kehrt sich das um: `w-fit` lässt die Breite offen, sodass sie aus der
+        // (durch `h-full` definitiven) Höhe abgeleitet wird - mit dem Bug ohne diese Umkehrung:
+        // auf schmalen Bildschirmen ergab eine von der vollen Panel-Höhe (80svh) abgeleitete
+        // Breite oft mehr als die verfügbare Viewport-Breite, `max-w-full` kappte sie dann zwar,
+        // aber die Höhe blieb unverändert bei 80svh - der Container wirkte dadurch fast leer
+        // (PDF-Seite oben, darunter viel graue Fläche bis 80svh).
+        className="mx-auto aspect-[210/297] h-auto w-full overflow-auto rounded-lg border border-line bg-paper-dim lg:h-full lg:w-fit lg:max-w-full"
       >
         {/* Kein `items-center` auf dem scrollenden Container: zentrierte Flex-Kinder, die breiter
             als der Container werden (Zoom), lassen sich nur auf einer Seite wegscrollen - die

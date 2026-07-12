@@ -93,7 +93,7 @@ def _get_zuweisung_or_404(miniplan_id: int, zuweisung_id: int, db: Session) -> D
 
 
 def _mini_bereits_im_gottesdienst(
-    db: Session, gottesdienst_id: int, mini_id: int, ausser_zuweisung_id: int
+    db: Session, gottesdienst_id: int, mini_id: int, ausser_zuweisung_ids: set[int]
 ) -> bool:
     return (
         db.query(DienstbedarfZuweisung)
@@ -101,7 +101,7 @@ def _mini_bereits_im_gottesdienst(
         .filter(
             Dienstbedarf.gottesdienst_id == gottesdienst_id,
             DienstbedarfZuweisung.mini_id == mini_id,
-            DienstbedarfZuweisung.id != ausser_zuweisung_id,
+            DienstbedarfZuweisung.id.notin_(ausser_zuweisung_ids),
         )
         .first()
         is not None
@@ -274,12 +274,17 @@ def zuweisungen_tauschen(
 
     gottesdienst_a_id = zuweisung_a.dienstbedarf.gottesdienst_id
     gottesdienst_b_id = zuweisung_b.dienstbedarf.gottesdienst_id
-    if _mini_bereits_im_gottesdienst(db, gottesdienst_a_id, zuweisung_b.mini_id, zuweisung_a.id):
+    # Beide beteiligten Zuweisungen ausschließen, nicht nur die jeweils eigene: gehören beide zum
+    # selben Gottesdienst (Tausch über zwei Dienst-Typen desselben Termins hinweg), wäre sonst die
+    # andere Zuweisung selbst - die ja gerade den gesuchten Mini noch trägt, aber gleich den
+    # anderen bekommt - ein fälschlicher "bereits eingeteilt"-Treffer.
+    ausgeschlossen = {zuweisung_a.id, zuweisung_b.id}
+    if _mini_bereits_im_gottesdienst(db, gottesdienst_a_id, zuweisung_b.mini_id, ausgeschlossen):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Der Mini ist in diesem Gottesdienst bereits eingeteilt",
         )
-    if _mini_bereits_im_gottesdienst(db, gottesdienst_b_id, zuweisung_a.mini_id, zuweisung_b.id):
+    if _mini_bereits_im_gottesdienst(db, gottesdienst_b_id, zuweisung_a.mini_id, ausgeschlossen):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Der Mini ist in diesem Gottesdienst bereits eingeteilt",

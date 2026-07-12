@@ -27,6 +27,17 @@ export function filtertagBlockerErstellen(
   return api.post<FiltertagBlocker>(`/api/pfarreien/${pfarreiId}/filtertag-blocker`, daten)
 }
 
+export function filtertagBlockerBearbeiten(
+  pfarreiId: number,
+  blockerId: number,
+  daten: FiltertagBlockerEingabe,
+): Promise<FiltertagBlocker> {
+  return api.put<FiltertagBlocker>(
+    `/api/pfarreien/${pfarreiId}/filtertag-blocker/${blockerId}`,
+    daten,
+  )
+}
+
 export function filtertagBlockerLoeschen(pfarreiId: number, blockerId: number): Promise<void> {
   return api.delete<void>(`/api/pfarreien/${pfarreiId}/filtertag-blocker/${blockerId}`)
 }

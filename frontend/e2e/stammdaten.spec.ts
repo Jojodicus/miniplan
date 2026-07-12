@@ -85,19 +85,29 @@ test('Nutzer kann Verfügbarkeits-Status anlegen und Zeitfenster hinzufügen', a
   await expect(page.getByText('Azubi', { exact: true })).toBeVisible({ timeout: 15_000 })
 
   // Die Sperrzeiten-Sektion ist standardmäßig eingeklappt und muss erst über den Toggle in der
-  // Zeile des neu angelegten Verfügbarkeits-Status geöffnet werden.
+  // Zeile des neu angelegten Verfügbarkeits-Status geöffnet werden. Das Wochenraster ist die
+  // Hauptansicht (Ziehen zum Anlegen) - für minutengenaue Eingaben bleibt das Text-Formular über
+  // einen zusätzlichen Link erreichbar.
   const azubiZeile = page.getByText('Azubi', { exact: true }).locator('xpath=../..')
   await azubiZeile.getByRole('button', { name: 'Sperrzeiten' }).click()
 
+  await page.getByRole('button', { name: 'Stattdessen per Text-Formular hinzufügen' }).click()
   const zeitfensterForm = page.locator('form').filter({ hasText: 'Zeitfenster hinzufügen' }).last()
   await zeitfensterForm.getByLabel('Wochentag').selectOption('5')
   await zeitfensterForm.getByLabel('Startzeit').fill('09:00')
   await zeitfensterForm.getByLabel('Endzeit').fill('11:00')
   await zeitfensterForm.getByRole('button', { name: 'Zeitfenster hinzufügen' }).click()
-  // Der Wochentag steht als eigene Überschrift (<p>) über der Zeitfenster-Gruppe, nicht als Teil
-  // des Textes selbst - "Samstag" kommt sonst auch als <option> in jedem Wochentag-Select vor.
-  await expect(page.locator('p', { hasText: 'Samstag' })).toBeVisible()
-  await expect(page.getByText('09:00–11:00 Uhr')).toBeVisible()
+  // Das neue Zeitfenster erscheint als Block im Wochenraster (Samstag-Spalte), der Zeitraum steht
+  // im `title`-Attribut (Tooltip) statt als sichtbarer Text.
+  const zeitfensterBlock = page.locator('[title="09:00–11:00 Uhr (bearbeiten)"]')
+  await expect(zeitfensterBlock).toBeVisible({ timeout: 15_000 })
+
+  // Klick auf den Block öffnet das Bearbeiten-Popover mit denselben Zeiten vorausgefüllt (auf den
+  // Popover-Dialog scopen, da das Text-Formular mit gleich beschrifteten Feldern noch offen ist).
+  await zeitfensterBlock.click()
+  const bearbeitenPopover = page.getByRole('dialog').filter({ hasText: 'Sperrzeit · Samstag' })
+  await expect(bearbeitenPopover.getByLabel('Startzeit')).toHaveValue('09:00')
+  await expect(bearbeitenPopover.getByLabel('Endzeit')).toHaveValue('11:00')
 })
 
 test('Nutzer kann Bundesland wählen und Ferienkalender aktualisieren', async ({ page }) => {
@@ -109,8 +119,10 @@ test('Nutzer kann Bundesland wählen und Ferienkalender aktualisieren', async ({
   await page.getByRole('tab', { name: 'Verfügbarkeit', exact: true }).click()
   await page.getByRole('tab', { name: 'Ferien' }).click()
   await expect(page.getByLabel('Bundesland')).toHaveValue('BY')
-  await page.getByRole('button', { name: 'Jetzt aktualisieren' }).click()
-  await expect(page.getByText('Ferienkalender aktualisiert.')).toBeVisible({ timeout: 15000 })
+  await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.getByText('Gespeichert, Ferienkalender aktualisiert.')).toBeVisible({
+    timeout: 15000,
+  })
   await expect(page.getByText(/Schuljahr \d{4}\/\d{4}/).first()).toBeVisible()
 })
 

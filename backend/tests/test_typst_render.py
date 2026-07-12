@@ -183,6 +183,11 @@ def test_markdown_to_typst_nummerierte_liste() -> None:
     assert ergebnis == '+ #"Punkt eins"\n+ #"Punkt zwei"'
 
 
+def test_markdown_to_typst_einzelne_nummerierte_zeile_bleibt_text() -> None:
+    ergebnis = markdown_to_typst("1. 15.03.2026")
+    assert ergebnis == '#"1. "#"15.03.2026"'
+
+
 def test_markdown_to_typst_link() -> None:
     ergebnis = markdown_to_typst("[Anmeldung](https://example.com/anmeldung)")
     assert ergebnis == '#link("https://example.com/anmeldung")[#"Anmeldung"]'

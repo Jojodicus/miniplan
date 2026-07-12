@@ -48,7 +48,11 @@ export function TimeInput({
     function aktualisierePosition() {
       const rect = containerRef.current?.getBoundingClientRect()
       if (!rect) return
-      setPosition({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX })
+      // Der Popover ist `position: fixed` (viewport-relativ) - `getBoundingClientRect` liefert
+      // bereits viewport-relative Koordinaten, `window.scrollY/scrollX` zusätzlich aufzuaddieren
+      // schob den Popover bei gescrollter Seite um den Scroll-Betrag zu weit weg.
+      const links = Math.min(rect.left, window.innerWidth - 256 - 8)
+      setPosition({ top: rect.bottom + 4, left: Math.max(8, links) })
     }
     aktualisierePosition()
     window.addEventListener('scroll', aktualisierePosition, true)

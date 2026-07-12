@@ -85,17 +85,28 @@ def _markdown_block_zu_typst(token: dict[str, Any]) -> list[str]:
     if typ == "blank_line":
         return []
     if typ == "list":
-        # Typst nummeriert `+ `-Einträge automatisch fortlaufend, unabhängig von der im
-        # Markdown-Quelltext getippten Zahl - passend dazu, dass die Toolbar immer "1. " einfügt.
-        praefix = "+" if token.get("attrs", {}).get("ordered") else "-"
-        zeilen: list[str] = []
-        for item in token.get("children", []):
-            item_inhalt = "".join(
+        kinder = token.get("children", [])
+        geordnet = bool(token.get("attrs", {}).get("ordered"))
+        item_inhalte = [
+            "".join(
                 "".join(_markdown_inline_zu_typst(t) for t in block.get("children", []))
                 for block in item.get("children", [])
                 if block.get("type") in ("block_text", "paragraph")
             )
-            zeilen.append(f"{praefix} {item_inhalt}")
+            for item in kinder
+        ]
+        # Eine einzelne "1. ..."-Zeile wird nicht als nummerierte Liste formatiert (nur als
+        # normaler Text mit der getippten Nummer) - sonst wirkt es z. B. bei einem Datum wie
+        # "1. 15.03." als Zeilenanfang ungewollt wie eine Aufzählung. Ab zwei Zeilen ist die
+        # Absicht als Liste eindeutig.
+        if geordnet and len(kinder) < 2:
+            start = token.get("attrs", {}).get("start") or 1
+            zeile = f"#{_typst_str(f'{start}. ')}{item_inhalte[0]}" if item_inhalte else ""
+            return [zeile]
+        # Typst nummeriert `+ `-Einträge automatisch fortlaufend, unabhängig von der im
+        # Markdown-Quelltext getippten Zahl - passend dazu, dass die Toolbar immer "1. " einfügt.
+        praefix = "+" if geordnet else "-"
+        zeilen = [f"{praefix} {inhalt}" for inhalt in item_inhalte]
         return ["\n".join(zeilen)]
     if typ == "heading":
         inhalt = "".join(_markdown_inline_zu_typst(t) for t in token.get("children", []))
@@ -154,7 +165,11 @@ def _minis_zeile(bedarf: VorschauDienstbedarf) -> str:
         return '#text(fill: rgb("#6a6a6a"))[—]'
     eintraege = [_mini_chip(name, offen=False) for name in namen]
     eintraege += [_mini_chip("offen", offen=True) for _ in range(fehlend)]
-    return '#text(fill: rgb("#8a8a8a"))[, ]'.join(eintraege)
+    # Extra horizontaler Abstand nach dem Komma (statt nur des Zeichenabstands) und größerer
+    # Zeilenabstand (`par`) für den Fall, dass die Liste innerhalb der Zelle umbricht - beides
+    # macht lange Namenslisten deutlich besser lesbar.
+    trenner = '#text(fill: rgb("#8a8a8a"))[,]#h(0.4em)'
+    return f'#par(leading: 0.75em)[{trenner.join(eintraege)}]'
 
 
 def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
@@ -165,7 +180,7 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
     titel = f"{pfarrei_name} · {_MONATSNAMEN[plan.monat - 1]} {plan.jahr}"
     zeilen.append("#align(center)[")
     zeilen.append(
-        '  #text(size: 16pt, weight: "bold", tracking: 0.3pt)[Dienstplan]'
+        '  #text(size: 16pt, weight: "bold", tracking: 0.3pt)[Miniplan]'
         f'#h(0.6em)#text(size: 12pt, style: "italic", fill: rgb("#4a4a4a"))[#{_typst_str(titel)}]'
     )
     zeilen.append("]")
@@ -202,8 +217,8 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
             # dadurch unabhängig von der Länge des jeweiligen Dienstnamens auf gleicher Höhe.
             zeilen.append("  #grid(")
             zeilen.append("    columns: (auto, 1fr),")
-            zeilen.append("    column-gutter: 4pt,")
-            zeilen.append("    row-gutter: 0.3em,")
+            zeilen.append("    column-gutter: 10pt,")
+            zeilen.append("    row-gutter: 0.55em,")
             for bedarf in gd.dienstbedarf:
                 # Ein Dienst ohne Minis (anzahl 0, nichts zugewiesen) dient nur als Hinweiszeile
                 # (z. B. "Alle Ministranten") - ohne Doppelpunkt, der sonst ins Leere zeigen würde.
@@ -242,7 +257,10 @@ def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
 
     if plan.ankuendigungen:
         zeilen.append("#v(1.3em)")
-        if not plan.veranstaltungen:
+        # Ein eigener Trenner ist nur nötig, wenn vor dieser Sektion noch nichts gerendert wurde,
+        # das bereits mit einer Linie abschließt (weder Gottesdienste noch Veranstaltungen) - sonst
+        # entstünde eine doppelte Linie.
+        if not plan.veranstaltungen and not plan.gottesdienste:
             zeilen.append('#line(length: 100%, stroke: 0.4pt + rgb("#d6d0c4"))')
             zeilen.append('#v(0.7em)')
         zeilen.append('#text(size: 12pt, weight: "bold")[Ankündigungen]')

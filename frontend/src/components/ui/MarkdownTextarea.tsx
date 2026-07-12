@@ -32,33 +32,48 @@ export function MarkdownTextarea({
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
 
+  // Text wird bewusst per `document.execCommand('insertText', ...)` statt per direktem
+  // React-State-Update eingefügt: Nur so landet die Änderung im nativen Undo-Stack des
+  // Textfelds (der native `input`-Event löst dann ganz normal das `onChange` der Textarea
+  // unten aus) - ein direkter State-Set würde den Undo-Stack der Textarea "unsichtbar"
+  // verändern, sodass Strg+Z/Strg+Y danach nicht mehr funktionieren.
+  function einfuegen(text: string, selectionRange?: (insertStart: number) => [number, number]) {
+    const el = ref.current
+    if (!el) return
+    const start = el.selectionStart
+    el.focus()
+    document.execCommand('insertText', false, text)
+    if (selectionRange) {
+      requestAnimationFrame(() => {
+        el.focus()
+        el.setSelectionRange(...selectionRange(start))
+      })
+    }
+  }
+
   function umschliessen({ vor, nach }: Umschliessung) {
     const el = ref.current
     if (!el) return
     const start = el.selectionStart
     const end = el.selectionEnd
     const ausgewaehlt = value.slice(start, end)
-    const neuerWert = `${value.slice(0, start)}${vor}${ausgewaehlt}${nach}${value.slice(end)}`
-    onChange(neuerWert)
-    requestAnimationFrame(() => {
-      el.focus()
-      el.setSelectionRange(start + vor.length, start + vor.length + ausgewaehlt.length)
-    })
+    einfuegen(`${vor}${ausgewaehlt}${nach}`, (insertStart) => [
+      insertStart + vor.length,
+      insertStart + vor.length + ausgewaehlt.length,
+    ])
   }
 
   function listeEinfuegen(markierung: string) {
     const el = ref.current
     if (!el) return
     const start = el.selectionStart
+    el.setSelectionRange(start, start)
     const zeilenStart = value.lastIndexOf('\n', start - 1) + 1
     const praefix = start === zeilenStart ? '' : '\n'
     const einfuegung = `${praefix}${markierung} `
-    const neuerWert = `${value.slice(0, start)}${einfuegung}${value.slice(start)}`
-    onChange(neuerWert)
-    requestAnimationFrame(() => {
-      el.focus()
-      const position = start + einfuegung.length
-      el.setSelectionRange(position, position)
+    einfuegen(einfuegung, (insertStart) => {
+      const position = insertStart + einfuegung.length
+      return [position, position]
     })
   }
 
@@ -69,13 +84,10 @@ export function MarkdownTextarea({
     const end = el.selectionEnd
     const ausgewaehlt = value.slice(start, end)
     const linktext = ausgewaehlt || 'Linktext'
-    const einfuegung = `[${linktext}](https://)`
-    const neuerWert = `${value.slice(0, start)}${einfuegung}${value.slice(end)}`
-    onChange(neuerWert)
-    requestAnimationFrame(() => {
-      el.focus()
-      el.setSelectionRange(start + 1, start + 1 + linktext.length)
-    })
+    einfuegen(`[${linktext}](https://)`, (insertStart) => [
+      insertStart + 1,
+      insertStart + 1 + linktext.length,
+    ])
   }
 
   return (

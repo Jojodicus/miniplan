@@ -17,8 +17,6 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   CalendarPlus,
-  ChevronDown,
-  ChevronRight,
   Copy,
   Download,
   Eraser,
@@ -32,7 +30,15 @@ import {
   Wand2,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type SubmitEvent,
+} from 'react'
 import { useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import type { GruppenAnforderung } from '../api/dienstTypen'
@@ -188,6 +194,14 @@ function bedarfFreitext(): WorkingBedarf {
 }
 
 function zuEingabe(bedarf: WorkingBedarf, autoMiniIds: number[]): DienstbedarfEingabe {
+  // Automatische Zuweisungen werden unverändert vom Server-Stand durchgereicht (siehe Kommentar
+  // an `auto_mini_ids` im Schema) - senkt der Nutzer aber die `Anzahl` unter die Zahl bereits
+  // automatisch zugewiesener Minis (z. B. um einen zuvor gefüllten Dienst zu einer reinen
+  // Hinweiszeile mit Anzahl 0 zu machen), lehnt das Backend sonst jeden weiteren Autosave dieses
+  // Gottesdienstes mit 422 ab - inklusive aller anderen Dienste desselben Gottesdienstes, die im
+  // selben PUT mitgeschickt werden. Deshalb hier auf die noch freie Kapazität kürzen, statt die
+  // überzähligen Autos unverändert mitzuschicken.
+  const kapazitaet = Math.max(0, bedarf.anzahl - bedarf.fixierteMiniIds.length)
   return {
     dienst_typ_id: bedarf.dienst_typ_id,
     name: bedarf.dienst_typ_id === null ? bedarf.name : null,
@@ -195,7 +209,7 @@ function zuEingabe(bedarf: WorkingBedarf, autoMiniIds: number[]): DienstbedarfEi
     erforderliche_filtertags: bedarf.erforderliche_filtertags,
     gruppen_anforderungen: bedarf.gruppen_anforderungen,
     fixierte_mini_ids: bedarf.fixierteMiniIds,
-    auto_mini_ids: autoMiniIds,
+    auto_mini_ids: autoMiniIds.slice(0, kapazitaet),
     zeige_label: bedarf.zeige_label,
   }
 }
@@ -443,8 +457,6 @@ function DienstbedarfBelegung({
   gottesdienstBelegteMiniIds,
   dienstbedarfId,
   readonly,
-  collapsed,
-  onToggleCollapsed,
   onChange,
   onClearAuto,
   onPinAuto,
@@ -459,8 +471,6 @@ function DienstbedarfBelegung({
   gottesdienstBelegteMiniIds: Set<number>
   dienstbedarfId: number | null
   readonly: boolean
-  collapsed: boolean
-  onToggleCollapsed: () => void
   onChange: (patch: Partial<WorkingBedarf>) => void
   onClearAuto: () => void
   onPinAuto: (zuweisungId: number) => void
@@ -490,17 +500,7 @@ function DienstbedarfBelegung({
   return (
     <div data-testid="dienst-belegung" className="rounded-lg border border-line p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          aria-expanded={!collapsed}
-          className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2 text-left"
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint" />
-          ) : (
-            <ChevronDown className="h-4 w-4 shrink-0 text-ink-faint" />
-          )}
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2">
           <span className="text-sm font-medium text-ink">{anzeigeName}</span>
           <span className="text-xs text-ink-faint">
             {belegteMiniIds.size}/{bedarf.anzahl}
@@ -508,7 +508,7 @@ function DienstbedarfBelegung({
           {einschraenkungen.length > 0 && (
             <span className="text-xs text-ink-faint">· {einschraenkungen.join(', ')}</span>
           )}
-        </button>
+        </div>
         {!readonly && autoZuweisungen.length > 0 && (
           <button
             type="button"
@@ -520,9 +520,7 @@ function DienstbedarfBelegung({
           </button>
         )}
       </div>
-      {!collapsed && (
-        <>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
             {bedarf.fixierteMiniIds.map((miniId) => {
               const mini = minis.find((m) => m.id === miniId)
               if (!mini) return null
@@ -586,8 +584,6 @@ function DienstbedarfBelegung({
               />
             </div>
           )}
-        </>
-      )}
     </div>
   )
 }
@@ -1027,9 +1023,6 @@ function GottesdienstKarte({
   )
   const [status, setStatus] = useState<SpeicherStatus>('gespeichert')
   const [editorOffen, setEditorOffen] = useState(oeffneEditor)
-  // Klapp-Zustand je Dienst in der stets sichtbaren Belegungs-Liste (Default: ausgeklappt) -
-  // reduziert Unübersichtlichkeit bei vielen Diensten, ohne Informationen dauerhaft zu verstecken.
-  const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>({})
   const { showToast } = useToast()
   const istErstesRendern = useRef(true)
 
@@ -1060,10 +1053,6 @@ function GottesdienstKarte({
     })
     return ids
   }, [bedarfListe, serverZuweisungenMap])
-
-  function toggleCollapsed(schluessel: string) {
-    setCollapsedMap((karte) => ({ ...karte, [schluessel]: !karte[schluessel] }))
-  }
 
   useEffect(() => {
     onDraftChange(gottesdienst.id, {
@@ -1246,8 +1235,6 @@ function GottesdienstKarte({
               gottesdienstBelegteMiniIds={gottesdienstBelegteMiniIds}
               dienstbedarfId={dienstbedarfIdMap[bedarf.schluessel] ?? bedarf.dienstbedarfId}
               readonly={readonly}
-              collapsed={collapsedMap[bedarf.schluessel] ?? false}
-              onToggleCollapsed={() => toggleCollapsed(bedarf.schluessel)}
               onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
               onClearAuto={() => {
                 const id = dienstbedarfIdMap[bedarf.schluessel] ?? bedarf.dienstbedarfId
@@ -1730,10 +1717,24 @@ export function MiniplanEditorPage() {
 
   // Von "Füllen", "Leeren" und den Drag-Aktionen (Tauschen/Fixieren) gemeinsam genutzt: alle ändern
   // Zuweisungen serverseitig, ohne dass die betroffenen Karten das selbst bemerken.
+  // Der Remount über den Revisions-Zähler im Karten-`key` entfernt dabei kurzzeitig auch das
+  // fokussierte Element (z.B. den Pin-Button) aus dem DOM - der Browser springt dann von selbst an
+  // den Seitenanfang, weil der Fokus auf <body> zurückfällt. Scroll-Position daher merken und nach
+  // dem Remount (vor dem nächsten Paint) wiederherstellen.
+  const scrollRestoreRef = useRef<number | null>(null)
+
   function refreshNachMutation(aktualisiert: Miniplan) {
+    scrollRestoreRef.current = window.scrollY
     setMiniplan(aktualisiert)
     setZuteilungsRevision((revision) => revision + 1)
   }
+
+  useLayoutEffect(() => {
+    if (scrollRestoreRef.current !== null) {
+      window.scrollTo(window.scrollX, scrollRestoreRef.current)
+      scrollRestoreRef.current = null
+    }
+  }, [zuteilungsRevision])
 
   async function handleFuellen() {
     setFuelltGerade(true)
@@ -1926,11 +1927,12 @@ export function MiniplanEditorPage() {
               ref={fuellenButtonRef}
               variant="secondary"
               size="sm"
+              title={fuelltGerade ? 'Befüllt…' : 'Füllen'}
               disabled={fuelltGerade || miniplan.gottesdienste.length === 0}
               onClick={handleFuellen}
             >
               <Wand2 className="h-4 w-4" />
-              {fuelltGerade ? 'Befüllt…' : 'Füllen'}
+              <span className="hidden sm:inline">{fuelltGerade ? 'Befüllt…' : 'Füllen'}</span>
             </Button>
           )}
           {!readonly && (
@@ -1942,16 +1944,16 @@ export function MiniplanEditorPage() {
             </IconButton>
           )}
           {!readonly && hatAutoZuweisungen && (
-            <Button variant="secondary" size="sm" onClick={() => handleClearAuto()}>
+            <Button variant="secondary" size="sm" title="Auto leeren" onClick={() => handleClearAuto()}>
               <Eraser className="h-4 w-4" />
-              Auto leeren
+              <span className="hidden sm:inline">Auto leeren</span>
             </Button>
           )}
           {miniplan.status === 'abgeschlossen' ? (
             <>
-              <Button variant="secondary" size="sm" onClick={handleDownload}>
+              <Button variant="secondary" size="sm" title="PDF herunterladen" onClick={handleDownload}>
                 <Download className="h-4 w-4" />
-                PDF herunterladen
+                <span className="hidden sm:inline">PDF herunterladen</span>
               </Button>
               <Button
                 variant="secondary"

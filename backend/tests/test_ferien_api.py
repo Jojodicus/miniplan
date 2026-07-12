@@ -108,3 +108,66 @@ def test_ferien_liste_ohne_verantwortlichen_verweigert(
     headers = auth_headers(client, "betrachter@example.com", "geheim123")
     response = client.get(f"/api/pfarreien/{pfarrei.id}/ferien", headers=headers)
     assert response.status_code == 403
+
+
+def test_ferien_liste_mit_jahr_synct_fehlendes_jahr_automatisch(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aufrufe = []
+
+    def fake_sync_falls_fehlend(pfarrei_arg, db, jahre):
+        aufrufe.append(jahre)
+        return []
+
+    monkeypatch.setattr(
+        "app.api.pfarreien.sync_ferien_falls_fehlend", fake_sync_falls_fehlend
+    )
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.get(
+        f"/api/pfarreien/{pfarrei.id}/ferien?jahr=2030", headers=headers
+    )
+    assert response.status_code == 200
+    assert aufrufe == [{2030}]
+
+
+def test_ferien_liste_ohne_jahr_synct_nicht(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_sync_falls_fehlend(pfarrei_arg, db, jahre):
+        raise AssertionError("sollte ohne ?jahr nicht aufgerufen werden")
+
+    monkeypatch.setattr(
+        "app.api.pfarreien.sync_ferien_falls_fehlend", fake_sync_falls_fehlend
+    )
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.get(f"/api/pfarreien/{pfarrei.id}/ferien", headers=headers)
+    assert response.status_code == 200
+
+
+def test_ferien_liste_mit_jahr_ignoriert_sync_fehler(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_sync_falls_fehlend(pfarrei_arg, db, jahre):
+        raise ferien_sync.FerienSyncFehler("nicht erreichbar")
+
+    monkeypatch.setattr(
+        "app.api.pfarreien.sync_ferien_falls_fehlend", fake_sync_falls_fehlend
+    )
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.get(
+        f"/api/pfarreien/{pfarrei.id}/ferien?jahr=2030", headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json() == []

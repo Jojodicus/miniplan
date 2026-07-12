@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -9,7 +9,7 @@ from app.models.nutzer import Nutzer, PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.schemas.ferienzeitraum import FerienzeitraumOut
 from app.schemas.pfarrei import PfarreiBundeslandUpdate, PfarreiOut
-from app.services.ferien_sync import FerienSyncFehler, sync_ferien
+from app.services.ferien_sync import FerienSyncFehler, sync_ferien, sync_ferien_falls_fehlend
 from app.services.pfarrei_bild import (
     ERLAUBTE_TYPEN,
     MAX_BYTES,
@@ -130,10 +130,20 @@ def bundesland_setzen(
 @router.get("/{pfarrei_id}/ferien", response_model=list[FerienzeitraumOut])
 def ferien_liste(
     pfarrei_id: int,
+    jahr: int | None = Query(default=None),
     db: Session = Depends(get_db),
-    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
 ) -> list[Ferienzeitraum]:
+    # `jahr` ist optional und stößt best-effort einen Sync für genau dieses (noch nicht
+    # gespeicherte) Jahr an - z.B. wenn der Datums-Picker im Frontend einen neuen Monat anzeigt.
+    # Schlägt die externe Quelle fehl, liefert der Endpunkt trotzdem den bisherigen Bestand statt
+    # eines Fehlers, damit ein reines Kalender-Öffnen nie fehlschlägt.
+    if jahr is not None:
+        try:
+            sync_ferien_falls_fehlend(pfarrei, db, {jahr})
+        except FerienSyncFehler:
+            pass
     return (
         db.query(Ferienzeitraum)
         .filter(Ferienzeitraum.pfarrei_id == pfarrei_id)

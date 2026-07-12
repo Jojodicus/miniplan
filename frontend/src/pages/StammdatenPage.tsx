@@ -34,6 +34,7 @@ import {
 } from '../api/feiertage'
 import { ferienAktualisieren, ferienListe, type Ferienzeitraum } from '../api/ferien'
 import {
+  filtertagBlockerBearbeiten,
   filtertagBlockerErstellen,
   filtertagBlockerListe,
   filtertagBlockerLoeschen,
@@ -68,7 +69,6 @@ import {
   pfarreiDetail,
   BUNDESLAENDER,
   type Bundesland,
-  type Pfarrei as PfarreiInfo,
 } from '../api/pfarreien'
 import { AppShell } from '../components/layout/AppShell'
 import { Alert } from '../components/ui/Alert'
@@ -876,13 +876,13 @@ function DienstTypenSection({
               </CheckboxChip>
             </div>
           </div>
-          <div>
-            <Label
-              htmlFor="dienst-typ-anzahl"
-              hint="Minis pro Termin"
-            >
+          <div className="flex items-center gap-1.5">
+            {/* Bewusst kein `Label` hier: das trägt für die übliche Stapelung (Label über Feld) ein
+                `mb-1.5`, das in dieser einzeiligen Anordnung Label und Feld vertikal gegeneinander
+                verschieben würde. */}
+            <label htmlFor="dienst-typ-anzahl" className="shrink-0 text-sm font-medium text-ink-soft">
               Übliche Besetzung
-            </Label>
+            </label>
             <Input
               id="dienst-typ-anzahl"
               type="number"
@@ -890,8 +890,9 @@ function DienstTypenSection({
               value={standardAnzahl}
               onChange={(e) => setStandardAnzahl(Number(e.target.value))}
               required
-              className="!w-24 text-center"
+              className="!w-16"
             />
+            <span className="text-xs text-ink-faint">Minis pro Termin</span>
           </div>
           <GruppenAnforderungenEditor
             gruppen={gruppen}
@@ -912,20 +913,217 @@ function DienstTypenSection({
 
 const WOCHENTAGE = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag']
 
-function FiltertagBlockerZeile({
+const STUNDEN_RASTER = Array.from({ length: 24 }, (_, i) => i)
+const SPERRZEIT_ZEILENHOEHE = 16
+
+function zeitZuMinuten(zeit: string): number {
+  const [stunde, minute] = zeit.split(':').map(Number)
+  return stunde * 60 + minute
+}
+
+// Wochenraster (7 Tage × 24 Stunden) statt einer reinen Liste: Sperrzeiten lassen sich per Ziehen
+// direkt anlegen (auf volle Stunden geklippt) und per Klick auf ein bestehendes Zeitfenster
+// bearbeiten - das `NeuerBlockerForm` bleibt als Text-Alternative für minutengenaue Eingaben
+// erreichbar, ersetzt aber nicht mehr die Hauptansicht.
+function WochenSperrzeiten({
+  filtertagId,
   blocker,
+  onCreate,
+  onUpdate,
   onDelete,
 }: {
-  blocker: FiltertagBlocker
-  onDelete: () => void
+  filtertagId: number
+  blocker: FiltertagBlocker[]
+  onCreate: (daten: FiltertagBlockerEingabe) => void
+  onUpdate: (blockerId: number, daten: FiltertagBlockerEingabe) => void
+  onDelete: (blockerId: number) => void
 }) {
+  const [drag, setDrag] = useState<{
+    wochentag: number
+    startStunde: number
+    endStunde: number
+  } | null>(null)
+  const [bearbeiten, setBearbeiten] = useState<FiltertagBlocker | null>(null)
+  const [editStart, setEditStart] = useState('')
+  const [editEnde, setEditEnde] = useState('')
+  const editAnchorRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef(drag)
+  dragRef.current = drag
+
+  useEffect(() => {
+    if (!drag) return
+    function beenden() {
+      const aktuell = dragRef.current
+      if (!aktuell) return
+      const von = Math.min(aktuell.startStunde, aktuell.endStunde)
+      const bis = Math.max(aktuell.startStunde, aktuell.endStunde) + 1
+      onCreate({
+        filtertag_id: filtertagId,
+        wochentag: aktuell.wochentag,
+        start_zeit: `${String(von).padStart(2, '0')}:00:00`,
+        end_zeit: `${String(bis).padStart(2, '0')}:00:00`,
+      })
+      setDrag(null)
+    }
+    window.addEventListener('mouseup', beenden)
+    return () => window.removeEventListener('mouseup', beenden)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drag !== null])
+
+  function oeffnenBearbeiten(b: FiltertagBlocker, anker: HTMLDivElement) {
+    editAnchorRef.current = anker
+    setBearbeiten(b)
+    setEditStart(b.start_zeit.slice(0, 5))
+    setEditEnde(b.end_zeit.slice(0, 5))
+  }
+
+  function speichernBearbeiten(event: SubmitEvent) {
+    event.preventDefault()
+    if (!bearbeiten) return
+    onUpdate(bearbeiten.id, {
+      filtertag_id: filtertagId,
+      wochentag: bearbeiten.wochentag,
+      start_zeit: `${editStart}:00`,
+      end_zeit: `${editEnde}:00`,
+    })
+    setBearbeiten(null)
+  }
+
   return (
-    <Row>
-      <span className="text-sm text-ink">
-        {blocker.start_zeit.slice(0, 5)}–{blocker.end_zeit.slice(0, 5)} Uhr
-      </span>
-      <InlineConfirmButton onConfirm={onDelete} size="sm" />
-    </Row>
+    <div className="px-5 py-3">
+      <p className="mb-2 text-xs text-ink-faint">
+        Ziehen für eine neue Sperrzeit (auf volle Stunden geklippt) · Klick auf ein bestehendes
+        Zeitfenster zum Bearbeiten.
+      </p>
+      <div className="flex select-none">
+        <div className="mr-1 w-8 shrink-0">
+          {STUNDEN_RASTER.filter((s) => s % 3 === 0).map((s) => (
+            <div
+              key={s}
+              style={{ height: SPERRZEIT_ZEILENHOEHE * 3 }}
+              className="text-right text-[10px] leading-none text-ink-faint"
+            >
+              {String(s).padStart(2, '0')}
+            </div>
+          ))}
+        </div>
+        <div className="grid flex-1 grid-cols-7 gap-px overflow-hidden rounded-md bg-line">
+          {WOCHENTAGE.map((label, wochentag) => {
+            const tagesBlocker = blocker.filter((b) => b.wochentag === wochentag)
+            return (
+              <div key={label} className="bg-paper">
+                <p className="py-1 text-center text-[10px] font-medium text-ink-faint">
+                  {label.slice(0, 2)}
+                </p>
+                <div
+                  className="relative"
+                  style={{ height: SPERRZEIT_ZEILENHOEHE * 24 }}
+                  onMouseLeave={() => {
+                    if (drag?.wochentag === wochentag) setDrag(null)
+                  }}
+                >
+                  {STUNDEN_RASTER.map((stunde) => {
+                    const inDrag =
+                      drag &&
+                      drag.wochentag === wochentag &&
+                      stunde >= Math.min(drag.startStunde, drag.endStunde) &&
+                      stunde <= Math.max(drag.startStunde, drag.endStunde)
+                    return (
+                      <div
+                        key={stunde}
+                        onMouseDown={() => setDrag({ wochentag, startStunde: stunde, endStunde: stunde })}
+                        onMouseEnter={() =>
+                          setDrag((aktuell) =>
+                            aktuell && aktuell.wochentag === wochentag
+                              ? { ...aktuell, endStunde: stunde }
+                              : aktuell,
+                          )
+                        }
+                        style={{ height: SPERRZEIT_ZEILENHOEHE }}
+                        className={`cursor-pointer border-t border-line/50 first:border-t-0 ${
+                          inDrag ? 'bg-pine/25' : 'hover:bg-pine-tint'
+                        }`}
+                      />
+                    )
+                  })}
+                  {tagesBlocker.map((b) => {
+                    const startMin = zeitZuMinuten(b.start_zeit)
+                    const endMin = zeitZuMinuten(b.end_zeit)
+                    return (
+                      <div
+                        key={b.id}
+                        role="button"
+                        tabIndex={0}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => oeffnenBearbeiten(b, e.currentTarget)}
+                        title={`${b.start_zeit.slice(0, 5)}–${b.end_zeit.slice(0, 5)} Uhr (bearbeiten)`}
+                        style={{
+                          top: (startMin / 60) * SPERRZEIT_ZEILENHOEHE,
+                          height: Math.max(((endMin - startMin) / 60) * SPERRZEIT_ZEILENHOEHE, 4),
+                        }}
+                        className="absolute inset-x-0.5 cursor-pointer rounded-sm border border-wine/50 bg-wine-tint/80 transition-colors hover:bg-wine-tint"
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <Popover
+        open={bearbeiten !== null}
+        onClose={() => setBearbeiten(null)}
+        anchorRef={editAnchorRef}
+        title={bearbeiten ? `Sperrzeit · ${WOCHENTAGE[bearbeiten.wochentag]}` : undefined}
+        width={260}
+      >
+        {bearbeiten && (
+          <form onSubmit={speichernBearbeiten} className="flex flex-col gap-3">
+            <div className="flex gap-2">
+              <div>
+                <Label htmlFor="sperrzeit-edit-start">Startzeit</Label>
+                <Input
+                  id="sperrzeit-edit-start"
+                  type="time"
+                  value={editStart}
+                  onChange={(e) => setEditStart(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="sperrzeit-edit-ende">Endzeit</Label>
+                <Input
+                  id="sperrzeit-edit-ende"
+                  type="time"
+                  value={editEnde}
+                  onChange={(e) => setEditEnde(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <div className="flex justify-between gap-2">
+              <InlineConfirmButton
+                label="Löschen"
+                size="sm"
+                onConfirm={() => {
+                  onDelete(bearbeiten.id)
+                  setBearbeiten(null)
+                }}
+              />
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" size="sm" onClick={() => setBearbeiten(null)}>
+                  Abbrechen
+                </Button>
+                <Button type="submit" size="sm">
+                  Speichern
+                </Button>
+              </div>
+            </div>
+          </form>
+        )}
+      </Popover>
+    </div>
   )
 }
 
@@ -1063,6 +1261,7 @@ function FiltertagsSection({
 }) {
   const [blocker, setBlocker] = useState<FiltertagBlocker[]>([])
   const [offeneSperrzeiten, setOffeneSperrzeiten] = useState<Set<number>>(new Set())
+  const [offenesTextForm, setOffenesTextForm] = useState<Set<number>>(new Set())
   const [neuOffen, setNeuOffen] = useState(false)
   const [bearbeitenId, setBearbeitenId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -1122,6 +1321,17 @@ function FiltertagsSection({
     }
   }
 
+  async function handleBlockerUpdate(blockerId: number, daten: FiltertagBlockerEingabe) {
+    setError(null)
+    try {
+      await filtertagBlockerBearbeiten(pfarreiId, blockerId, daten)
+      showToast('Zeitfenster gespeichert')
+      reloadBlocker()
+    } catch (err) {
+      setError(fehlerText(err, 'Fehler beim Speichern des Zeitfensters'))
+    }
+  }
+
   async function handleBlockerDelete(blockerId: number) {
     setError(null)
     try {
@@ -1135,6 +1345,18 @@ function FiltertagsSection({
 
   function toggleSperrzeiten(filtertagId: number) {
     setOffeneSperrzeiten((offen) => {
+      const neu = new Set(offen)
+      if (neu.has(filtertagId)) {
+        neu.delete(filtertagId)
+      } else {
+        neu.add(filtertagId)
+      }
+      return neu
+    })
+  }
+
+  function toggleTextForm(filtertagId: number) {
+    setOffenesTextForm((offen) => {
       const neu = new Set(offen)
       if (neu.has(filtertagId)) {
         neu.delete(filtertagId)
@@ -1224,26 +1446,28 @@ function FiltertagsSection({
                 </Row>
               )}
               {offeneSperrzeiten.has(filtertag.id) && (
-                <div className="bg-pine-tint/20 pl-4">
-                  {WOCHENTAGE.map((wochentagName, wochentag) => {
-                    const eintraege = blocker.filter(
-                      (b) => b.filtertag_id === filtertag.id && b.wochentag === wochentag,
-                    )
-                    if (eintraege.length === 0) return null
-                    return (
-                      <div key={wochentag}>
-                        <p className="pt-2 text-xs font-medium text-ink-faint">{wochentagName}</p>
-                        {eintraege.map((b) => (
-                          <FiltertagBlockerZeile
-                            key={b.id}
-                            blocker={b}
-                            onDelete={() => handleBlockerDelete(b.id)}
-                          />
-                        ))}
-                      </div>
-                    )
-                  })}
-                  <NeuerBlockerForm filtertagId={filtertag.id} onCreate={handleBlockerCreate} />
+                <div className="bg-pine-tint/20">
+                  <WochenSperrzeiten
+                    filtertagId={filtertag.id}
+                    blocker={blocker.filter((b) => b.filtertag_id === filtertag.id)}
+                    onCreate={handleBlockerCreate}
+                    onUpdate={handleBlockerUpdate}
+                    onDelete={handleBlockerDelete}
+                  />
+                  <div className="border-t border-line/60 px-5 py-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleTextForm(filtertag.id)}
+                      className="text-xs text-ink-faint underline decoration-dotted underline-offset-2 hover:text-pine-dark"
+                    >
+                      {offenesTextForm.has(filtertag.id)
+                        ? 'Text-Formular ausblenden'
+                        : 'Stattdessen per Text-Formular hinzufügen'}
+                    </button>
+                  </div>
+                  {offenesTextForm.has(filtertag.id) && (
+                    <NeuerBlockerForm filtertagId={filtertag.id} onCreate={handleBlockerCreate} />
+                  )}
                 </div>
               )}
             </div>
@@ -1274,14 +1498,15 @@ const BUNDESLAND_NAMEN: Record<Bundesland, string> = {
 }
 
 function FerienSection({ pfarreiId }: { pfarreiId: number }) {
-  const [pfarreiInfo, setPfarreiInfo] = useState<PfarreiInfo | null>(null)
+  const [auswahl, setAuswahl] = useState<Bundesland>('BY')
   const [ferien, setFerien] = useState<Ferienzeitraum[]>([])
   const [geladen, setGeladen] = useState(false)
-  const [aktualisiert, setAktualisiert] = useState(false)
+  const [speichertGerade, setSpeichertGerade] = useState(false)
+  const [gespeichert, setGespeichert] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const reload = useCallback(() => {
-    pfarreiDetail(pfarreiId).then(setPfarreiInfo)
+    pfarreiDetail(pfarreiId).then((info) => setAuswahl(info.bundesland))
     ferienListe(pfarreiId).then((liste) => {
       setFerien(liste)
       setGeladen(true)
@@ -1292,30 +1517,23 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
     reload()
   }, [reload])
 
-  async function handleBundeslandChange(bundesland: Bundesland) {
+  async function handleSpeichern() {
     setError(null)
-    setAktualisiert(false)
+    setGespeichert(false)
+    setSpeichertGerade(true)
     try {
-      const aktualisiertePfarrei = await bundeslandSetzen(pfarreiId, bundesland)
-      setPfarreiInfo(aktualisiertePfarrei)
-      // Das Setzen des Bundeslands stößt serverseitig direkt einen Ferien-Sync an - die Liste
-      // hier muss daher neu geladen werden, um die neuen Daten anzuzeigen.
-      const neueFerien = await ferienListe(pfarreiId)
-      setFerien(neueFerien)
-    } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Ändern des Bundeslands'))
-    }
-  }
-
-  async function handleAktualisieren() {
-    setError(null)
-    setAktualisiert(false)
-    try {
+      // Setzt das Bundesland der gesamten Pfarrei (gilt für alle Ministranten/Dienstpläne) und
+      // stößt serverseitig bereits einen Ferien-Sync an - explizit erneut abrufen statt nur der
+      // Server-Antwort zu vertrauen, damit auch bei einem Ferien-Sync-Fehler klares Feedback kommt
+      // (statt eines still veralteten Kalenders) und die Liste hier sicher aktuell ist.
+      await bundeslandSetzen(pfarreiId, auswahl)
       const neueFerien = await ferienAktualisieren(pfarreiId)
       setFerien(neueFerien)
-      setAktualisiert(true)
+      setGespeichert(true)
     } catch (err) {
-      setError(fehlerText(err, 'Ferienkalender konnte nicht aktualisiert werden'))
+      setError(fehlerText(err, 'Fehler beim Speichern des Bundeslands'))
+    } finally {
+      setSpeichertGerade(false)
     }
   }
 
@@ -1332,11 +1550,16 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
       )}
       <div className="flex flex-wrap items-end gap-4 border-b border-line p-5">
         <div>
-          <Label htmlFor="ferien-bundesland">Bundesland</Label>
+          <Label htmlFor="ferien-bundesland" hint="gilt für die ganze Pfarrei">
+            Bundesland
+          </Label>
           <Select
             id="ferien-bundesland"
-            value={pfarreiInfo?.bundesland ?? 'BY'}
-            onChange={(e) => handleBundeslandChange(e.target.value as Bundesland)}
+            value={auswahl}
+            onChange={(e) => {
+              setAuswahl(e.target.value as Bundesland)
+              setGespeichert(false)
+            }}
           >
             {BUNDESLAENDER.map((code) => (
               <option key={code} value={code}>
@@ -1345,11 +1568,13 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
             ))}
           </Select>
         </div>
-        <Button type="button" onClick={handleAktualisieren}>
+        <Button type="button" onClick={handleSpeichern} disabled={speichertGerade}>
           <RefreshCw className="h-4 w-4" />
-          Jetzt aktualisieren
+          {speichertGerade ? 'Speichert…' : 'Speichern'}
         </Button>
-        {aktualisiert && <span className="text-sm text-ink-soft">Ferienkalender aktualisiert.</span>}
+        {gespeichert && (
+          <span className="text-sm text-ink-soft">Gespeichert, Ferienkalender aktualisiert.</span>
+        )}
       </div>
       {!geladen ? (
         <ListSkeleton rows={3} />

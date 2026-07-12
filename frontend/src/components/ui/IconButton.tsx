@@ -15,7 +15,9 @@ export const IconButton = forwardRef<
     ref={ref}
     aria-label={label}
     title={label}
-    className={`inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors ${tones[tone]} ${className}`}
+    // Größerer Tap-Ziel-Bereich auf Mobilgeräten (h-10/w-10 ≈ 40px statt 32px) - auf Touch ist
+    // Präzision knapper als am Desktop, wo die kompaktere Größe erhalten bleibt.
+    className={`inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors sm:h-8 sm:w-8 ${tones[tone]} ${className}`}
     {...props}
   >
     {children}

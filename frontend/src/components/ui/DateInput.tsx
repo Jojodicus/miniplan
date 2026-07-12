@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { feiertageListe, type Feiertag } from '../../api/feiertage'
+import { ferienListe, type Ferienzeitraum } from '../../api/ferien'
 import { formatDatum, MONATE } from '../../lib/datum'
 import { IconButton } from './IconButton'
 
@@ -55,6 +56,7 @@ export function DateInput({
 }) {
   const angezeigtesJahr = value ? Number(value.slice(0, 4)) : jahr
   const [feiertage, setFeiertage] = useState<Feiertag[]>([])
+  const [ferien, setFerien] = useState<Ferienzeitraum[]>([])
   const [offen, setOffen] = useState(false)
   const [ansichtJahr, setAnsichtJahr] = useState(angezeigtesJahr)
   const [ansichtMonat, setAnsichtMonat] = useState(
@@ -69,10 +71,20 @@ export function DateInput({
     feiertageListe(pfarreiId, ansichtJahr).then((liste) => {
       if (!abgebrochen) setFeiertage(liste)
     })
+    // `jahr` löst serverseitig einen Sync an, falls dieses Jahr noch nicht gecached ist - Ferien
+    // werden dadurch automatisch nachgeladen, sobald ein neuer Kalendermonat angezeigt wird, ohne
+    // dass die Pfarrei-Verantwortlichen manuell "Aktualisieren" klicken müssen.
+    ferienListe(pfarreiId, ansichtJahr).then((liste) => {
+      if (!abgebrochen) setFerien(liste)
+    })
     return () => {
       abgebrochen = true
     }
   }, [pfarreiId, ansichtJahr])
+
+  function istFerienTag(iso: string): Ferienzeitraum | undefined {
+    return ferien.find((f) => f.start_datum <= iso && iso <= f.end_datum)
+  }
 
   useEffect(() => {
     if (!offen) return
@@ -80,7 +92,12 @@ export function DateInput({
     function aktualisierePosition() {
       const rect = containerRef.current?.getBoundingClientRect()
       if (!rect) return
-      setPosition({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX })
+      // Der Popover ist `position: fixed` (viewport-relativ, siehe unten) - `getBoundingClientRect`
+      // liefert bereits viewport-relative Koordinaten. `window.scrollY/scrollX` zusätzlich
+      // aufzuaddieren war ein Bug: dadurch wanderte der Popover bei gescrollter Seite um genau den
+      // Scroll-Betrag zu weit nach unten/rechts, oft aus dem sichtbaren Bereich heraus.
+      const links = Math.min(rect.left, window.innerWidth - 288 - 8)
+      setPosition({ top: rect.bottom + 4, left: Math.max(8, links) })
     }
     aktualisierePosition()
     window.addEventListener('scroll', aktualisierePosition, true)
@@ -113,6 +130,7 @@ export function DateInput({
   }, [offen])
 
   const feiertag = value ? feiertage.find((f) => f.datum === value) : undefined
+  const ferienzeit = value ? istFerienTag(value) : undefined
   const wochentagIndex = value ? new Date(`${value}T00:00:00`).getDay() : null
   const istSonntag = wochentagIndex === 0
   const wochentagName = wochentagIndex !== null ? WOCHENTAGE_LANG[wochentagIndex] : null
@@ -167,11 +185,13 @@ export function DateInput({
         } ${
           !error && feiertag
             ? 'border-gold/60 ring-1 ring-gold/20'
-            : !error && istSonntag
-              ? 'border-wine/40'
-              : !error
-                ? 'border-line'
-                : ''
+            : !error && ferienzeit
+              ? 'border-pine/50 ring-1 ring-pine/15'
+              : !error && istSonntag
+                ? 'border-wine/40'
+                : !error
+                  ? 'border-line'
+                  : ''
         } ${value ? 'text-ink' : 'text-ink-faint'}`}
       >
         {value ? formatDatum(value) : 'Datum wählen'}
@@ -179,11 +199,21 @@ export function DateInput({
       {value && wochentagName && !error && (
         <p
           className={`mt-1 text-xs ${
-            feiertag ? 'text-gold-dark' : istSonntag ? 'text-wine' : 'text-ink-faint'
+            feiertag
+              ? 'text-gold-dark'
+              : ferienzeit
+                ? 'text-pine'
+                : istSonntag
+                  ? 'text-wine'
+                  : 'text-ink-faint'
           }`}
-          title={feiertag?.name}
+          title={feiertag?.name ?? ferienzeit?.name}
         >
-          {feiertag ? `${wochentagName} · Feiertag: ${feiertag.name}` : wochentagName}
+          {feiertag
+            ? `${wochentagName} · Feiertag: ${feiertag.name}`
+            : ferienzeit
+              ? `${wochentagName} · Ferien: ${ferienzeit.name}`
+              : wochentagName}
         </p>
       )}
       {error && <p className="mt-1 text-xs text-wine">{error}</p>}
@@ -219,6 +249,7 @@ export function DateInput({
                 const iso = formatIso(ansichtJahr, ansichtMonat, tag)
                 const istAusgewaehlt = iso === value
                 const tagFeiertag = feiertage.find((f) => f.datum === iso)
+                const tagFerien = istFerienTag(iso)
                 const tagIstSonntag = new Date(ansichtJahr, ansichtMonat, tag).getDay() === 0
                 const istHeute = iso === heute
                 return (
@@ -226,15 +257,17 @@ export function DateInput({
                     key={iso}
                     type="button"
                     onClick={() => tagWaehlen(tag)}
-                    title={tagFeiertag?.name}
+                    title={tagFeiertag?.name ?? tagFerien?.name}
                     className={`flex h-8 items-center justify-center rounded-md text-sm transition-colors ${
                       istAusgewaehlt
                         ? 'bg-pine font-medium text-paper'
                         : tagFeiertag
                           ? 'bg-gold/15 text-gold-dark hover:bg-gold/25'
-                          : tagIstSonntag
-                            ? 'text-wine hover:bg-wine-tint'
-                            : 'text-ink hover:bg-pine-tint'
+                          : tagFerien
+                            ? 'bg-pine/10 text-pine hover:bg-pine/20'
+                            : tagIstSonntag
+                              ? 'text-wine hover:bg-wine-tint'
+                              : 'text-ink hover:bg-pine-tint'
                     } ${istHeute && !istAusgewaehlt ? 'ring-1 ring-inset ring-pine/40' : ''}`}
                   >
                     {tag}
