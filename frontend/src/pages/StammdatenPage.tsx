@@ -98,9 +98,9 @@ function filtertagLabel(filtertags: FiltertagDef[], key: Filtertag): string {
 // Anlege-Popover.
 const NeuButton = forwardRef<HTMLButtonElement, { label: string; onClick: () => void }>(
   ({ label, onClick }, ref) => (
-    <Button ref={ref} type="button" size="sm" onClick={onClick}>
+    <Button ref={ref} type="button" size="sm" title={label} onClick={onClick}>
       <Plus className="h-4 w-4" />
-      {label}
+      <span className="hidden sm:inline">{label}</span>
     </Button>
   ),
 )
@@ -914,6 +914,31 @@ function zeitZuMinuten(zeit: string): number {
   return stunde * 60 + minute
 }
 
+function kurzeZeit(zeit: string): string {
+  const hhmm = zeit.slice(0, 5)
+  return hhmm.endsWith(':00') ? hhmm.slice(0, -3) : hhmm
+}
+
+// Eigene Spalte mit Stunden-Beschriftung, links und rechts vom Wochenraster verwendet - der
+// leere Kopf oben sorgt dafür, dass die Stunden trotz der Wochentags-Kopfzeile im Raster mit den
+// tatsächlichen Uhrzeiten fluchten.
+function StundenSpalte({ align }: { align: 'right' | 'left' }) {
+  return (
+    <div className="w-8 shrink-0">
+      <div className="py-1 text-center text-[10px] leading-none">&nbsp;</div>
+      {STUNDEN_RASTER.filter((s) => s % 3 === 0).map((s) => (
+        <div
+          key={s}
+          style={{ height: SPERRZEIT_ZEILENHOEHE * 3 }}
+          className={`text-[10px] leading-none text-ink-faint ${align === 'right' ? 'text-left' : 'text-right'}`}
+        >
+          {String(s).padStart(2, '0')}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // Wochenraster (7 Tage × 24 Stunden) statt einer reinen Liste: Sperrzeiten lassen sich per Ziehen
 // direkt anlegen (auf volle Stunden geklippt) und per Klick auf ein bestehendes Zeitfenster
 // bearbeiten - das `NeuerBlockerForm` bleibt als Text-Alternative für minutengenaue Eingaben
@@ -989,18 +1014,8 @@ function WochenSperrzeiten({
         Zeitfenster zum Bearbeiten.
       </p>
       <div className="flex select-none">
-        <div className="mr-1 w-8 shrink-0">
-          {STUNDEN_RASTER.filter((s) => s % 3 === 0).map((s) => (
-            <div
-              key={s}
-              style={{ height: SPERRZEIT_ZEILENHOEHE * 3 }}
-              className="text-right text-[10px] leading-none text-ink-faint"
-            >
-              {String(s).padStart(2, '0')}
-            </div>
-          ))}
-        </div>
-        <div className="grid flex-1 grid-cols-7 gap-px overflow-hidden rounded-md bg-line">
+        <StundenSpalte align="left" />
+        <div className="mx-1 grid flex-1 grid-cols-7 gap-px overflow-hidden rounded-md bg-line">
           {WOCHENTAGE.map((label, wochentag) => {
             const tagesBlocker = blocker.filter((b) => b.wochentag === wochentag)
             return (
@@ -1056,8 +1071,12 @@ function WochenSperrzeiten({
                           top: (startMin / 60) * SPERRZEIT_ZEILENHOEHE,
                           height: Math.max(((endMin - startMin) / 60) * SPERRZEIT_ZEILENHOEHE, 4),
                         }}
-                        className="absolute inset-x-0.5 cursor-pointer rounded-sm border border-wine/50 bg-wine-tint/80 transition-colors hover:bg-wine-tint"
-                      />
+                        className="absolute inset-x-0.5 flex cursor-pointer items-center justify-center overflow-hidden rounded-sm border border-wine/50 bg-wine-tint/80 transition-colors hover:bg-wine-tint"
+                      >
+                        <span className="truncate px-0.5 text-[8px] leading-none whitespace-nowrap text-wine-dark">
+                          {kurzeZeit(b.start_zeit)}–{kurzeZeit(b.end_zeit)}
+                        </span>
+                      </div>
                     )
                   })}
                 </div>
@@ -1065,13 +1084,13 @@ function WochenSperrzeiten({
             )
           })}
         </div>
+        <StundenSpalte align="right" />
       </div>
       <Popover
         open={bearbeiten !== null}
         onClose={() => setBearbeiten(null)}
         anchorRef={editAnchorRef}
         title={bearbeiten ? `Sperrzeit · ${WOCHENTAGE[bearbeiten.wochentag]}` : undefined}
-        width={260}
       >
         {bearbeiten && (
           <form onSubmit={speichernBearbeiten} className="flex flex-col gap-3">
@@ -1417,6 +1436,17 @@ function FiltertagsSection({
               ) : (
                 <Row>
                   <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleSperrzeiten(filtertag.id)}
+                      className="inline-flex cursor-pointer items-center rounded-md p-1 text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
+                    >
+                      <ChevronRight
+                        className={`h-3.5 w-3.5 transition-transform ${
+                          offeneSperrzeiten.has(filtertag.id) ? 'rotate-90' : ''
+                        }`}
+                      />
+                    </button>
                     <span className="text-sm font-medium text-ink">{filtertag.label}</span>
                     {filtertag.ist_schueler_artig && (
                       <Badge tone="gold">folgt Schulferien-Regeln</Badge>
@@ -1428,15 +1458,10 @@ function FiltertagsSection({
                       onClick={() => toggleSperrzeiten(filtertag.id)}
                       className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
                     >
-                      <ChevronRight
-                        className={`h-3.5 w-3.5 transition-transform ${
-                          offeneSperrzeiten.has(filtertag.id) ? 'rotate-90' : ''
-                        }`}
-                      />
-                      Sperrzeiten
                       <span className="rounded-full bg-pine-tint px-1.5 text-[10px] text-pine-dark">
                         {blocker.filter((b) => b.filtertag_id === filtertag.id).length}
                       </span>
+                      Sperrzeiten
                     </button>
                     <IconButton label="Bearbeiten" onClick={() => setBearbeitenId(filtertag.id)}>
                       <Pencil className="h-4 w-4" />

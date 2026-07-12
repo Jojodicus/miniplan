@@ -27,6 +27,33 @@ def _schuljahr(datum: date) -> str:
     return f"{datum.year - 1}/{datum.year}"
 
 
+_RETRY_VERSUCHE = 3
+
+
+def _get_mit_retry(client: httpx.Client, url: str) -> httpx.Response:
+    """ferien-api.de antwortet unter Last gelegentlich mit 429/5xx statt mit den Daten - ein
+    kurzer Retry mit Backoff behebt die meisten dieser transienten Fehler, die sonst den
+    kompletten Sync (und damit `POST .../ferien/aktualisieren`) mit 502 scheitern lassen."""
+    letzter_fehler: httpx.HTTPError | None = None
+    for versuch in range(_RETRY_VERSUCHE):
+        if versuch:
+            time.sleep(0.5 * 2**versuch)
+        try:
+            response = client.get(url)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            letzter_fehler = exc
+            if exc.response.status_code not in (429, 502, 503, 504):
+                raise
+            continue
+        except httpx.HTTPError as exc:
+            letzter_fehler = exc
+            continue
+        return response
+    assert letzter_fehler is not None
+    raise letzter_fehler
+
+
 def _ferien_fuer_jahr(bundesland: str, jahr: int, client: httpx.Client) -> list[dict]:
     cache_key = (bundesland, jahr)
     gecached = _cache.get(cache_key)
@@ -35,8 +62,7 @@ def _ferien_fuer_jahr(bundesland: str, jahr: int, client: httpx.Client) -> list[
         if time.monotonic() - gecacht_am < _CACHE_TTL_SECONDS:
             return daten
 
-    response = client.get(FERIEN_API_URL.format(bundesland=bundesland, jahr=jahr))
-    response.raise_for_status()
+    response = _get_mit_retry(client, FERIEN_API_URL.format(bundesland=bundesland, jahr=jahr))
     daten = response.json()
     _cache[cache_key] = (time.monotonic(), daten)
     return daten

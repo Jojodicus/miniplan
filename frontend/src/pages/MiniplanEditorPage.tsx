@@ -1,7 +1,8 @@
 import {
   closestCenter,
   DndContext,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useDraggable,
   useDroppable,
   useSensor,
@@ -334,7 +335,7 @@ function ZuweisungsChip({
         tone === 'auto'
           ? 'border-dashed border-gold-dark/50 bg-gold-tint text-gold-dark'
           : 'border-pine bg-pine-tint text-pine-dark'
-      } ${dragData ? 'cursor-grab active:cursor-grabbing' : ''} ${isDragging ? 'opacity-40' : ''} ${
+      } ${dragData ? 'cursor-grab touch-none active:cursor-grabbing' : ''} ${isDragging ? 'opacity-40' : ''} ${
         isOver ? 'ring-2 ring-pine' : ''
       }`}
     >
@@ -661,7 +662,10 @@ function DienstbedarfEinstellungen({
       style={style}
       className={`flex flex-col gap-3 rounded-lg border border-line bg-paper p-3 ${isDragging ? 'z-10 opacity-60' : ''}`}
     >
-      <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-3">
+      {/* Zwei Reihen auf schmalen Bildschirmen (Name bekommt die volle Breite, sonst wird er bei
+          wenig Platz neben Anzahl/Auf-Plan/Löschen auf ein paar Zeichen zusammengequetscht) - ab
+          `sm` per `contents` wieder eine einzige Grid-Zeile wie bisher. */}
+      <div className="grid grid-cols-[auto_1fr] items-center gap-3 sm:grid-cols-[auto_1fr_auto_auto_auto]">
         <button
           type="button"
           aria-label="Dienst verschieben"
@@ -672,9 +676,7 @@ function DienstbedarfEinstellungen({
           <GripVertical className="h-4 w-4" />
         </button>
         {bedarf.dienst_typ_id !== null ? (
-          <span className="min-w-0 truncate text-sm font-medium text-ink">
-            {bedarf.dienst_typ_name}
-          </span>
+          <span className="min-w-0 text-sm font-medium text-ink">{bedarf.dienst_typ_name}</span>
         ) : (
           <Input
             aria-label="Name des Dienstes"
@@ -685,34 +687,36 @@ function DienstbedarfEinstellungen({
             error={!(bedarf.name ?? '').trim() ? 'Name darf nicht leer sein' : undefined}
           />
         )}
-        <div className="flex items-center gap-1.5">
-          {/* Bewusst kein `Label` hier: das trägt für die übliche Stapelung (Label über Feld) ein
-              `mb-1.5`, das in dieser einzeiligen Anordnung Label und Feld vertikal gegeneinander
-              verschieben würde. */}
-          <label
-            htmlFor={`${bedarf.schluessel}-anzahl`}
-            className="shrink-0 text-sm font-medium text-ink-soft"
+        <div className="col-span-2 flex flex-wrap items-center gap-3 sm:col-span-1 sm:contents">
+          <div className="flex items-center gap-1.5">
+            {/* Bewusst kein `Label` hier: das trägt für die übliche Stapelung (Label über Feld) ein
+                `mb-1.5`, das in dieser einzeiligen Anordnung Label und Feld vertikal gegeneinander
+                verschieben würde. */}
+            <label
+              htmlFor={`${bedarf.schluessel}-anzahl`}
+              className="shrink-0 text-sm font-medium text-ink-soft"
+            >
+              Anzahl
+            </label>
+            <Input
+              id={`${bedarf.schluessel}-anzahl`}
+              type="number"
+              min={0}
+              value={bedarf.anzahl}
+              onChange={(e) => onChange({ anzahl: Number(e.target.value) })}
+              className="!w-16"
+            />
+          </div>
+          <CheckboxChip
+            id={`${bedarf.schluessel}-zeige-label`}
+            checked={bedarf.zeige_label}
+            onChange={() => onChange({ zeige_label: !bedarf.zeige_label })}
+            title="Ist dies aus, erscheint auf dem Plan nur die Anzahl/Einschränkung, nicht der Name."
           >
-            Anzahl
-          </label>
-          <Input
-            id={`${bedarf.schluessel}-anzahl`}
-            type="number"
-            min={0}
-            value={bedarf.anzahl}
-            onChange={(e) => onChange({ anzahl: Number(e.target.value) })}
-            className="!w-16"
-          />
+            Auf Plan
+          </CheckboxChip>
+          <InlineConfirmButton onConfirm={onRemove} label="Dienst entfernen" size="sm" />
         </div>
-        <CheckboxChip
-          id={`${bedarf.schluessel}-zeige-label`}
-          checked={bedarf.zeige_label}
-          onChange={() => onChange({ zeige_label: !bedarf.zeige_label })}
-          title="Ist dies aus, erscheint auf dem Plan nur die Anzahl/Einschränkung, nicht der Name."
-        >
-          Auf Plan
-        </CheckboxChip>
-        <InlineConfirmButton onConfirm={onRemove} label="Dienst entfernen" size="sm" />
       </div>
 
       {filtertags.length > 0 && (
@@ -835,7 +839,12 @@ function GottesdienstDetailsForm({
   zeigeFehler: boolean
 }) {
   const dndSensoren = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    // Separater TouchSensor statt PointerSensor: eine reine Distance-Constraint würde auf
+    // Touch-Geräten sofort mit dem Scrollen der Seite kollidieren - ein kurzes Long-Press (250ms,
+    // mit etwas Toleranz für Zittern) aktiviert den Drag stattdessen erst nach bewusstem Halten,
+    // ein kurzes Antippen scrollt weiterhin normal.
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   )
 
   function updateBedarf(schluessel: string, patch: Partial<WorkingBedarf>) {
@@ -1736,7 +1745,12 @@ export function MiniplanEditorPage() {
   const [zuteilungsRevision, setZuteilungsRevision] = useState(0)
   const { showToast } = useToast()
   const dndSensoren = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    // Separater TouchSensor statt PointerSensor: eine reine Distance-Constraint würde auf
+    // Touch-Geräten sofort mit dem Scrollen der Seite kollidieren - ein kurzes Long-Press (250ms,
+    // mit etwas Toleranz für Zittern) aktiviert den Drag stattdessen erst nach bewusstem Halten,
+    // ein kurzes Antippen scrollt weiterhin normal.
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   )
 
   const reload = useCallback(() => {

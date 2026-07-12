@@ -83,7 +83,7 @@ export function CheckboxChip({
     <label
       htmlFor={id}
       title={title}
-      className={`inline-flex w-fit shrink-0 select-none items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-pine/40 ${
+      className={`inline-flex w-fit shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm whitespace-nowrap select-none transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-pine/40 ${
         disabled ? 'cursor-not-allowed border-line text-ink-faint opacity-50' : 'cursor-pointer'
       } ${
         checked
