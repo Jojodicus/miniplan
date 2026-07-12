@@ -155,7 +155,7 @@ export function MiniplaenePage() {
                 type="number"
                 value={jahr ?? ''}
                 onChange={(e) => setJahr(Number(e.target.value))}
-                className="w-28"
+                className="!w-28"
                 required
               />
             </div>

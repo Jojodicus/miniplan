@@ -383,7 +383,9 @@ function MiniAdder({
       ) : gefiltert.length === 0 ? (
         <p className="px-1 py-1 text-xs text-ink-faint">Kein Mini passt zu „{suche.trim()}“.</p>
       ) : (
-        <div className="flex flex-wrap gap-1.5">
+        // Max-Höhe mit eigenem Scroll, statt die ganze (Gottesdienst-)Karte unbegrenzt wachsen zu
+        // lassen - auf schmalen Bildschirmen sonst schnell mehrere Bildschirmhöhen pro Karte.
+        <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
           {sichtbar.map((mini) => (
             <button
               key={mini.id}
@@ -613,7 +615,7 @@ function DienstbedarfEinstellungen({
               min={1}
               value={bedarf.anzahl}
               onChange={(e) => onChange({ anzahl: Number(e.target.value) })}
-              className="w-20"
+              className="!w-20"
             />
           </div>
         </div>
@@ -663,7 +665,7 @@ function DienstbedarfEinstellungen({
                     mindest_anzahl: Math.min(Number(e.target.value), bedarf.anzahl),
                   })
                 }
-                className="w-16 shrink-0 text-center"
+                className="!w-16 shrink-0 text-center"
               />
               <span className="shrink-0 text-sm text-ink-soft">aus</span>
               <Select
@@ -1723,7 +1725,7 @@ export function MiniplanEditorPage() {
           )}
           <StatusAnzeige status={speicherStatus} className="text-sm" />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {!readonly && (
             <Button
               variant="secondary"

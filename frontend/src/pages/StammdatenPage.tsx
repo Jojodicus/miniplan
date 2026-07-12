@@ -679,7 +679,7 @@ function GruppenAnforderungenEditor({
                   mindest_anzahl: Math.min(Number(e.target.value), maxAnzahl),
                 })
               }
-              className="w-16 shrink-0 text-center"
+              className="!w-16 shrink-0 text-center"
             />
             <span className="shrink-0 text-sm text-ink-soft">aus</span>
             <Select
@@ -890,7 +890,7 @@ function DienstTypenSection({
               value={standardAnzahl}
               onChange={(e) => setStandardAnzahl(Number(e.target.value))}
               required
-              className="w-24 text-center"
+              className="!w-24 text-center"
             />
           </div>
           <GruppenAnforderungenEditor

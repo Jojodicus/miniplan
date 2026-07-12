@@ -9,6 +9,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 const ZOOM_MIN = 0.6
 const ZOOM_MAX = 2.2
 const ZOOM_STEP = 0.15
+const PAGE_PADDING_X = 24 // entspricht dem seitlichen `p-3` (12px) auf beiden Seiten des Contents
 
 type PdfFile = { data: Uint8Array }
 
@@ -21,7 +22,17 @@ type PdfFile = { data: Uint8Array }
 type SlotName = 'a' | 'b'
 
 export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; className?: string }) {
-  const [scale, setScale] = useState(1.15)
+  // Ohne manuellen Eingriff passt sich der Zoom der Container-Breite an ("Fit Width") - auf
+  // schmalen (mobilen) Vorschau-Boxen wäre ein fester Prozentwert sonst mal zu groß (horizontales
+  // Scrollen im Viewer nötig) und mal unnötig klein. Sobald +/- geklickt wird, übernimmt der Nutzer
+  // die Kontrolle und der automatische Fit wird bis zum nächsten Dokumentwechsel deaktiviert.
+  const [manualScale, setManualScale] = useState<number | null>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+  const [nativePageWidth, setNativePageWidth] = useState<number | null>(null)
+  const fitScale = nativePageWidth
+    ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, (containerWidth - PAGE_PADDING_X) / nativePageWidth))
+    : 1.15
+  const scale = manualScale ?? fitScale
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const prevScrollHeight = useRef(0)
@@ -61,13 +72,28 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
     return () => observer.disconnect()
   }, [])
 
+  // Container-Breite laufend messen (Layout-Wechsel, Fenster-/Orientierungswechsel), damit der
+  // automatische Fit-Width-Zoom aktuell bleibt.
+  useEffect(() => {
+    const scrollEl = scrollRef.current
+    if (!scrollEl) return
+    const observer = new ResizeObserver(([entry]) => {
+      setContainerWidth(entry.contentRect.width)
+    })
+    observer.observe(scrollEl)
+    return () => observer.disconnect()
+  }, [])
+
   function zoom(delta: number) {
-    setScale((wert) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, wert + delta)))
+    setManualScale(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scale + delta)))
   }
 
   function slotGeladen(slot: SlotName, dieseDaten: Uint8Array, numPages: number) {
     setSlotNumPages((seiten) => ({ ...seiten, [slot]: numPages }))
     setActiveSlot(slot)
+    // Bewusst weder manuellen Zoom noch native Seitenbreite zurücksetzen: die Vorschau lädt bei
+    // jeder Änderung im Editor (debounced) neu nach - ein Reset hier würde den Zoom des Nutzers
+    // bei jeder Eingabe wieder auf den Fit-Width-Wert zurückwerfen.
     geladeneDaten.current = dieseDaten
   }
 
@@ -115,6 +141,11 @@ export function PdfViewer({ data, className = '' }: { data: Uint8Array | null; c
                         scale={scale}
                         className="shadow-sm"
                         loading={null}
+                        onLoadSuccess={
+                          index === 0
+                            ? (page) => setNativePageWidth((breite) => breite ?? page.originalWidth)
+                            : undefined
+                        }
                         renderTextLayer={false}
                         renderAnnotationLayer={false}
                       />
