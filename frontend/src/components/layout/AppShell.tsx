@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarRange, LogOut, Settings } from 'lucide-react'
+import { ArrowLeft, CalendarRange, LogOut, Settings, ShieldCheck } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 
@@ -63,6 +63,21 @@ export function AppShell({
           </Link>
           {user && (
             <div className="flex items-center gap-3">
+              {user.ist_admin && (
+                <NavLink
+                  to="/admin"
+                  className={({ isActive }) =>
+                    `inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm transition-colors ${
+                      isActive
+                        ? 'bg-pine-tint text-pine-dark'
+                        : 'text-ink-soft hover:bg-paper-dim hover:text-ink'
+                    }`
+                  }
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Admin
+                </NavLink>
+              )}
               <span className="hidden text-sm text-ink-soft sm:inline">{user.email}</span>
               <button
                 onClick={logout}

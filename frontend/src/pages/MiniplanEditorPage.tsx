@@ -16,6 +16,7 @@ import {
   Pin,
   Plus,
   Search,
+  Settings2,
   Trash2,
   Wand2,
   X,
@@ -48,10 +49,12 @@ import {
   miniplanZuweisungenLeeren,
   miniplanZuweisungFixieren,
   miniplanZuweisungenTauschen,
+  miniplanZuteilungEinstellungenSetzen,
   type Miniplan,
   type MiniplanVorschauEingabe,
   type VorschauDienstbedarf,
   type VorschauGottesdienst,
+  type ZuteilungEinstellungen,
 } from '../api/miniplaene'
 import { AppShell } from '../components/layout/AppShell'
 import { Alert } from '../components/ui/Alert'
@@ -65,6 +68,7 @@ import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { MarkdownTextarea } from '../components/ui/MarkdownTextarea'
 import { Modal } from '../components/ui/Modal'
 import { PdfViewer } from '../components/ui/PdfViewer'
+import { Popover } from '../components/ui/Popover'
 import { TimeInput } from '../components/ui/TimeInput'
 import { useToast } from '../components/ui/Toast'
 import { formatDatum, monatsName } from '../lib/datum'
@@ -256,6 +260,7 @@ function ZuweisungsChip({
   tone,
   dienstbedarfId,
   zuweisung,
+  readonly,
   onRemove,
   onPin,
 }: {
@@ -263,11 +268,12 @@ function ZuweisungsChip({
   tone: 'fest' | 'auto'
   dienstbedarfId: number | null
   zuweisung: DienstbedarfZuweisung | null
+  readonly?: boolean
   onRemove?: () => void
   onPin?: () => void
 }) {
   const dragData: ZuweisungDragData | undefined =
-    zuweisung && dienstbedarfId !== null
+    !readonly && zuweisung && dienstbedarfId !== null
       ? { zuweisungId: zuweisung.id, dienstbedarfId, manuellFixiert: zuweisung.manuell_fixiert }
       : undefined
   const dragId = zuweisung ? `zuweisung-${zuweisung.id}` : undefined
@@ -326,9 +332,12 @@ function ZuweisungsChip({
   )
 }
 
-// Durchsuchbarer Mini-Hinzufügen-Bereich: standardmäßig ein "+ Mini"-Button, der eine Suche +
-// gefilterte Chip-Liste aufklappt. Zeigt bei vielen Treffern "+X weitere", damit klar ist, dass die
-// Suche die Chip-Liste einschränkt (statt scheinbar keine Minis zu haben).
+// Durchsuchbarer Mini-Hinzufügen-Bereich: einziger Einstiegspunkt zum Besetzen offener Stellen
+// (die "offen"-Chips sind reine Anzeige, kein zweiter Trigger mehr - vorher lösten beide dieselbe
+// Aktion aus). Erscheint direkt als kompaktes Suchfeld, solange offene Stellen existieren, statt
+// erst über einen "+ Mini"-Button aufgeklappt werden zu müssen. Zeigt bei vielen Treffern
+// "+X weitere", damit klar ist, dass die Suche die Chip-Liste einschränkt (statt scheinbar keine
+// Minis zu haben).
 const ADDER_LIMIT = 24
 
 function MiniAdder({
@@ -336,15 +345,11 @@ function MiniAdder({
   belegteMiniIds,
   disabled,
   onAdd,
-  offen,
-  setOffen,
 }: {
   minis: Mini[]
   belegteMiniIds: Set<number>
   disabled: boolean
   onAdd: (miniId: number) => void
-  offen: boolean
-  setOffen: (offen: boolean) => void
 }) {
   const [suche, setSuche] = useState('')
   const begriff = suche.trim().toLowerCase()
@@ -359,37 +364,19 @@ function MiniAdder({
   const sichtbar = gefiltert.slice(0, ADDER_LIMIT)
   const rest = gefiltert.length - sichtbar.length
 
-  if (!offen) {
-    return (
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOffen(true)}
-        className="inline-flex items-center gap-1 rounded-full border border-dashed border-line px-3 py-1.5 text-sm text-ink-soft transition-colors hover:border-pine hover:text-pine-dark disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Mini
-      </button>
-    )
-  }
+  if (disabled) return null
 
   return (
     <div className="w-full rounded-lg border border-line bg-paper-dim/40 p-2">
-      <div className="mb-2 flex items-center gap-2">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-faint" />
-          <Input
-            aria-label="Minis durchsuchen"
-            placeholder="Mini suchen…"
-            value={suche}
-            onChange={(e) => setSuche(e.target.value)}
-            className="h-8 pl-9"
-            autoFocus
-          />
-        </div>
-        <IconButton label="Schließen" onClick={() => setOffen(false)}>
-          <X className="h-4 w-4" />
-        </IconButton>
+      <div className="relative mb-2">
+        <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+        <Input
+          aria-label="Minis durchsuchen"
+          placeholder="Mini hinzufügen…"
+          value={suche}
+          onChange={(e) => setSuche(e.target.value)}
+          className="h-8 pl-9"
+        />
       </div>
       {verfuegbar.length === 0 ? (
         <p className="px-1 py-1 text-xs text-ink-faint">Alle Minis sind bereits zugewiesen.</p>
@@ -441,6 +428,7 @@ function DienstbedarfBelegung({
   filtertags,
   serverZuweisungen,
   dienstbedarfId,
+  readonly,
   onChange,
   onClearAuto,
   onPinAuto,
@@ -451,12 +439,11 @@ function DienstbedarfBelegung({
   filtertags: FiltertagDef[]
   serverZuweisungen: DienstbedarfZuweisung[]
   dienstbedarfId: number | null
+  readonly: boolean
   onChange: (patch: Partial<WorkingBedarf>) => void
   onClearAuto: () => void
   onPinAuto: (zuweisungId: number) => void
 }) {
-  const [adderOffen, setAdderOffen] = useState(false)
-
   function toggleMini(miniId: number) {
     onChange({
       fixierteMiniIds: bedarf.fixierteMiniIds.includes(miniId)
@@ -487,7 +474,7 @@ function DienstbedarfBelegung({
             <span className="text-xs text-ink-faint">· {einschraenkungen.join(', ')}</span>
           )}
         </div>
-        {autoZuweisungen.length > 0 && (
+        {!readonly && autoZuweisungen.length > 0 && (
           <button
             type="button"
             onClick={onClearAuto}
@@ -511,7 +498,8 @@ function DienstbedarfBelegung({
               tone="fest"
               dienstbedarfId={dienstbedarfId}
               zuweisung={zuweisung}
-              onRemove={() => toggleMini(miniId)}
+              readonly={readonly}
+              onRemove={readonly ? undefined : () => toggleMini(miniId)}
             />
           )
         })}
@@ -522,28 +510,31 @@ function DienstbedarfBelegung({
             tone="auto"
             dienstbedarfId={dienstbedarfId}
             zuweisung={zuweisung}
-            onPin={() => onPinAuto(zuweisung.id)}
+            readonly={readonly}
+            onPin={readonly ? undefined : () => onPinAuto(zuweisung.id)}
           />
         ))}
+        {/* Reine Anzeige unbesetzter Stellen - kein zweiter Klick-Trigger mehr für den Picker
+            (vorher lösten diese Chips und der MiniAdder dieselbe Aktion redundant aus). */}
         {Array.from({ length: offeneStellen }, (_, i) => (
-          <button
+          <span
             key={`offen-${i}`}
-            type="button"
-            onClick={() => setAdderOffen(true)}
-            className="inline-flex items-center rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine transition-colors hover:bg-wine-tint"
+            className="inline-flex items-center rounded-full border border-dashed border-wine/50 bg-wine-tint/40 px-3 py-1.5 text-sm text-wine"
           >
             offen
-          </button>
+          </span>
         ))}
-        <MiniAdder
-          minis={minis}
-          belegteMiniIds={belegteMiniIds}
-          disabled={voll}
-          onAdd={(miniId) => toggleMini(miniId)}
-          offen={adderOffen}
-          setOffen={setAdderOffen}
-        />
       </div>
+      {!readonly && (
+        <div className="mt-2">
+          <MiniAdder
+            minis={minis}
+            belegteMiniIds={belegteMiniIds}
+            disabled={voll}
+            onAdd={(miniId) => toggleMini(miniId)}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -735,6 +726,7 @@ function GottesdienstKarte({
   minis,
   dienstTypen,
   filtertags,
+  readonly,
   onReload,
   onDraftChange,
   onStatusChange,
@@ -753,6 +745,7 @@ function GottesdienstKarte({
   minis: Mini[]
   dienstTypen: DienstTyp[]
   filtertags: FiltertagDef[]
+  readonly: boolean
   onReload: () => void
   onDraftChange: (gottesdienstId: number, draft: GottesdienstDraft) => void
   onStatusChange: (gottesdienstId: number, status: SpeicherStatus) => void
@@ -832,6 +825,9 @@ function GottesdienstKarte({
       istErstesRendern.current = false
       return
     }
+    // Ein abgeschlossener Plan ist schreibgeschützt (Backend lehnt Mutationen mit 409 ab) - die
+    // UI verhindert Änderungen bereits, aber sicherheitshalber auch hier keinen Autosave auslösen.
+    if (readonly) return
     const bedarfOhneName = bedarfListe.some(
       (b) => b.dienst_typ_id === null && !(b.name ?? '').trim(),
     )
@@ -936,7 +932,7 @@ function GottesdienstKarte({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {status !== 'gespeichert' && <StatusAnzeige status={status} className="mr-1 text-xs" />}
-          {hatAuto && (
+          {!readonly && hatAuto && (
             <IconButton
               label="Automatische Zuweisungen dieses Gottesdienstes leeren"
               onClick={() => onClearAutoBereich({ gottesdienstId: gottesdienst.id })}
@@ -944,24 +940,30 @@ function GottesdienstKarte({
               <Eraser className="h-4 w-4" />
             </IconButton>
           )}
-          <IconButton
-            label="Duplizieren (eine Woche später)"
-            onClick={handleDuplicate}
-            disabled={!datum || !uhrzeit}
-            className="disabled:pointer-events-none disabled:opacity-40"
-          >
-            <Copy className="h-4 w-4" />
-          </IconButton>
-          <IconButton label="Bearbeiten" onClick={() => setEditorOffen(true)}>
-            <Pencil className="h-4 w-4" />
-          </IconButton>
+          {!readonly && (
+            <IconButton
+              label="Duplizieren (eine Woche später)"
+              onClick={handleDuplicate}
+              disabled={!datum || !uhrzeit}
+              className="disabled:pointer-events-none disabled:opacity-40"
+            >
+              <Copy className="h-4 w-4" />
+            </IconButton>
+          )}
+          {!readonly && (
+            <IconButton label="Bearbeiten" onClick={() => setEditorOffen(true)}>
+              <Pencil className="h-4 w-4" />
+            </IconButton>
+          )}
         </div>
       </div>
 
       <div className="flex flex-col gap-3 p-4">
         {bedarfListe.length === 0 ? (
           <p className="text-sm text-ink-faint">
-            Noch keine Dienste – über „Bearbeiten“ hinzufügen.
+            {readonly
+              ? 'Keine Dienste angelegt.'
+              : 'Noch keine Dienste – über „Bearbeiten“ hinzufügen.'}
           </p>
         ) : (
           bedarfListe.map((bedarf) => (
@@ -973,6 +975,7 @@ function GottesdienstKarte({
               filtertags={filtertags}
               serverZuweisungen={serverZuweisungenMap[bedarf.schluessel] ?? []}
               dienstbedarfId={dienstbedarfIdMap[bedarf.schluessel] ?? bedarf.dienstbedarfId}
+              readonly={readonly}
               onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
               onClearAuto={() => {
                 const id = dienstbedarfIdMap[bedarf.schluessel] ?? bedarf.dienstbedarfId
@@ -1222,12 +1225,14 @@ function NeuerGottesdienstModal({
 function FreitextSection({
   pfarreiId,
   miniplan,
+  readonly,
   onSaved,
   onDraftChange,
   onStatusChange,
 }: {
   pfarreiId: number
   miniplan: Miniplan
+  readonly: boolean
   onSaved: (miniplan: Miniplan) => void
   onDraftChange: (veranstaltungen: string, ankuendigungen: string) => void
   onStatusChange: (status: SpeicherStatus) => void
@@ -1253,6 +1258,7 @@ function FreitextSection({
       istErstesRendern.current = false
       return
     }
+    if (readonly) return
     setStatus('speichert')
     const timer = setTimeout(async () => {
       try {
@@ -1286,6 +1292,7 @@ function FreitextSection({
             value={veranstaltungen}
             onChange={setVeranstaltungen}
             rows={3}
+            disabled={readonly}
           />
         </div>
         <div>
@@ -1295,6 +1302,7 @@ function FreitextSection({
             value={ankuendigungen}
             onChange={setAnkuendigungen}
             rows={3}
+            disabled={readonly}
           />
         </div>
       </div>
@@ -1366,6 +1374,123 @@ function VorschauPanel({
   )
 }
 
+// Konfiguration der automatischen Zuteilung ("Füllen") als Popover am Füllen-Button - eigener
+// Endpunkt statt Teil des Freitext-Autosaves, damit sich beide unabhängig ändern lassen.
+function ZuteilungEinstellungenPopover({
+  open,
+  onClose,
+  anchorRef,
+  miniplan,
+  onSave,
+}: {
+  open: boolean
+  onClose: () => void
+  anchorRef: React.RefObject<HTMLElement | null>
+  miniplan: Miniplan
+  onSave: (einstellungen: ZuteilungEinstellungen) => void | Promise<void>
+}) {
+  const [fairness, setFairness] = useState(miniplan.fairness_gewicht)
+  const [mindestabstand, setMindestabstand] = useState(miniplan.mindestabstand_tage)
+  const [mixing, setMixing] = useState(miniplan.mixing_gewicht)
+  const [wiederholung, setWiederholung] = useState(miniplan.wiederholung_gewicht)
+
+  useEffect(() => {
+    if (!open) return
+    setFairness(miniplan.fairness_gewicht)
+    setMindestabstand(miniplan.mindestabstand_tage)
+    setMixing(miniplan.mixing_gewicht)
+    setWiederholung(miniplan.wiederholung_gewicht)
+  }, [open, miniplan])
+
+  return (
+    <Popover open={open} onClose={onClose} anchorRef={anchorRef} title="Auto-Fill-Einstellungen" width={340}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          onSave({
+            fairness_gewicht: fairness,
+            mindestabstand_tage: mindestabstand,
+            mixing_gewicht: mixing,
+            wiederholung_gewicht: wiederholung,
+          })
+        }}
+        className="flex flex-col gap-4"
+      >
+        <div>
+          <Label htmlFor="einstellung-fairness" hint="0 = aus">
+            Fairness-Stärke
+          </Label>
+          <Input
+            id="einstellung-fairness"
+            type="number"
+            min={0}
+            max={100}
+            step={0.5}
+            value={fairness}
+            onChange={(e) => setFairness(Number(e.target.value))}
+          />
+        </div>
+        <div>
+          <Label htmlFor="einstellung-abstand" hint="Tage">
+            Mindestabstand zwischen Diensten
+          </Label>
+          <Input
+            id="einstellung-abstand"
+            type="number"
+            min={0}
+            max={31}
+            value={mindestabstand}
+            onChange={(e) => setMindestabstand(Number(e.target.value))}
+          />
+        </div>
+        <div>
+          <Label htmlFor="einstellung-mixing" hint="0 = aus">
+            Teams durchmischen
+          </Label>
+          <Input
+            id="einstellung-mixing"
+            type="number"
+            min={0}
+            max={100}
+            step={0.5}
+            value={mixing}
+            onChange={(e) => setMixing(Number(e.target.value))}
+          />
+          <p className="mt-1 text-xs text-ink-faint">
+            Höher = seltener dieselben Minis gemeinsam einteilen.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="einstellung-wiederholung" hint="0 = aus">
+            Feste Zuteilung bevorzugen
+          </Label>
+          <Input
+            id="einstellung-wiederholung"
+            type="number"
+            min={0}
+            max={100}
+            step={0.5}
+            value={wiederholung}
+            onChange={(e) => setWiederholung(Number(e.target.value))}
+          />
+          <p className="mt-1 text-xs text-ink-faint">
+            Höher = Minis bleiben eher bei demselben wiederkehrenden Dienst (Gegenteil von
+            Durchmischen).
+          </p>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+            Abbrechen
+          </Button>
+          <Button type="submit" size="sm">
+            Speichern
+          </Button>
+        </div>
+      </form>
+    </Popover>
+  )
+}
+
 export function MiniplanEditorPage() {
   const { pfarreiId, miniplanId } = useParams<{ pfarreiId: string; miniplanId: string }>()
   const id = Number(pfarreiId)
@@ -1390,6 +1515,8 @@ export function MiniplanEditorPage() {
   const [statusWirdGeaendert, setStatusWirdGeaendert] = useState(false)
   const [downloadFehler, setDownloadFehler] = useState<string | null>(null)
   const [fuelltGerade, setFuelltGerade] = useState(false)
+  const [einstellungenOffen, setEinstellungenOffen] = useState(false)
+  const fuellenButtonRef = useRef<HTMLButtonElement>(null)
   // Jede Gottesdienst-Karte hält ihre Zuweisungen in eigenem State (nur beim ersten Rendern aus den
   // Props übernommen) - nach "Füllen"/"Leeren"/Tauschen/Fixieren ändert sich das serverseitig, ohne
   // dass die Karten das von selbst bemerken. Ein Revisions-Zähler im Karten-`key` erzwingt daher
@@ -1421,6 +1548,17 @@ export function MiniplanEditorPage() {
       showToast(fehlerText(err, 'Fehler beim automatischen Befüllen'), 'error')
     } finally {
       setFuelltGerade(false)
+    }
+  }
+
+  async function handleEinstellungenSpeichern(einstellungen: ZuteilungEinstellungen) {
+    try {
+      const aktualisiert = await miniplanZuteilungEinstellungenSetzen(id, planId, einstellungen)
+      setMiniplan(aktualisiert)
+      setEinstellungenOffen(false)
+      showToast('Auto-Fill-Einstellungen gespeichert')
+    } catch (err) {
+      showToast(fehlerText(err, 'Fehler beim Speichern der Einstellungen'), 'error')
     }
   }
 
@@ -1564,6 +1702,10 @@ export function MiniplanEditorPage() {
     )
   }
 
+  // Ein abgeschlossener Plan bleibt unverändert, bis er über den Status-Button wieder geöffnet
+  // wird - nur dieser Übergang selbst ist weiterhin erlaubt (siehe handleStatusWechsel).
+  const readonly = miniplan.status === 'abgeschlossen'
+
   return (
     <AppShell wide pfarreiId={id}>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -1574,27 +1716,45 @@ export function MiniplanEditorPage() {
           <Badge tone={miniplan.status === 'abgeschlossen' ? 'pine' : 'neutral'}>
             {miniplan.status === 'abgeschlossen' ? 'Abgeschlossen' : 'In Bearbeitung'}
           </Badge>
+          {readonly && (
+            <span className="text-sm text-ink-faint">
+              Schreibgeschützt – zum Bearbeiten wieder öffnen
+            </span>
+          )}
           <StatusAnzeige status={speicherStatus} className="text-sm" />
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setNeuGottesdienstOffen(true)}
-          >
-            <CalendarPlus className="h-4 w-4" />
-            Gottesdienst
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={fuelltGerade || miniplan.gottesdienste.length === 0}
-            onClick={handleFuellen}
-          >
-            <Wand2 className="h-4 w-4" />
-            {fuelltGerade ? 'Befüllt…' : 'Füllen'}
-          </Button>
-          {hatAutoZuweisungen && (
+          {!readonly && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setNeuGottesdienstOffen(true)}
+            >
+              <CalendarPlus className="h-4 w-4" />
+              Gottesdienst
+            </Button>
+          )}
+          {!readonly && (
+            <Button
+              ref={fuellenButtonRef}
+              variant="secondary"
+              size="sm"
+              disabled={fuelltGerade || miniplan.gottesdienste.length === 0}
+              onClick={handleFuellen}
+            >
+              <Wand2 className="h-4 w-4" />
+              {fuelltGerade ? 'Befüllt…' : 'Füllen'}
+            </Button>
+          )}
+          {!readonly && (
+            <IconButton
+              label="Auto-Fill-Einstellungen"
+              onClick={() => setEinstellungenOffen((o) => !o)}
+            >
+              <Settings2 className="h-4 w-4" />
+            </IconButton>
+          )}
+          {!readonly && hatAutoZuweisungen && (
             <Button variant="secondary" size="sm" onClick={() => handleClearAuto()}>
               <Eraser className="h-4 w-4" />
               Auto leeren
@@ -1627,6 +1787,13 @@ export function MiniplanEditorPage() {
           )}
         </div>
       </div>
+      <ZuteilungEinstellungenPopover
+        open={einstellungenOffen}
+        onClose={() => setEinstellungenOffen(false)}
+        anchorRef={fuellenButtonRef}
+        miniplan={miniplan}
+        onSave={handleEinstellungenSpeichern}
+      />
       {downloadFehler && (
         <div className="mt-4">
           <Alert>{downloadFehler}</Alert>
@@ -1644,6 +1811,7 @@ export function MiniplanEditorPage() {
               miniplanId={planId}
               jahr={miniplan.jahr}
               monat={miniplan.monat}
+              readonly={readonly}
               gruppen={gruppen}
               minis={minis}
               dienstTypen={dienstTypen}
@@ -1668,10 +1836,12 @@ export function MiniplanEditorPage() {
             <Card className="animate-rise">
               <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
                 <p className="text-sm text-ink-soft">Noch keine Gottesdienste angelegt.</p>
-                <Button type="button" onClick={() => setNeuGottesdienstOffen(true)}>
-                  <CalendarPlus className="h-4 w-4" />
-                  Ersten Gottesdienst anlegen
-                </Button>
+                {!readonly && (
+                  <Button type="button" onClick={() => setNeuGottesdienstOffen(true)}>
+                    <CalendarPlus className="h-4 w-4" />
+                    Ersten Gottesdienst anlegen
+                  </Button>
+                )}
               </div>
             </Card>
           )}
@@ -1679,6 +1849,7 @@ export function MiniplanEditorPage() {
           <FreitextSection
             pfarreiId={id}
             miniplan={miniplan}
+            readonly={readonly}
             onSaved={setMiniplan}
             onDraftChange={handleFreitextDraftChange}
             onStatusChange={setFreitextStatus}

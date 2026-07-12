@@ -1,5 +1,6 @@
 import {
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -12,8 +13,9 @@ import {
   Trash2,
   Users,
   UserRound,
+  X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type SubmitEvent } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import {
@@ -79,6 +81,7 @@ import { CheckboxChip, Input, Label, Select } from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { Modal } from '../components/ui/Modal'
+import { Popover } from '../components/ui/Popover'
 import { ListSkeleton } from '../components/ui/Skeleton'
 import { TabBar } from '../components/ui/TabBar'
 import { useToast } from '../components/ui/Toast'
@@ -92,14 +95,107 @@ function filtertagLabel(filtertags: FiltertagDef[], key: Filtertag): string {
   return filtertags.find((f) => f.key === key)?.label ?? key
 }
 
-// Kleiner "+ Neu"-Button für die Kartenkopfzeile (ersetzt den früheren "Neu anlegen"-Abschnitt am
-// Karten-Ende).
-function NeuButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <Button type="button" size="sm" onClick={onClick}>
+// Kleiner "+ Neu"-Button für die Kartenkopfzeile, dient zugleich als Anker für das
+// Anlege-Popover.
+const NeuButton = forwardRef<HTMLButtonElement, { label: string; onClick: () => void }>(
+  ({ label, onClick }, ref) => (
+    <Button ref={ref} type="button" size="sm" onClick={onClick}>
       <Plus className="h-4 w-4" />
       {label}
     </Button>
+  ),
+)
+NeuButton.displayName = 'NeuButton'
+
+// Einfaches Ein-Feld-Anlege-Formular im Popover (Name + Speichern/Abbrechen).
+function InlineNeuForm({
+  fieldId,
+  fieldLabel = 'Name',
+  placeholder,
+  onSave,
+  onCancel,
+}: {
+  fieldId: string
+  fieldLabel?: string
+  placeholder?: string
+  onSave: (wert: string) => void
+  onCancel: () => void
+}) {
+  const [wert, setWert] = useState('')
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        onSave(wert)
+      }}
+      className="flex flex-col gap-3"
+    >
+      <div>
+        <Label htmlFor={fieldId}>{fieldLabel}</Label>
+        <Input
+          id={fieldId}
+          value={wert}
+          onChange={(e) => setWert(e.target.value)}
+          placeholder={placeholder}
+          autoFocus
+          required
+        />
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={onCancel}>
+          Abbrechen
+        </Button>
+        <Button type="submit" size="sm" disabled={!wert.trim()}>
+          Anlegen
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Inline-Bearbeiten einer einfachen Textzeile (Zeile wechselt selbst in einen Eingabe-Zustand)
+// statt eines separaten Modals - für einfache Ein-Feld-Entitäten wie Gruppen.
+function InlineTextEdit({
+  fieldId,
+  fieldLabel = 'Name',
+  value,
+  onSave,
+  onCancel,
+  placeholder,
+}: {
+  fieldId: string
+  fieldLabel?: string
+  value: string
+  onSave: (wert: string) => void
+  onCancel: () => void
+  placeholder?: string
+}) {
+  const [wert, setWert] = useState(value)
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        onSave(wert)
+      }}
+      className="flex flex-1 items-center gap-2"
+    >
+      <Input
+        id={fieldId}
+        aria-label={fieldLabel}
+        value={wert}
+        onChange={(e) => setWert(e.target.value)}
+        placeholder={placeholder}
+        autoFocus
+        required
+        className="h-9"
+      />
+      <IconButton label="Speichern" type="submit">
+        <Check className="h-4 w-4" />
+      </IconButton>
+      <IconButton label="Abbrechen" onClick={onCancel}>
+        <X className="h-4 w-4" />
+      </IconButton>
+    </form>
   )
 }
 
@@ -241,37 +337,29 @@ function GruppenSection({
   reload: () => void
 }) {
   const [error, setError] = useState<string | null>(null)
-  const [modalOffen, setModalOffen] = useState(false)
-  const [editId, setEditId] = useState<number | null>(null)
-  const [name, setName] = useState('')
+  const [neuOffen, setNeuOffen] = useState(false)
+  const [bearbeitenId, setBearbeitenId] = useState<number | null>(null)
+  const neuButtonRef = useRef<HTMLButtonElement>(null)
   const { showToast } = useToast()
 
-  function oeffnenNeu() {
-    setEditId(null)
-    setName('')
-    setError(null)
-    setModalOffen(true)
-  }
-
-  function oeffnenBearbeiten(gruppe: Gruppe) {
-    setEditId(gruppe.id)
-    setName(gruppe.name)
-    setError(null)
-    setModalOffen(true)
-  }
-
-  async function handleSubmit(event: SubmitEvent) {
-    event.preventDefault()
+  async function handleErstellen(name: string) {
     setError(null)
     try {
-      if (editId === null) {
-        await gruppeErstellen(pfarreiId, name)
-        showToast('Gruppe angelegt')
-      } else {
-        await gruppeBearbeiten(pfarreiId, editId, name)
-        showToast('Gruppe gespeichert')
-      }
-      setModalOffen(false)
+      await gruppeErstellen(pfarreiId, name)
+      showToast('Gruppe angelegt')
+      setNeuOffen(false)
+      reload()
+    } catch (err) {
+      setError(fehlerText(err, 'Fehler beim Anlegen der Gruppe'))
+    }
+  }
+
+  async function handleBearbeiten(gruppeId: number, name: string) {
+    setError(null)
+    try {
+      await gruppeBearbeiten(pfarreiId, gruppeId, name)
+      showToast('Gruppe gespeichert')
+      setBearbeitenId(null)
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Speichern der Gruppe'))
@@ -294,9 +382,22 @@ function GruppenSection({
       <CardHeader
         title="Gruppen"
         description="Erfahrungsstufen, auf die sich Mindestbesetzungen beziehen."
-        action={<NeuButton label="Gruppe" onClick={oeffnenNeu} />}
+        action={<NeuButton ref={neuButtonRef} label="Gruppe" onClick={() => setNeuOffen(true)} />}
       />
-      {error && !modalOffen && (
+      <Popover
+        open={neuOffen}
+        onClose={() => setNeuOffen(false)}
+        anchorRef={neuButtonRef}
+        title="Gruppe anlegen"
+      >
+        <InlineNeuForm
+          fieldId="gruppe-neu-name"
+          placeholder="z. B. Obermini"
+          onSave={handleErstellen}
+          onCancel={() => setNeuOffen(false)}
+        />
+      </Popover>
+      {error && (
         <div className="px-5 pt-4">
           <Alert>{error}</Alert>
         </div>
@@ -307,45 +408,30 @@ function GruppenSection({
         <EmptyState icon={Users} title="Noch keine Gruppen angelegt" />
       ) : (
         <div>
-          {gruppen.map((gruppe) => (
-            <Row key={gruppe.id}>
-              <span className="text-sm font-medium text-ink">{gruppe.name}</span>
-              <div className="flex items-center gap-1">
-                <IconButton label="Bearbeiten" onClick={() => oeffnenBearbeiten(gruppe)}>
-                  <Pencil className="h-4 w-4" />
-                </IconButton>
-                <InlineConfirmButton onConfirm={() => handleDelete(gruppe.id)} />
-              </div>
-            </Row>
-          ))}
+          {gruppen.map((gruppe) =>
+            bearbeitenId === gruppe.id ? (
+              <Row key={gruppe.id}>
+                <InlineTextEdit
+                  fieldId={`gruppe-${gruppe.id}-name`}
+                  value={gruppe.name}
+                  onSave={(name) => handleBearbeiten(gruppe.id, name)}
+                  onCancel={() => setBearbeitenId(null)}
+                />
+              </Row>
+            ) : (
+              <Row key={gruppe.id}>
+                <span className="text-sm font-medium text-ink">{gruppe.name}</span>
+                <div className="flex items-center gap-1">
+                  <IconButton label="Bearbeiten" onClick={() => setBearbeitenId(gruppe.id)}>
+                    <Pencil className="h-4 w-4" />
+                  </IconButton>
+                  <InlineConfirmButton onConfirm={() => handleDelete(gruppe.id)} />
+                </div>
+              </Row>
+            ),
+          )}
         </div>
       )}
-      <Modal
-        open={modalOffen}
-        onClose={() => setModalOffen(false)}
-        title={editId === null ? 'Gruppe anlegen' : 'Gruppe bearbeiten'}
-      >
-        {error && (
-          <div className="mb-4">
-            <Alert>{error}</Alert>
-          </div>
-        )}
-        <form onSubmit={handleSubmit}>
-          <Label htmlFor="gruppe-name">Name</Label>
-          <Input
-            id="gruppe-name"
-            placeholder="z. B. Obermini"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            autoFocus
-          />
-          <ModalAktionen
-            onCancel={() => setModalOffen(false)}
-            submitLabel={editId === null ? 'Anlegen' : 'Speichern'}
-          />
-        </form>
-      </Modal>
     </Card>
   )
 }
@@ -908,6 +994,62 @@ function NeuerBlockerForm({
   )
 }
 
+// Bezeichnung + "folgt Schulferien-Regeln"-Checkbox, gemeinsam für Inline-Bearbeiten und
+// Popover-Anlegen verwendet.
+function FiltertagFormFelder({
+  idPrefix,
+  initial,
+  onSave,
+  onCancel,
+  submitLabel,
+}: {
+  idPrefix: string
+  initial: FiltertagEingabe
+  onSave: (daten: FiltertagEingabe) => void
+  onCancel: () => void
+  submitLabel: string
+}) {
+  const [label, setLabel] = useState(initial.label)
+  const [istSchuelerArtig, setIstSchuelerArtig] = useState(initial.ist_schueler_artig)
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        onSave({ label, ist_schueler_artig: istSchuelerArtig })
+      }}
+      className="flex flex-col gap-3"
+    >
+      <div>
+        <Label htmlFor={`${idPrefix}-label`}>Bezeichnung</Label>
+        <Input
+          id={`${idPrefix}-label`}
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="z. B. Azubi"
+          autoFocus
+          required
+        />
+      </div>
+      <CheckboxChip
+        id={`${idPrefix}-schueler-artig`}
+        checked={istSchuelerArtig}
+        onChange={() => setIstSchuelerArtig((wert) => !wert)}
+        title="Ferien und schulfreie Feiertage gelten für diesen Status als frei."
+      >
+        folgt Schulferien-Regeln
+      </CheckboxChip>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={onCancel}>
+          Abbrechen
+        </Button>
+        <Button type="submit" size="sm" disabled={!label.trim()}>
+          {submitLabel}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
 function FiltertagsSection({
   pfarreiId,
   filtertags,
@@ -921,11 +1063,10 @@ function FiltertagsSection({
 }) {
   const [blocker, setBlocker] = useState<FiltertagBlocker[]>([])
   const [offeneSperrzeiten, setOffeneSperrzeiten] = useState<Set<number>>(new Set())
-  const [modalOffen, setModalOffen] = useState(false)
-  const [editId, setEditId] = useState<number | null>(null)
-  const [label, setLabel] = useState('')
-  const [istSchuelerArtig, setIstSchuelerArtig] = useState(false)
+  const [neuOffen, setNeuOffen] = useState(false)
+  const [bearbeitenId, setBearbeitenId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const neuButtonRef = useRef<HTMLButtonElement>(null)
   const { showToast } = useToast()
 
   const reloadBlocker = useCallback(() => {
@@ -936,35 +1077,24 @@ function FiltertagsSection({
     reloadBlocker()
   }, [reloadBlocker])
 
-  function oeffnenNeu() {
-    setEditId(null)
-    setLabel('')
-    setIstSchuelerArtig(false)
+  async function handleErstellen(daten: FiltertagEingabe) {
     setError(null)
-    setModalOffen(true)
-  }
-
-  function oeffnenBearbeiten(filtertag: FiltertagDef) {
-    setEditId(filtertag.id)
-    setLabel(filtertag.label)
-    setIstSchuelerArtig(filtertag.ist_schueler_artig)
-    setError(null)
-    setModalOffen(true)
-  }
-
-  async function handleSubmit(event: SubmitEvent) {
-    event.preventDefault()
-    setError(null)
-    const daten: FiltertagEingabe = { label, ist_schueler_artig: istSchuelerArtig }
     try {
-      if (editId === null) {
-        await filtertagErstellen(pfarreiId, daten)
-        showToast('Verfügbarkeits-Status angelegt')
-      } else {
-        await filtertagBearbeiten(pfarreiId, editId, daten)
-        showToast('Verfügbarkeits-Status gespeichert')
-      }
-      setModalOffen(false)
+      await filtertagErstellen(pfarreiId, daten)
+      showToast('Verfügbarkeits-Status angelegt')
+      setNeuOffen(false)
+      reload()
+    } catch (err) {
+      setError(fehlerText(err, 'Fehler beim Anlegen des Verfügbarkeits-Status'))
+    }
+  }
+
+  async function handleBearbeiten(filtertagId: number, daten: FiltertagEingabe) {
+    setError(null)
+    try {
+      await filtertagBearbeiten(pfarreiId, filtertagId, daten)
+      showToast('Verfügbarkeits-Status gespeichert')
+      setBearbeitenId(null)
       reload()
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Speichern des Verfügbarkeits-Status'))
@@ -1020,9 +1150,23 @@ function FiltertagsSection({
       <CardHeader
         title="Verfügbarkeits-Status"
         description="Wöchentliche Sperrzeiten je Status, z. B. Schulzeiten für „Schüler“."
-        action={<NeuButton label="Status" onClick={oeffnenNeu} />}
+        action={<NeuButton ref={neuButtonRef} label="Status" onClick={() => setNeuOffen(true)} />}
       />
-      {error && !modalOffen && (
+      <Popover
+        open={neuOffen}
+        onClose={() => setNeuOffen(false)}
+        anchorRef={neuButtonRef}
+        title="Verfügbarkeits-Status anlegen"
+      >
+        <FiltertagFormFelder
+          idPrefix="filtertag-neu"
+          initial={{ label: '', ist_schueler_artig: false }}
+          onSave={handleErstellen}
+          onCancel={() => setNeuOffen(false)}
+          submitLabel="Anlegen"
+        />
+      </Popover>
+      {error && (
         <div className="px-5 pt-4">
           <Alert>{error}</Alert>
         </div>
@@ -1035,35 +1179,50 @@ function FiltertagsSection({
         <div>
           {filtertags.map((filtertag) => (
             <div key={filtertag.id} className="border-b border-line last:border-b-0">
-              <Row>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-ink">{filtertag.label}</span>
-                  {filtertag.ist_schueler_artig && (
-                    <Badge tone="gold">folgt Schulferien-Regeln</Badge>
-                  )}
+              {bearbeitenId === filtertag.id ? (
+                <div className="px-5 py-3">
+                  <FiltertagFormFelder
+                    idPrefix={`filtertag-${filtertag.id}`}
+                    initial={{
+                      label: filtertag.label,
+                      ist_schueler_artig: filtertag.ist_schueler_artig,
+                    }}
+                    onSave={(daten) => handleBearbeiten(filtertag.id, daten)}
+                    onCancel={() => setBearbeitenId(null)}
+                    submitLabel="Speichern"
+                  />
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => toggleSperrzeiten(filtertag.id)}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
-                  >
-                    <ChevronRight
-                      className={`h-3.5 w-3.5 transition-transform ${
-                        offeneSperrzeiten.has(filtertag.id) ? 'rotate-90' : ''
-                      }`}
-                    />
-                    Sperrzeiten
-                    <span className="rounded-full bg-pine-tint px-1.5 text-[10px] text-pine-dark">
-                      {blocker.filter((b) => b.filtertag_id === filtertag.id).length}
-                    </span>
-                  </button>
-                  <IconButton label="Bearbeiten" onClick={() => oeffnenBearbeiten(filtertag)}>
-                    <Pencil className="h-4 w-4" />
-                  </IconButton>
-                  <InlineConfirmButton onConfirm={() => handleDelete(filtertag.id)} />
-                </div>
-              </Row>
+              ) : (
+                <Row>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-ink">{filtertag.label}</span>
+                    {filtertag.ist_schueler_artig && (
+                      <Badge tone="gold">folgt Schulferien-Regeln</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleSperrzeiten(filtertag.id)}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
+                    >
+                      <ChevronRight
+                        className={`h-3.5 w-3.5 transition-transform ${
+                          offeneSperrzeiten.has(filtertag.id) ? 'rotate-90' : ''
+                        }`}
+                      />
+                      Sperrzeiten
+                      <span className="rounded-full bg-pine-tint px-1.5 text-[10px] text-pine-dark">
+                        {blocker.filter((b) => b.filtertag_id === filtertag.id).length}
+                      </span>
+                    </button>
+                    <IconButton label="Bearbeiten" onClick={() => setBearbeitenId(filtertag.id)}>
+                      <Pencil className="h-4 w-4" />
+                    </IconButton>
+                    <InlineConfirmButton onConfirm={() => handleDelete(filtertag.id)} />
+                  </div>
+                </Row>
+              )}
               {offeneSperrzeiten.has(filtertag.id) && (
                 <div className="bg-pine-tint/20 pl-4">
                   {WOCHENTAGE.map((wochentagName, wochentag) => {
@@ -1091,42 +1250,6 @@ function FiltertagsSection({
           ))}
         </div>
       )}
-      <Modal
-        open={modalOffen}
-        onClose={() => setModalOffen(false)}
-        title={editId === null ? 'Verfügbarkeits-Status anlegen' : 'Verfügbarkeits-Status bearbeiten'}
-      >
-        {error && (
-          <div className="mb-4">
-            <Alert>{error}</Alert>
-          </div>
-        )}
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div>
-            <Label htmlFor="filtertag-label">Bezeichnung</Label>
-            <Input
-              id="filtertag-label"
-              placeholder="z. B. Azubi"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              required
-              autoFocus
-            />
-          </div>
-          <CheckboxChip
-            id="filtertag-schueler-artig"
-            checked={istSchuelerArtig}
-            onChange={() => setIstSchuelerArtig((wert) => !wert)}
-            title="Ferien und schulfreie Feiertage gelten für diesen Status als frei."
-          >
-            folgt Schulferien-Regeln
-          </CheckboxChip>
-          <ModalAktionen
-            onCancel={() => setModalOffen(false)}
-            submitLabel={editId === null ? 'Anlegen' : 'Speichern'}
-          />
-        </form>
-      </Modal>
     </Card>
   )
 }

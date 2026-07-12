@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -9,6 +10,13 @@ from app.models.pfarrei import Pfarrei
 from app.schemas.ferienzeitraum import FerienzeitraumOut
 from app.schemas.pfarrei import PfarreiBundeslandUpdate, PfarreiOut
 from app.services.ferien_sync import FerienSyncFehler, sync_ferien
+from app.services.pfarrei_bild import (
+    ERLAUBTE_TYPEN,
+    MAX_BYTES,
+    bild_loeschen,
+    bild_pfad,
+    bild_speichern,
+)
 
 router = APIRouter(prefix="/api/pfarreien", tags=["pfarreien"])
 
@@ -45,6 +53,57 @@ def detail(
     pfarrei = db.get(Pfarrei, pfarrei_id)
     if pfarrei is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pfarrei nicht gefunden")
+    return pfarrei
+
+
+@router.get("/{pfarrei_id}/bild")
+def bild_abrufen(
+    pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_pfarrei_zugriff),
+) -> FileResponse:
+    if pfarrei.bild_dateiname is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kein Bild vorhanden")
+    pfad = bild_pfad(pfarrei.bild_dateiname)
+    if not pfad.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bild nicht gefunden")
+    return FileResponse(pfad)
+
+
+@router.put("/{pfarrei_id}/bild", response_model=PfarreiOut)
+async def bild_hochladen(
+    datei: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Pfarrei:
+    if datei.content_type not in ERLAUBTE_TYPEN:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Nur PNG-, JPEG- oder WebP-Bilder werden unterstützt",
+        )
+    inhalt = await datei.read()
+    if len(inhalt) > MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Das Bild ist zu groß (max. 5 MB)",
+        )
+    pfarrei.bild_dateiname = bild_speichern(pfarrei.id, datei.content_type, inhalt)
+    db.commit()
+    db.refresh(pfarrei)
+    return pfarrei
+
+
+@router.delete("/{pfarrei_id}/bild", response_model=PfarreiOut)
+def bild_entfernen(
+    db: Session = Depends(get_db),
+    pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Pfarrei:
+    if pfarrei.bild_dateiname is not None:
+        bild_loeschen(pfarrei.bild_dateiname)
+        pfarrei.bild_dateiname = None
+        db.commit()
+        db.refresh(pfarrei)
     return pfarrei
 
 

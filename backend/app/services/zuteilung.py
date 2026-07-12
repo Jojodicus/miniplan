@@ -14,16 +14,35 @@ from app.services.verfuegbarkeit import ist_blockiert
 # eine unbesetzte Stelle dominiert klar gegenüber Fairness/Abstand, die nur zwischen bereits
 # besetzten Stellen abwägen.
 _UNBESETZT_STRAFE = 1000.0
-_FAIRNESS_GEWICHT = 1.0
-_ABSTAND_TAGE_SCHWELLE = 6
 _ABSTAND_STRAFE = 3.0
+
+
+@dataclass
+class ZuteilungConfig:
+    """Aus dem Miniplan abgeleitete Gewichte der automatischen Zuteilung. Die Defaults
+    reproduzieren das ursprüngliche, fest verdrahtete Verhalten."""
+
+    fairness_gewicht: float = 1.0
+    mindestabstand_tage: int = 6
+    mixing_gewicht: float = 0.0
+    wiederholung_gewicht: float = 0.0
+
+    @classmethod
+    def aus_miniplan(cls, miniplan: Miniplan) -> "ZuteilungConfig":
+        return cls(
+            fairness_gewicht=miniplan.fairness_gewicht,
+            mindestabstand_tage=miniplan.mindestabstand_tage,
+            mixing_gewicht=miniplan.mixing_gewicht,
+            wiederholung_gewicht=miniplan.wiederholung_gewicht,
+        )
 
 
 @dataclass
 class _Slot:
     """Eine einzelne zu besetzende Stelle innerhalb eines Dienstbedarfs (von dessen `anzahl`
     abgeleitet). `quota_gruppe_id` ist gesetzt, wenn diese Stelle zur Erfüllung einer
-    Gruppen-Mindestanzahl reserviert wurde."""
+    Gruppen-Mindestanzahl reserviert wurde. `signatur` identifiziert den wiederkehrenden Dienst
+    (gleicher Dienst-Typ/Name + Uhrzeit) für die Wiederholungs-Wertung."""
 
     dienstbedarf_id: int
     gottesdienst_id: int
@@ -31,6 +50,7 @@ class _Slot:
     zeit: time
     erforderliche_filtertags: frozenset[str]
     quota_gruppe_id: int | None
+    signatur: tuple[object, ...]
     mini_id: int | None = None
 
 
@@ -49,7 +69,12 @@ def _mini_passt(
     return not ist_mini_blockiert(mini, slot.datum, slot.zeit)
 
 
-def _badness(slots: list[_Slot], einsatz_anzahl: dict[int, int]) -> float:
+def _badness(
+    slots: list[_Slot],
+    einsatz_anzahl: dict[int, int],
+    config: ZuteilungConfig,
+    fixierte_belegung: list[tuple[int, tuple[object, ...], int]],
+) -> float:
     unbesetzt = sum(1 for s in slots if s.mini_id is None)
 
     anzahl_minis = len(einsatz_anzahl) or 1
@@ -65,10 +90,52 @@ def _badness(slots: list[_Slot], einsatz_anzahl: dict[int, int]) -> float:
         termine.sort()
         for davor, danach in zip(termine, termine[1:]):
             abstand = (danach - davor).days
-            if abstand < _ABSTAND_TAGE_SCHWELLE:
-                naehe_strafe += _ABSTAND_STRAFE * (_ABSTAND_TAGE_SCHWELLE - abstand)
+            if abstand < config.mindestabstand_tage:
+                naehe_strafe += _ABSTAND_STRAFE * (config.mindestabstand_tage - abstand)
 
-    return unbesetzt * _UNBESETZT_STRAFE + varianz * _FAIRNESS_GEWICHT + naehe_strafe
+    mixing_strafe = 0.0
+    wiederholung_bonus = 0.0
+    if config.mixing_gewicht or config.wiederholung_gewicht:
+        # Aktuelle Belegung (freie Stellen) mit den fixierten zusammenführen, damit beide Wertungen
+        # den vollständigen Plan sehen (auch das Paaren mit einem fixierten Mini zählt).
+        belegte_minis_je_gottesdienst: dict[int, set[int]] = {}
+        signaturen_je_mini: dict[int, list[tuple[object, ...]]] = {}
+        for slot in slots:
+            if slot.mini_id is None:
+                continue
+            belegte_minis_je_gottesdienst.setdefault(slot.gottesdienst_id, set()).add(slot.mini_id)
+            signaturen_je_mini.setdefault(slot.mini_id, []).append(slot.signatur)
+        for gottesdienst_id, signatur, mini_id in fixierte_belegung:
+            belegte_minis_je_gottesdienst.setdefault(gottesdienst_id, set()).add(mini_id)
+            signaturen_je_mini.setdefault(mini_id, []).append(signatur)
+
+        if config.mixing_gewicht:
+            paar_anzahl: dict[tuple[int, int], int] = {}
+            for minis_im_gottesdienst in belegte_minis_je_gottesdienst.values():
+                sortiert = sorted(minis_im_gottesdienst)
+                for i, a in enumerate(sortiert):
+                    for b in sortiert[i + 1 :]:
+                        paar_anzahl[(a, b)] = paar_anzahl.get((a, b), 0) + 1
+            # Progressiv steigende Strafe: jedes wiederholte Zusammentreffen desselben Paares
+            # wiegt mehr als das erste (count*(count-1)/2).
+            mixing_strafe = sum(n * (n - 1) / 2 for n in paar_anzahl.values())
+
+        if config.wiederholung_gewicht:
+            for signaturen in signaturen_je_mini.values():
+                haeufigkeit: dict[tuple[object, ...], int] = {}
+                for sig in signaturen:
+                    haeufigkeit[sig] = haeufigkeit.get(sig, 0) + 1
+                # Bonus für Treue zu derselben Dienst-Signatur (jede Wiederholung über die erste
+                # hinaus).
+                wiederholung_bonus += sum(n - 1 for n in haeufigkeit.values())
+
+    return (
+        unbesetzt * _UNBESETZT_STRAFE
+        + varianz * config.fairness_gewicht
+        + naehe_strafe
+        + mixing_strafe * config.mixing_gewicht
+        - wiederholung_bonus * config.wiederholung_gewicht
+    )
 
 
 def _akzeptieren(alte_badness: float, neue_badness: float, temperatur: float, zufall: random.Random) -> bool:
@@ -110,6 +177,7 @@ def _baue_slots(miniplan: Miniplan, minis_by_id: dict[int, Mini]) -> tuple[list[
             quoten.sort(key=lambda g: g is None)
 
             erforderlich = frozenset(bedarf.erforderliche_filtertags)
+            signatur = (bedarf.dienst_typ_id, bedarf.name, gottesdienst.uhrzeit)
             for quota_gruppe_id in quoten:
                 slots.append(
                     _Slot(
@@ -119,6 +187,7 @@ def _baue_slots(miniplan: Miniplan, minis_by_id: dict[int, Mini]) -> tuple[list[
                         zeit=gottesdienst.uhrzeit,
                         erforderliche_filtertags=erforderlich,
                         quota_gruppe_id=quota_gruppe_id,
+                        signatur=signatur,
                     )
                 )
 
@@ -154,6 +223,8 @@ def _simulated_annealing(
     belegt_je_gottesdienst: dict[int, set[int]],
     ist_mini_blockiert,
     zufall: random.Random,
+    config: ZuteilungConfig,
+    fixierte_belegung: list[tuple[int, tuple[object, ...], int]],
 ) -> None:
     besetzte = [s for s in slots if s.mini_id is not None]
     if len(besetzte) < 2:
@@ -166,7 +237,7 @@ def _simulated_annealing(
     # Annealing), aber das Endergebnis wäre dann nicht mehr das beste gefundene. Deshalb zusätzlich
     # unten der beste je gesehene Zustand separat gemerkt und am Ende wiederhergestellt.
     abkuehlung = (0.001 / temperatur) ** (1 / iterationen)
-    aktuelle_badness = _badness(slots, einsatz_anzahl)
+    aktuelle_badness = _badness(slots, einsatz_anzahl, config, fixierte_belegung)
     beste_badness = aktuelle_badness
     beste_zuweisung = [s.mini_id for s in slots]
 
@@ -193,7 +264,7 @@ def _simulated_annealing(
             alte_a, alte_b = a.mini_id, b.mini_id
             _setze_slot(a, mini_b.id, belegt_je_gottesdienst)
             _setze_slot(b, mini_a.id, belegt_je_gottesdienst)
-            neue_badness = _badness(slots, einsatz_anzahl)
+            neue_badness = _badness(slots, einsatz_anzahl, config, fixierte_belegung)
             if _akzeptieren(aktuelle_badness, neue_badness, temperatur, zufall):
                 aktuelle_badness = neue_badness
                 _beste_ggf_merken()
@@ -215,7 +286,7 @@ def _simulated_annealing(
             _setze_slot(slot, kandidat.id, belegt_je_gottesdienst)
             einsatz_anzahl[alter_mini_id] -= 1
             einsatz_anzahl[kandidat.id] += 1
-            neue_badness = _badness(slots, einsatz_anzahl)
+            neue_badness = _badness(slots, einsatz_anzahl, config, fixierte_belegung)
             if _akzeptieren(aktuelle_badness, neue_badness, temperatur, zufall):
                 aktuelle_badness = neue_badness
                 _beste_ggf_merken()
@@ -274,16 +345,31 @@ def zuteilung_vorschlagen(
 
     slots, belegt_je_gottesdienst = _baue_slots(miniplan, minis_by_id)
 
+    config = ZuteilungConfig.aus_miniplan(miniplan)
+
     einsatz_anzahl: dict[int, int] = {m.id: 0 for m in minis}
+    # Fixierte Zuweisungen zählen für Fairness und fließen als konstante Belegung in die
+    # Mixing-/Wiederholungs-Wertung ein (sie werden vom Algorithmus nicht verschoben).
+    fixierte_belegung: list[tuple[int, tuple[object, ...], int]] = []
     for gottesdienst in miniplan.gottesdienste:
         for bedarf in gottesdienst.dienstbedarf:
+            signatur = (bedarf.dienst_typ_id, bedarf.name, gottesdienst.uhrzeit)
             for zuweisung in bedarf.zuweisungen:
                 if zuweisung.manuell_fixiert and zuweisung.mini_id in einsatz_anzahl:
                     einsatz_anzahl[zuweisung.mini_id] += 1
+                    fixierte_belegung.append((gottesdienst.id, signatur, zuweisung.mini_id))
 
     _greedy_konstruktion(slots, minis, einsatz_anzahl, belegt_je_gottesdienst, _ist_mini_blockiert, zufall)
     _simulated_annealing(
-        slots, minis, minis_by_id, einsatz_anzahl, belegt_je_gottesdienst, _ist_mini_blockiert, zufall
+        slots,
+        minis,
+        minis_by_id,
+        einsatz_anzahl,
+        belegt_je_gottesdienst,
+        _ist_mini_blockiert,
+        zufall,
+        config,
+        fixierte_belegung,
     )
 
     ergebnis: dict[int, list[int]] = {}

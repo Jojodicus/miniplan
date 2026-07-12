@@ -558,3 +558,102 @@ def test_zuweisungen_leeren_erfordert_verantwortlich(
         headers=headers,
     )
     assert response.status_code == 403
+
+
+def test_zuteilung_einstellungen_defaults_und_setzen(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, db_session
+) -> None:
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=12, jahr=2027)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    base = f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}"
+
+    # Defaults reproduzieren das Alt-Verhalten.
+    response = client.get(base, headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["fairness_gewicht"] == 1.0
+    assert body["mindestabstand_tage"] == 6
+    assert body["mixing_gewicht"] == 0.0
+    assert body["wiederholung_gewicht"] == 0.0
+
+    response = client.put(
+        f"{base}/zuteilung-einstellungen",
+        json={
+            "fairness_gewicht": 2.5,
+            "mindestabstand_tage": 10,
+            "mixing_gewicht": 4.0,
+            "wiederholung_gewicht": 1.5,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["fairness_gewicht"] == 2.5
+    assert body["mindestabstand_tage"] == 10
+    assert body["mixing_gewicht"] == 4.0
+    assert body["wiederholung_gewicht"] == 1.5
+
+    # Ungültige Werte werden abgelehnt.
+    response = client.put(
+        f"{base}/zuteilung-einstellungen",
+        json={
+            "fairness_gewicht": -1,
+            "mindestabstand_tage": 10,
+            "mixing_gewicht": 4.0,
+            "wiederholung_gewicht": 1.5,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 422
+
+
+def test_abgeschlossener_miniplan_ist_schreibgeschuetzt(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe, db_session
+) -> None:
+    """Ein abgeschlossener Miniplan lehnt jede Mutation mit 409 ab; erst nach Wieder-öffnen sind
+    Änderungen wieder erlaubt."""
+    miniplan, zuweisung_a, _zuweisung_b, _mini_a, _mini_b = _plan_mit_zwei_gottesdiensten(
+        db_session, pfarrei, gruppe
+    )
+    gottesdienst_id = zuweisung_a.dienstbedarf.gottesdienst_id
+    zuweisung_a_id = zuweisung_a.id
+    miniplan.status = "abgeschlossen"
+    db_session.commit()
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    base = f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}"
+
+    mutationen = [
+        ("put", base, {"veranstaltungen": "x", "ankuendigungen": None}),
+        ("post", f"{base}/fuellen", None),
+        ("post", f"{base}/zuweisungen/leeren", {}),
+        (
+            "post",
+            f"{base}/zuweisungen/{zuweisung_a_id}/fixierung",
+            {"manuell_fixiert": False},
+        ),
+        ("delete", base, None),
+        (
+            "post",
+            f"{base}/gottesdienste",
+            {"datum": "2027-07-18", "uhrzeit": "10:00", "name": None, "dienstbedarf": []},
+        ),
+        ("delete", f"{base}/gottesdienste/{gottesdienst_id}", None),
+    ]
+    for methode, url, body in mutationen:
+        response = client.request(methode.upper(), url, json=body, headers=headers)
+        assert response.status_code == 409, f"{methode.upper()} {url} -> {response.status_code}"
+
+    # Wieder öffnen macht den Plan editierbar.
+    response = client.post(
+        f"{base}/status", json={"status": "in_bearbeitung"}, headers=headers
+    )
+    assert response.status_code == 200
+    response = client.put(
+        base, json={"veranstaltungen": "x", "ankuendigungen": None}, headers=headers
+    )
+    assert response.status_code == 200

@@ -47,15 +47,17 @@ export function Modal({
       <div
         role="dialog"
         aria-modal="true"
-        className={`animate-rise my-8 w-full ${maxWidth} rounded-xl border border-line bg-paper shadow-xl shadow-ink/20`}
+        className={`animate-rise my-8 flex max-h-[calc(100dvh-4rem)] w-full ${maxWidth} flex-col overflow-hidden rounded-xl border border-line bg-paper shadow-xl shadow-ink/20`}
       >
-        <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-line px-5 py-4">
           <h2 className="font-display text-lg font-semibold text-ink">{title}</h2>
           <IconButton label="Schließen" onClick={onClose}>
             <X className="h-4 w-4" />
           </IconButton>
         </div>
-        <div className="p-5">{children}</div>
+        {/* Nur der Inhalt scrollt (statt des ganzen Dialogs), damit lange Formulare den Header
+            nicht wegschieben und der Dialog nie über den Viewport hinausläuft. */}
+        <div className="overflow-y-auto p-5">{children}</div>
       </div>
     </div>,
     document.body,

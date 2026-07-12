@@ -146,10 +146,9 @@ test('Nutzer kann Miniplan mit Gottesdienst und Dienstbedarf befüllen', async (
   await dienstGespeichert
 
   // Mini-Belegung wird jetzt direkt in der (stets sichtbaren) Karte bearbeitet - kein Aufklappen
-  // mehrerer Ebenen mehr. "Alle Ministranten" hat eine offene Stelle; über den "+ Mini"-Adder
-  // (durchsuchbar) MP-Mini zuweisen.
+  // mehrerer Ebenen mehr. "Alle Ministranten" hat eine offene Stelle; der durchsuchbare Adder ist
+  // dafür direkt sichtbar (kein "+ Mini"-Button mehr nötig) - MP-Mini zuweisen.
   const alleBelegung = page.getByTestId('dienst-belegung').filter({ hasText: 'Alle Ministranten' })
-  await alleBelegung.getByRole('button', { name: 'Mini', exact: true }).click()
   await alleBelegung.getByLabel('Minis durchsuchen').fill('MP-Mini')
   const zuweisungGespeichert = autosaveGottesdienst(page)
   await alleBelegung.getByRole('button', { name: 'MP-Mini', exact: true }).click()
@@ -202,9 +201,17 @@ test('Nutzer kann Miniplan abschließen und das finale PDF herunterladen', async
 
   await expect(page.getByText('In Bearbeitung')).toBeVisible()
   await expect(page.getByRole('button', { name: 'PDF herunterladen' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Gottesdienst', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Füllen', exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Plan abschließen' }).click()
   await expect(page.getByText('Abgeschlossen', { exact: true })).toBeVisible({ timeout: 10_000 })
+
+  // Ein abgeschlossener Plan ist schreibgeschützt: Mutations-Buttons verschwinden, der Hinweis
+  // erscheint stattdessen.
+  await expect(page.getByText('Schreibgeschützt')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Gottesdienst', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Füllen', exact: true })).toHaveCount(0)
 
   const downloadEvent = page.waitForEvent('download')
   await page.getByRole('button', { name: 'PDF herunterladen' }).click()
@@ -213,6 +220,8 @@ test('Nutzer kann Miniplan abschließen und das finale PDF herunterladen', async
 
   await page.getByRole('button', { name: 'Wieder öffnen' }).click()
   await expect(page.getByText('In Bearbeitung')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('Schreibgeschützt')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Gottesdienst', exact: true })).toBeVisible()
 })
 
 test('Füllen-Button teilt Minis automatisch einem Dienstbedarf zu', async ({ page }) => {
@@ -254,6 +263,35 @@ test('Füllen-Button teilt Minis automatisch einem Dienstbedarf zu', async ({ pa
     timeout: 10_000,
   })
   await expect(page.getByTestId('chip-auto').filter({ hasText: 'FT-Mini-B' })).toBeVisible()
+})
+
+test('Auto-Fill-Einstellungen lassen sich im Popover ändern und speichern', async ({ page }) => {
+  await login(page)
+
+  await zuStammdaten(page, 'St. Beispiel')
+  await legeMiniplanAn(page, '2', '2035')
+  await expect(page.getByRole('heading', { name: 'Miniplan Februar 2035' })).toBeVisible({
+    timeout: 15_000,
+  })
+
+  await page.getByRole('button', { name: 'Auto-Fill-Einstellungen' }).click()
+  const popover = page.getByRole('dialog').filter({ hasText: 'Auto-Fill-Einstellungen' })
+  await expect(popover).toBeVisible()
+
+  await popover.getByLabel('Teams durchmischen').fill('5')
+  const gespeichert = page.waitForResponse(
+    (resp) =>
+      resp.request().method() === 'PUT' && /\/zuteilung-einstellungen$/.test(resp.url()),
+  )
+  await popover.getByRole('button', { name: 'Speichern' }).click()
+  await gespeichert
+  await expect(page.getByText('Auto-Fill-Einstellungen gespeichert')).toBeVisible()
+
+  // Erneut öffnen bestätigt, dass der Wert persistiert wurde.
+  await page.getByRole('button', { name: 'Auto-Fill-Einstellungen' }).click()
+  await expect(
+    page.getByRole('dialog').filter({ hasText: 'Auto-Fill-Einstellungen' }).getByLabel('Teams durchmischen'),
+  ).toHaveValue('5')
 })
 
 test('Automatisch zugewiesener Mini lässt sich fest übernehmen und übersteht erneutes Füllen', async ({
@@ -332,7 +370,6 @@ test('Zwei fest zugewiesene Minis lassen sich über zwei Gottesdienst-Karten hin
 
   async function fixiereMini(karte: Locator, miniName: string) {
     const belegung = karte.getByTestId('dienst-belegung').filter({ hasText: 'Kreuz' })
-    await belegung.getByRole('button', { name: 'Mini', exact: true }).click()
     await belegung.getByLabel('Minis durchsuchen').fill(miniName)
     const gespeichert = autosaveGottesdienst(page)
     await belegung.getByRole('button', { name: miniName, exact: true }).click()

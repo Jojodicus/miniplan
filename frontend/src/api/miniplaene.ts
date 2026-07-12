@@ -4,7 +4,14 @@ import type { Filtertag } from './minis'
 
 export type MiniplanStatus = 'in_bearbeitung' | 'abgeschlossen'
 
-export interface Miniplan {
+export interface ZuteilungEinstellungen {
+  fairness_gewicht: number
+  mindestabstand_tage: number
+  mixing_gewicht: number
+  wiederholung_gewicht: number
+}
+
+export interface Miniplan extends ZuteilungEinstellungen {
   id: number
   pfarrei_id: number
   monat: number
@@ -51,6 +58,17 @@ export function miniplanLoeschen(pfarreiId: number, miniplanId: number): Promise
 
 export function miniplanFuellen(pfarreiId: number, miniplanId: number): Promise<Miniplan> {
   return api.post<Miniplan>(`/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}/fuellen`)
+}
+
+export function miniplanZuteilungEinstellungenSetzen(
+  pfarreiId: number,
+  miniplanId: number,
+  einstellungen: ZuteilungEinstellungen,
+): Promise<Miniplan> {
+  return api.put<Miniplan>(
+    `/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}/zuteilung-einstellungen`,
+    einstellungen,
+  )
 }
 
 export function miniplanZuweisungenTauschen(

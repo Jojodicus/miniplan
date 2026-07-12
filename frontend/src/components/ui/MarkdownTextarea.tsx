@@ -21,12 +21,14 @@ export function MarkdownTextarea({
   onChange,
   rows = 3,
   placeholder,
+  disabled = false,
 }: {
   id?: string
   value: string
   onChange: (value: string) => void
   rows?: number
   placeholder?: string
+  disabled?: boolean
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -83,8 +85,9 @@ export function MarkdownTextarea({
           type="button"
           aria-label="Fett"
           title="Fett"
+          disabled={disabled}
           onClick={() => umschliessen({ vor: '**', nach: '**' })}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark disabled:pointer-events-none disabled:opacity-40"
         >
           <Bold className="h-3.5 w-3.5" />
         </button>
@@ -92,8 +95,9 @@ export function MarkdownTextarea({
           type="button"
           aria-label="Kursiv"
           title="Kursiv"
+          disabled={disabled}
           onClick={() => umschliessen({ vor: '*', nach: '*' })}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark disabled:pointer-events-none disabled:opacity-40"
         >
           <Italic className="h-3.5 w-3.5" />
         </button>
@@ -101,8 +105,9 @@ export function MarkdownTextarea({
           type="button"
           aria-label="Aufzählung"
           title="Aufzählung"
+          disabled={disabled}
           onClick={() => listeEinfuegen('-')}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark disabled:pointer-events-none disabled:opacity-40"
         >
           <List className="h-3.5 w-3.5" />
         </button>
@@ -110,8 +115,9 @@ export function MarkdownTextarea({
           type="button"
           aria-label="Nummerierte Liste"
           title="Nummerierte Liste"
+          disabled={disabled}
           onClick={() => listeEinfuegen('1.')}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark disabled:pointer-events-none disabled:opacity-40"
         >
           <ListOrdered className="h-3.5 w-3.5" />
         </button>
@@ -119,8 +125,9 @@ export function MarkdownTextarea({
           type="button"
           aria-label="Link"
           title="Link"
+          disabled={disabled}
           onClick={linkEinfuegen}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-pine-tint hover:text-pine-dark disabled:pointer-events-none disabled:opacity-40"
         >
           <Link className="h-3.5 w-3.5" />
         </button>
@@ -132,7 +139,8 @@ export function MarkdownTextarea({
         onChange={(e) => onChange(e.target.value)}
         rows={rows}
         placeholder={placeholder}
-        className={textareaChrome}
+        disabled={disabled}
+        className={`${textareaChrome} disabled:cursor-not-allowed disabled:opacity-60`}
       />
     </div>
   )

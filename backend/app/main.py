@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api import (
+    admin,
     auth,
     dienst_typen,
     feiertage,
@@ -34,6 +35,7 @@ async def security_headers(request: Request, call_next) -> Response:
 
 
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(pfarreien.router)
 app.include_router(gruppen.router)
 app.include_router(minis.router)

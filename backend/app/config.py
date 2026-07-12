@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 12
     static_files_dir: str = "static"
+    # Ablageort für hochgeladene Pfarrei-Bilder. Liegt bewusst außerhalb von static_files_dir
+    # (Frontend-Build) im persistenten Datenverzeichnis; docker-compose setzt /data/media.
+    media_dir: str = "media"
     # docker-compose.yml liefert standardmäßig reines HTTP aus; auf true setzen, sobald ein
     # TLS-Reverse-Proxy davorsteht, damit der Browser das Auth-Cookie nur noch über HTTPS sendet.
     cookie_secure: bool = False

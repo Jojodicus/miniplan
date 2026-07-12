@@ -15,7 +15,13 @@ from app.schemas.dienstbedarf import (
     ZuweisungFixierungIn,
     ZuweisungTauschenIn,
 )
-from app.schemas.miniplan import MiniplanCreate, MiniplanOut, MiniplanStatusUpdate, MiniplanUpdate
+from app.schemas.miniplan import (
+    MiniplanCreate,
+    MiniplanOut,
+    MiniplanStatusUpdate,
+    MiniplanUpdate,
+    ZuteilungEinstellungen,
+)
 from app.schemas.miniplan_vorschau import MiniplanVorschauIn, miniplan_zu_vorschau
 from app.services.typst_render import TypstCompileError, render_miniplan_pdf
 from app.services.zuteilung import zuteilung_vorschlagen
@@ -36,6 +42,17 @@ def _get_miniplan_or_404(pfarrei_id: int, miniplan_id: int, db: Session) -> Mini
             status_code=status.HTTP_404_NOT_FOUND, detail="Miniplan nicht gefunden"
         )
     return miniplan
+
+
+def schreibschutz_pruefen(miniplan: Miniplan) -> None:
+    """Verhindert Änderungen an einem abgeschlossenen Miniplan. Der Plan muss erst über den
+    Status-Endpunkt wieder auf `in_bearbeitung` gesetzt werden, bevor er editierbar ist - so
+    bleibt ein veröffentlichter (und ggf. schon als PDF verteilter) Plan stabil."""
+    if miniplan.status == MiniplanStatus.ABGESCHLOSSEN:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Der Miniplan ist abgeschlossen. Bitte zuerst wieder öffnen.",
+        )
 
 
 def _get_zuweisung_or_404(miniplan_id: int, zuweisung_id: int, db: Session) -> DienstbedarfZuweisung:
@@ -127,6 +144,7 @@ def bearbeiten(
     _=Depends(require_verantwortlich),
 ) -> Miniplan:
     miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(miniplan)
     miniplan.veranstaltungen = daten.veranstaltungen
     miniplan.ankuendigungen = daten.ankuendigungen
     db.commit()
@@ -150,6 +168,26 @@ def status_aendern(
     return miniplan
 
 
+@router.put("/{miniplan_id}/zuteilung-einstellungen", response_model=MiniplanOut)
+def zuteilung_einstellungen_setzen(
+    pfarrei_id: int,
+    miniplan_id: int,
+    daten: ZuteilungEinstellungen,
+    db: Session = Depends(get_db),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Miniplan:
+    miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(miniplan)
+    miniplan.fairness_gewicht = daten.fairness_gewicht
+    miniplan.mindestabstand_tage = daten.mindestabstand_tage
+    miniplan.mixing_gewicht = daten.mixing_gewicht
+    miniplan.wiederholung_gewicht = daten.wiederholung_gewicht
+    db.commit()
+    db.refresh(miniplan)
+    return miniplan
+
+
 @router.post("/{miniplan_id}/fuellen", response_model=MiniplanOut)
 def fuellen(
     pfarrei_id: int,
@@ -159,6 +197,7 @@ def fuellen(
     _=Depends(require_verantwortlich),
 ) -> Miniplan:
     miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(miniplan)
     vorschlag = zuteilung_vorschlagen(db, pfarrei_id, miniplan)
     # Erst alle nicht fixierten Zuweisungen löschen und flushen, bevor die neu vorgeschlagenen
     # eingefügt werden: bei einem erneuten Füllen-Lauf kann derselbe Mini wieder demselben
@@ -194,6 +233,7 @@ def zuweisungen_tauschen(
     _=Depends(require_verantwortlich),
 ) -> Miniplan:
     miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(miniplan)
     if daten.zuweisung_id_a == daten.zuweisung_id_b:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -260,6 +300,7 @@ def zuweisungen_leeren(
     """Entfernt automatisch (nicht fixiert) zugewiesene Minis - je nach Body für den ganzen Plan,
     einen Gottesdienst oder einen einzelnen Dienstbedarf. Manuell fixierte Zuweisungen bleiben."""
     miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(miniplan)
     for gottesdienst in miniplan.gottesdienste:
         if daten.gottesdienst_id is not None and gottesdienst.id != daten.gottesdienst_id:
             continue
@@ -285,6 +326,7 @@ def zuweisung_fixierung_setzen(
     _=Depends(require_verantwortlich),
 ) -> Miniplan:
     miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(miniplan)
     zuweisung = _get_zuweisung_or_404(miniplan_id, zuweisung_id, db)
     zuweisung.manuell_fixiert = daten.manuell_fixiert
     db.commit()
@@ -360,5 +402,6 @@ def loeschen(
     _=Depends(require_verantwortlich),
 ) -> None:
     miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(miniplan)
     db.delete(miniplan)
     db.commit()

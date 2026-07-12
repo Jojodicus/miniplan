@@ -161,3 +161,47 @@ def test_zuteilung_verteilt_diensthaeufigkeit_fair(db_session, pfarrei, gruppe) 
 
     assert sum(einsatz_anzahl.values()) == 8
     assert max(einsatz_anzahl.values()) - min(einsatz_anzahl.values()) <= 1
+
+
+def _paar_wiederholungen(vorschlag: dict[int, list[int]], bedarf_ids_je_gottesdienst: list[list[int]]) -> int:
+    """Zählt, wie oft dasselbe Mini-Paar über verschiedene Gottesdienste hinweg gemeinsam
+    eingeteilt ist (Summe über Paare von max(0, Auftreten-1))."""
+    paare: dict[tuple[int, int], int] = {}
+    for bedarf_ids in bedarf_ids_je_gottesdienst:
+        minis = sorted({m for bid in bedarf_ids for m in vorschlag.get(bid, [])})
+        for i, a in enumerate(minis):
+            for b in minis[i + 1 :]:
+                paare[(a, b)] = paare.get((a, b), 0) + 1
+    return sum(n - 1 for n in paare.values() if n > 1)
+
+
+def test_zuteilung_mixing_reduziert_wiederholte_paare(db_session, pfarrei, gruppe) -> None:
+    # 4 Minis, 4 Gottesdienste (wöchentlich, kein Abstands-Konflikt) mit je einem Bedarf für 2
+    # Minis. Bei aktivem Mixing sollen sich Mini-Paare nicht wiederholen (4 verschiedene Paare
+    # sind möglich, z.B. AB/CD/AC/BD).
+    minis = [_mini(db_session, pfarrei, gruppe, f"Mini {i}") for i in range(4)]
+    assert len(minis) == 4
+
+    def _plan_mit_mixing(mixing_gewicht: float) -> int:
+        miniplan = Miniplan(
+            pfarrei_id=pfarrei.id, monat=3, jahr=2026, mixing_gewicht=mixing_gewicht
+        )
+        db_session.add(miniplan)
+        db_session.commit()
+        db_session.refresh(miniplan)
+        bedarf_ids: list[list[int]] = []
+        for woche in range(4):
+            bedarf = Dienstbedarf(name="Kreuz", anzahl=2)
+            _gottesdienst(db_session, miniplan, [bedarf], date(2026, 3, 1) + timedelta(days=7 * woche))
+            bedarf_ids.append([bedarf.id])
+        db_session.refresh(miniplan)
+        vorschlag = zuteilung_vorschlagen(db_session, pfarrei.id, miniplan, zufallsstart=42)
+        wiederholungen = _paar_wiederholungen(vorschlag, bedarf_ids)
+        db_session.delete(miniplan)
+        db_session.commit()
+        return wiederholungen
+
+    mit_mixing = _plan_mit_mixing(8.0)
+
+    # Mit starkem Mixing-Gewicht findet die Zuteilung eine Lösung ganz ohne wiederholte Paare.
+    assert mit_mixing == 0

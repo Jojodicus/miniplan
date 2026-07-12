@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.nutzer import PfarreiRolle
 
@@ -17,3 +17,23 @@ class NutzerOut(BaseModel):
     email: str
     ist_admin: bool
     pfarrei_rollen: list[NutzerPfarreiRolleOut] = []
+
+
+class NutzerCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+    ist_admin: bool = False
+
+
+class NutzerUpdate(BaseModel):
+    email: EmailStr
+    ist_admin: bool
+
+
+class PasswortReset(BaseModel):
+    password: str = Field(min_length=8)
+
+
+class PfarreiRolleZuweisung(BaseModel):
+    pfarrei_id: int
+    rolle: PfarreiRolle

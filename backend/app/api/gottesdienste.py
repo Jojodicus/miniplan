@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.miniplaene import schreibschutz_pruefen
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
 from app.models.dienst_typ import DienstTyp
@@ -147,7 +148,7 @@ def erstellen(
     _pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
 ) -> Gottesdienst:
-    _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(_get_miniplan_or_404(pfarrei_id, miniplan_id, db))
     gottesdienst = Gottesdienst(
         miniplan_id=miniplan_id,
         datum=daten.datum,
@@ -172,7 +173,7 @@ def bearbeiten(
     _pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
 ) -> Gottesdienst:
-    _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(_get_miniplan_or_404(pfarrei_id, miniplan_id, db))
     gottesdienst = _get_gottesdienst_or_404(miniplan_id, gottesdienst_id, db)
     gottesdienst.datum = daten.datum
     gottesdienst.uhrzeit = daten.uhrzeit
@@ -193,7 +194,7 @@ def loeschen(
     _pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
 ) -> None:
-    _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(_get_miniplan_or_404(pfarrei_id, miniplan_id, db))
     gottesdienst = _get_gottesdienst_or_404(miniplan_id, gottesdienst_id, db)
     db.delete(gottesdienst)
     db.commit()
