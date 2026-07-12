@@ -23,6 +23,8 @@ _MONATSNAMEN = [
     "Dezember",
 ]
 
+_WOCHENTAGE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+
 _ERROR_ZEILE = re.compile(r"^error: (.+)$", re.MULTILINE)
 
 
@@ -147,76 +149,79 @@ def _minis_zelle(bedarf: VorschauDienstbedarf) -> str:
     return "".join(teile)
 
 
-def _dienstbedarf_bezeichnung(
-    bedarf: VorschauDienstbedarf, filtertag_labels: dict[str, str]
-) -> str:
-    einschraenkungen = [
-        filtertag_labels.get(tag, tag) for tag in bedarf.erforderliche_filtertags
-    ] + [
-        f"mind. {a.mindest_anzahl}× {a.gruppe_name}" for a in bedarf.gruppen_anforderungen
-    ]
-    if bedarf.zeige_label:
-        if einschraenkungen:
-            return f"{bedarf.name} ({', '.join(einschraenkungen)})"
-        return bedarf.name
-    if einschraenkungen:
-        return ", ".join(einschraenkungen)
-    return "—"
-
-
-def _build_source(
-    pfarrei_name: str, plan: MiniplanVorschauIn, filtertag_labels: dict[str, str]
-) -> str:
+def _build_source(pfarrei_name: str, plan: MiniplanVorschauIn) -> str:
     zeilen: list[str] = []
-    zeilen.append('#set page(paper: "a4", margin: 2cm)')
-    zeilen.append('#set text(size: 10pt, lang: "de")')
+    zeilen.append('#set page(paper: "a4", margin: (x: 2.4cm, y: 2.2cm))')
+    zeilen.append('#set text(size: 10.5pt, lang: "de")')
+    zeilen.append('#set par(justify: false)')
     zeilen.append("#align(center)[")
-    zeilen.append('  #text(size: 18pt, weight: "bold")[Ministranten-Dienstplan]')
-    zeilen.append("  #linebreak()")
-    titel = f"{pfarrei_name} – {_MONATSNAMEN[plan.monat - 1]} {plan.jahr}"
-    zeilen.append(f'  #text(size: 14pt)[#{_typst_str(titel)}]')
+    zeilen.append('  #text(size: 20pt, weight: "bold", tracking: 0.5pt)[Dienstplan]')
+    zeilen.append("  #v(0.15em)")
+    titel = f"{pfarrei_name} · {_MONATSNAMEN[plan.monat - 1]} {plan.jahr}"
+    zeilen.append(f'  #text(size: 12.5pt, style: "italic", fill: rgb("#4a4a4a"))[#{_typst_str(titel)}]')
     zeilen.append("]")
-    zeilen.append("#v(1em)")
+    zeilen.append("#v(0.5em)")
+    zeilen.append('#line(length: 100%, stroke: 0.6pt + rgb("#8a8a8a"))')
+    zeilen.append("#v(1.1em)")
 
     if not plan.gottesdienste:
-        zeilen.append('#text(style: "italic")[Keine Gottesdienste geplant.]')
+        zeilen.append('#align(center)[#text(style: "italic", fill: rgb("#6a6a6a"))[Keine Gottesdienste geplant.]]')
 
     for gd in plan.gottesdienste:
-        gd_titel = f"{gd.datum.strftime('%d.%m.%Y')} {gd.uhrzeit.strftime('%H:%M')} Uhr"
+        wochentag = _WOCHENTAGE[gd.datum.weekday()]
+        gd_datum = f"{wochentag}, {gd.datum.strftime('%d.%m.%Y')}"
+        gd_uhrzeit = f"{gd.uhrzeit.strftime('%H:%M')} Uhr"
+        zeilen.append("#block(above: 1.3em, below: 0.9em, breakable: false)[")
+        zeilen.append("  #grid(")
+        zeilen.append("    columns: (auto, 1fr),")
+        zeilen.append("    column-gutter: 0.6em,")
+        zeilen.append(
+            f'    text(size: 12pt, weight: "bold")[#{_typst_str(gd_datum)}],'
+        )
         if gd.name:
-            gd_titel += f" – {gd.name}"
-        zeilen.append("#block(above: 1em, below: 1em)[")
-        zeilen.append(f'  #text(size: 12pt, weight: "bold")[#{_typst_str(gd_titel)}]')
+            gd_name_zelle = f'text(size: 11pt, fill: rgb("#4a4a4a"))[#{_typst_str(gd.name)}]'
+        else:
+            gd_name_zelle = "[]"
+        zeilen.append(f"    {gd_name_zelle},")
+        zeilen.append("  )")
+        zeilen.append(f'  #text(size: 10pt, fill: rgb("#6a6a6a"))[#{_typst_str(gd_uhrzeit)}]')
         if gd.notiz:
             zeilen.append(
-                '  #text(style: "italic", size: 9pt)[' + _text_zeilen(gd.notiz) + "]"
+                '  #text(style: "italic", size: 9pt, fill: rgb("#6a6a6a"))[' + _text_zeilen(gd.notiz) + "]"
             )
+        zeilen.append("  #v(0.5em)")
         if gd.dienstbedarf:
             zeilen.append("  #table(")
-            zeilen.append("    columns: (1fr, auto, 2fr),")
-            zeilen.append("    align: (left, center, left),")
-            zeilen.append(
-                "    table.header([*Dienst*], [*Anzahl*], [*Zugewiesene Minis*]),"
-            )
+            zeilen.append("    columns: (5.2cm, 1fr),")
+            zeilen.append("    stroke: (x, y) => (bottom: 0.4pt + rgb(\"#d6d0c4\")),")
+            zeilen.append("    inset: (x: 0pt, y: 5pt),")
+            zeilen.append("    align: (left + horizon, left + horizon),")
             for bedarf in gd.dienstbedarf:
                 minis_zelle = _minis_zelle(bedarf)
-                bezeichnung = _dienstbedarf_bezeichnung(bedarf, filtertag_labels)
-                zeilen.append(
-                    f"    [#{_typst_str(bezeichnung)}], [#{_typst_str(str(bedarf.anzahl))}], "
-                    f"[{minis_zelle}],"
-                )
+                if bedarf.zeige_label:
+                    dienst_zelle = (
+                        f'#text(weight: "medium", fill: rgb("#3a3a3a"))[#{_typst_str(bedarf.name)}]'
+                    )
+                else:
+                    dienst_zelle = ""
+                zeilen.append(f"    [{dienst_zelle}], [{minis_zelle}],")
             zeilen.append("  )")
         else:
-            zeilen.append('  #text(style: "italic")[Kein Dienstbedarf hinterlegt.]')
+            zeilen.append('  #text(style: "italic", size: 9pt, fill: rgb("#6a6a6a"))[Kein Dienstbedarf hinterlegt.]')
         zeilen.append("]")
 
     if plan.veranstaltungen:
-        zeilen.append("#v(1em)")
+        zeilen.append("#v(1.3em)")
+        zeilen.append('#line(length: 100%, stroke: 0.4pt + rgb("#d6d0c4"))')
+        zeilen.append('#v(0.7em)')
         zeilen.append('#text(size: 12pt, weight: "bold")[Veranstaltungen]')
         zeilen.append("#block(above: 0.5em)[" + markdown_to_typst(plan.veranstaltungen) + "]")
 
     if plan.ankuendigungen:
-        zeilen.append("#v(1em)")
+        zeilen.append("#v(1.3em)")
+        if not plan.veranstaltungen:
+            zeilen.append('#line(length: 100%, stroke: 0.4pt + rgb("#d6d0c4"))')
+            zeilen.append('#v(0.7em)')
         zeilen.append('#text(size: 12pt, weight: "bold")[Ankündigungen]')
         zeilen.append("#block(above: 0.5em)[" + markdown_to_typst(plan.ankuendigungen) + "]")
 
@@ -230,12 +235,8 @@ def _parse_fehler(stderr: str) -> list[str]:
     return [stderr.strip() or "Unbekannter Typst-Fehler"]
 
 
-def render_miniplan_pdf(
-    pfarrei_name: str,
-    plan: MiniplanVorschauIn,
-    filtertag_labels: dict[str, str] | None = None,
-) -> bytes:
-    quelltext = _build_source(pfarrei_name, plan, filtertag_labels or {})
+def render_miniplan_pdf(pfarrei_name: str, plan: MiniplanVorschauIn) -> bytes:
+    quelltext = _build_source(pfarrei_name, plan)
     with tempfile.TemporaryDirectory() as tmp_dir:
         quelldatei = Path(tmp_dir) / "miniplan.typ"
         quelldatei.write_text(quelltext, encoding="utf-8")

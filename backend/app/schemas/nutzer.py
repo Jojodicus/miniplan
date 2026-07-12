@@ -34,6 +34,15 @@ class PasswortReset(BaseModel):
     password: str = Field(min_length=8)
 
 
+class SelbstEmailAendern(BaseModel):
+    email: EmailStr
+
+
+class SelbstPasswortAendern(BaseModel):
+    aktuelles_passwort: str
+    neues_passwort: str = Field(min_length=8)
+
+
 class PfarreiRolleZuweisung(BaseModel):
     pfarrei_id: int
     rolle: PfarreiRolle

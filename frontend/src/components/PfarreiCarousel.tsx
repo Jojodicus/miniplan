@@ -1,5 +1,5 @@
 import { CalendarRange, ChevronLeft, ChevronRight, Church, Search, Settings } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { pfarreiBildUrl, type Pfarrei } from '../api/pfarreien'
 import { Input } from './ui/FormField'
@@ -47,6 +47,7 @@ function PfarreiKarte({ pfarrei }: { pfarrei: Pfarrei }) {
 
 export function PfarreiCarousel({ pfarreien }: { pfarreien: Pfarrei[] }) {
   const [suche, setSuche] = useState('')
+  const [aktiverIndex, setAktiverIndex] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const gefiltert = useMemo(() => {
@@ -55,18 +56,32 @@ export function PfarreiCarousel({ pfarreien }: { pfarreien: Pfarrei[] }) {
     return pfarreien.filter((p) => p.name.toLowerCase().includes(q))
   }, [pfarreien, suche])
 
-  function blaettern(richtung: -1 | 1) {
+  useEffect(() => {
+    setAktiverIndex(0)
+    scrollRef.current?.scrollTo({ left: 0 })
+  }, [gefiltert.length])
+
+  function scrolleZuIndex(index: number) {
     const container = scrollRef.current
     if (!container) return
-    container.scrollBy({ left: richtung * container.clientWidth, behavior: 'smooth' })
+    const ziel = Math.max(0, Math.min(index, gefiltert.length - 1))
+    container.scrollTo({ left: ziel * container.clientWidth, behavior: 'smooth' })
+  }
+
+  function beiScroll() {
+    const container = scrollRef.current
+    if (!container || container.clientWidth === 0) return
+    setAktiverIndex(Math.round(container.scrollLeft / container.clientWidth))
   }
 
   const mehrfach = gefiltert.length > 1
+  const amAnfang = aktiverIndex <= 0
+  const amEnde = aktiverIndex >= gefiltert.length - 1
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-3">
-        <div className="relative max-w-sm flex-1">
+      <div className="mb-4">
+        <div className="relative max-w-sm">
           <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-faint" />
           <Input
             type="search"
@@ -77,26 +92,6 @@ export function PfarreiCarousel({ pfarreien }: { pfarreien: Pfarrei[] }) {
             aria-label="Pfarrei suchen"
           />
         </div>
-        {mehrfach && (
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => blaettern(-1)}
-              aria-label="Vorherige"
-              className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-line text-ink-soft transition-colors hover:border-pine hover:text-pine-dark"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => blaettern(1)}
-              aria-label="Nächste"
-              className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-line text-ink-soft transition-colors hover:border-pine hover:text-pine-dark"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        )}
       </div>
 
       {gefiltert.length === 0 ? (
@@ -104,12 +99,57 @@ export function PfarreiCarousel({ pfarreien }: { pfarreien: Pfarrei[] }) {
           Keine Pfarrei gefunden.
         </p>
       ) : (
-        <div
-          ref={scrollRef}
-          className="flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-smooth pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {gefiltert.map((pfarrei) => (
-            <PfarreiKarte key={pfarrei.id} pfarrei={pfarrei} />
+        <div className="relative">
+          <div
+            ref={scrollRef}
+            onScroll={beiScroll}
+            className="flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-smooth pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {gefiltert.map((pfarrei) => (
+              <PfarreiKarte key={pfarrei.id} pfarrei={pfarrei} />
+            ))}
+          </div>
+
+          {mehrfach && (
+            <>
+              {!amAnfang && (
+                <button
+                  type="button"
+                  onClick={() => scrolleZuIndex(aktiverIndex - 1)}
+                  aria-label="Vorherige"
+                  className="absolute top-[calc(50%-1rem)] left-2 inline-flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-line bg-white/90 text-ink-soft shadow-md backdrop-blur transition-colors hover:border-pine hover:text-pine-dark"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+              )}
+              {!amEnde && (
+                <button
+                  type="button"
+                  onClick={() => scrolleZuIndex(aktiverIndex + 1)}
+                  aria-label="Nächste"
+                  className="absolute top-[calc(50%-1rem)] right-2 inline-flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-line bg-white/90 text-ink-soft shadow-md backdrop-blur transition-colors hover:border-pine hover:text-pine-dark"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {mehrfach && (
+        <div className="mt-3 flex items-center justify-center gap-2">
+          {gefiltert.map((pfarrei, index) => (
+            <button
+              key={pfarrei.id}
+              type="button"
+              onClick={() => scrolleZuIndex(index)}
+              aria-label={`Zu ${pfarrei.name} springen`}
+              aria-current={index === aktiverIndex}
+              className={`h-2 cursor-pointer rounded-full transition-all ${
+                index === aktiverIndex ? 'w-6 bg-pine' : 'w-2 bg-line hover:bg-pine/50'
+              }`}
+            />
           ))}
         </div>
       )}

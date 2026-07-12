@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
 from app.models.dienstbedarf import Dienstbedarf, DienstbedarfZuweisung
-from app.models.filtertag import Filtertag
 from app.models.gottesdienst import Gottesdienst
 from app.models.miniplan import Miniplan, MiniplanStatus
 from app.models.nutzer import PfarreiRolle
@@ -348,14 +347,8 @@ def pdf_herunterladen(
             status_code=status.HTTP_409_CONFLICT,
             detail="Nur abgeschlossene Minipläne können heruntergeladen werden",
         )
-    filtertag_labels = {
-        f.key: f.label
-        for f in db.query(Filtertag).filter(Filtertag.pfarrei_id == pfarrei_id).all()
-    }
     try:
-        pdf_bytes = render_miniplan_pdf(
-            pfarrei.name, miniplan_zu_vorschau(miniplan), filtertag_labels
-        )
+        pdf_bytes = render_miniplan_pdf(pfarrei.name, miniplan_zu_vorschau(miniplan))
     except TypstCompileError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -379,12 +372,8 @@ def vorschau(
     _=Depends(require_verantwortlich),
 ) -> Response:
     _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
-    filtertag_labels = {
-        f.key: f.label
-        for f in db.query(Filtertag).filter(Filtertag.pfarrei_id == pfarrei_id).all()
-    }
     try:
-        pdf_bytes = render_miniplan_pdf(pfarrei.name, daten, filtertag_labels)
+        pdf_bytes = render_miniplan_pdf(pfarrei.name, daten)
     except TypstCompileError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

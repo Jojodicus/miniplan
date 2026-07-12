@@ -28,3 +28,17 @@ export function logout(): Promise<void> {
 export function me(): Promise<Nutzer> {
   return api.get<Nutzer>('/api/auth/me')
 }
+
+export function eigeneEmailAendern(email: string): Promise<Nutzer> {
+  return api.put<Nutzer>('/api/auth/me/email', { email })
+}
+
+export function eigenesPasswortAendern(
+  aktuellesPasswort: string,
+  neuesPasswort: string,
+): Promise<void> {
+  return api.post<void>('/api/auth/me/passwort', {
+    aktuelles_passwort: aktuellesPasswort,
+    neues_passwort: neuesPasswort,
+  })
+}

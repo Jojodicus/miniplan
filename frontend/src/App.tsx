@@ -5,6 +5,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { MiniplanEditorPage } from './pages/MiniplanEditorPage'
 import { MiniplaenePage } from './pages/MiniplaenePage'
+import { ProfilePage } from './pages/ProfilePage'
 import { StammdatenPage } from './pages/StammdatenPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -37,6 +38,14 @@ function App() {
         element={
           <ProtectedRoute>
             <AdminPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/profil"
+        element={
+          <ProtectedRoute>
+            <ProfilePage />
           </ProtectedRoute>
         }
       />

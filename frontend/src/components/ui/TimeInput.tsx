@@ -11,11 +11,17 @@ function teile(value: string): { stunde: string; minute: string } {
   return { stunde, minute }
 }
 
+function normalisiereMinute(eingabe: string): string {
+  const zahl = Math.min(59, Math.max(0, Number(eingabe) || 0))
+  return String(zahl).padStart(2, '0')
+}
+
 /**
- * Styled 24h-Uhrzeitwähler als Popover statt des kaum stylebaren nativen `<input type="time">`:
- * ein Raster für die volle Stunde und Schnellbuttons für die gängigen Viertelstunden decken die
- * häufigen Fälle mit einem Klick ab; ein natives Feld darunter erlaubt weiterhin minutengenaue
- * Eingabe. Der Wert bleibt im Format `HH:MM`.
+ * Styled 24h-Uhrzeitwähler als Popover statt des kaum stylebaren nativen `<input type="time">`
+ * (dessen Anzeigeformat vom Locale des Browsers abhängt, nicht garantiert 24h ist). Ein Raster
+ * für die volle Stunde deckt die häufigen Fälle mit einem Klick ab; ein separates Minutenfeld
+ * (statt eines zweiten vollständigen HH:MM-Eingabefelds) erlaubt minutengenaue Eingabe ohne die
+ * Stundenauswahl zu duplizieren. Der Wert bleibt im Format `HH:MM`.
  */
 export function TimeInput({
   id,
@@ -126,8 +132,22 @@ export function TimeInput({
                 )
               })}
             </div>
-            <p className="mt-3 mb-1.5 text-xs font-medium text-ink-faint">Minute</p>
-            <div className="grid grid-cols-4 gap-1">
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="text-xs font-medium text-ink-faint">Minute</p>
+              <div className="flex items-center gap-1">
+                <Input
+                  aria-label="Minute genau"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={59}
+                  value={minute}
+                  onChange={(e) => setMinute(normalisiereMinute(e.target.value))}
+                  className="h-8 w-16 text-center tabular-nums"
+                />
+              </div>
+            </div>
+            <div className="mt-1.5 grid grid-cols-4 gap-1">
               {MINUTEN.map((m) => {
                 const aktiv = minute === m
                 return (
@@ -143,17 +163,6 @@ export function TimeInput({
                   </button>
                 )
               })}
-            </div>
-            <div className="mt-3 flex items-center gap-2 border-t border-line pt-3">
-              <span className="text-xs text-ink-faint">Genau</span>
-              <Input
-                aria-label="Uhrzeit minutengenau"
-                type="time"
-                step={60}
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                className="h-8"
-              />
             </div>
           </div>,
           document.body,

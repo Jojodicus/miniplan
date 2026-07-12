@@ -360,7 +360,7 @@ function MiniAdder({
         .sort((a, b) => a.name.localeCompare(b.name, 'de')),
     [minis, belegteMiniIds],
   )
-  const gefiltert = verfuegbar.filter((m) => m.name.toLowerCase().includes(begriff))
+  const gefiltert = begriff ? verfuegbar.filter((m) => m.name.toLowerCase().includes(begriff)) : []
   const sichtbar = gefiltert.slice(0, ADDER_LIMIT)
   const rest = gefiltert.length - sichtbar.length
 
@@ -380,24 +380,24 @@ function MiniAdder({
       </div>
       {verfuegbar.length === 0 ? (
         <p className="px-1 py-1 text-xs text-ink-faint">Alle Minis sind bereits zugewiesen.</p>
-      ) : gefiltert.length === 0 ? (
+      ) : !begriff ? null : gefiltert.length === 0 ? (
         <p className="px-1 py-1 text-xs text-ink-faint">Kein Mini passt zu „{suche.trim()}“.</p>
       ) : (
-        // Max-Höhe mit eigenem Scroll, statt die ganze (Gottesdienst-)Karte unbegrenzt wachsen zu
-        // lassen - auf schmalen Bildschirmen sonst schnell mehrere Bildschirmhöhen pro Karte.
-        <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+        // Einzeilig mit horizontalem Scroll (Desktop) statt umbrechend über mehrere Zeilen -
+        // die Karte soll durch Suchergebnisse nicht in der Höhe wachsen.
+        <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {sichtbar.map((mini) => (
             <button
               key={mini.id}
               type="button"
               onClick={() => onAdd(mini.id)}
-              className="rounded-full border border-line px-2.5 py-1 text-sm text-ink-soft transition-colors hover:border-pine hover:bg-pine-tint hover:text-pine-dark"
+              className="shrink-0 rounded-full border border-line px-2.5 py-1 text-sm whitespace-nowrap text-ink-soft transition-colors hover:border-pine hover:bg-pine-tint hover:text-pine-dark"
             >
               {mini.name}
             </button>
           ))}
           {rest > 0 && (
-            <span className="self-center px-1 text-xs text-ink-faint">
+            <span className="shrink-0 self-center px-1 text-xs whitespace-nowrap text-ink-faint">
               +{rest} weitere – Suche eingrenzen
             </span>
           )}
@@ -429,6 +429,7 @@ function DienstbedarfBelegung({
   minis,
   filtertags,
   serverZuweisungen,
+  gottesdienstBelegteMiniIds,
   dienstbedarfId,
   readonly,
   onChange,
@@ -440,6 +441,9 @@ function DienstbedarfBelegung({
   minis: Mini[]
   filtertags: FiltertagDef[]
   serverZuweisungen: DienstbedarfZuweisung[]
+  // Minis, die bereits einem anderen Dienst desselben Gottesdienstes zugewiesen sind - der Adder
+  // soll sie nicht nochmal anbieten, auch wenn sie für diesen Dienstbedarf selbst noch frei sind.
+  gottesdienstBelegteMiniIds: Set<number>
   dienstbedarfId: number | null
   readonly: boolean
   onChange: (patch: Partial<WorkingBedarf>) => void
@@ -531,7 +535,7 @@ function DienstbedarfBelegung({
         <div className="mt-2">
           <MiniAdder
             minis={minis}
-            belegteMiniIds={belegteMiniIds}
+            belegteMiniIds={gottesdienstBelegteMiniIds}
             disabled={voll}
             onAdd={(miniId) => toggleMini(miniId)}
           />
@@ -793,6 +797,20 @@ function GottesdienstKarte({
     )
   }
 
+  // Minis, die irgendeinem Dienst dieses Gottesdienstes bereits zugewiesen sind - über alle
+  // Dienstbedarf-Einträge hinweg, damit der Adder denselben Mini nicht für einen zweiten Dienst
+  // desselben Gottesdienstes vorschlägt.
+  const gottesdienstBelegteMiniIds = useMemo(() => {
+    const ids = new Set<number>()
+    bedarfListe.forEach((b) => {
+      b.fixierteMiniIds.forEach((id) => ids.add(id))
+      ;(serverZuweisungenMap[b.schluessel] ?? [])
+        .filter((z) => !z.manuell_fixiert)
+        .forEach((z) => ids.add(z.mini.id))
+    })
+    return ids
+  }, [bedarfListe, serverZuweisungenMap])
+
   function removeBedarf(schluessel: string) {
     setBedarfListe((liste) => liste.filter((b) => b.schluessel !== schluessel))
   }
@@ -976,6 +994,7 @@ function GottesdienstKarte({
               minis={minis}
               filtertags={filtertags}
               serverZuweisungen={serverZuweisungenMap[bedarf.schluessel] ?? []}
+              gottesdienstBelegteMiniIds={gottesdienstBelegteMiniIds}
               dienstbedarfId={dienstbedarfIdMap[bedarf.schluessel] ?? bedarf.dienstbedarfId}
               readonly={readonly}
               onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
@@ -1370,7 +1389,7 @@ function VorschauPanel({
           </Alert>
         )}
         {!pdfDaten && !fehler && <p className="text-sm text-ink-soft">Vorschau wird geladen…</p>}
-        <PdfViewer data={pdfDaten} className="min-h-0 flex-1" />
+        <PdfViewer data={pdfDaten} className="mx-auto aspect-[210/297] max-h-full self-center" />
       </div>
     </Card>
   )

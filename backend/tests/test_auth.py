@@ -105,3 +105,74 @@ def test_health_endpoint(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_eigene_email_aendern(client: TestClient, admin_user: Nutzer) -> None:
+    client.post("/api/auth/login", json={"email": "admin@example.com", "password": "geheim123"})
+    response = client.put("/api/auth/me/email", json={"email": "neu@example.com"})
+    assert response.status_code == 200
+    assert response.json()["email"] == "neu@example.com"
+
+    # Login funktioniert danach nur noch mit der neuen E-Mail.
+    login = client.post(
+        "/api/auth/login", json={"email": "neu@example.com", "password": "geheim123"}
+    )
+    assert login.status_code == 200
+
+
+def test_eigene_email_aendern_ohne_login(client: TestClient) -> None:
+    response = client.put("/api/auth/me/email", json={"email": "neu@example.com"})
+    assert response.status_code == 401
+
+
+def test_eigene_email_aendern_auf_bestehende_email_liefert_konflikt(
+    client: TestClient, admin_user: Nutzer, db_session
+) -> None:
+    from app.security import hash_password
+
+    anderer = Nutzer(email="anderer@example.com", password_hash=hash_password("geheim123"))
+    db_session.add(anderer)
+    db_session.commit()
+
+    client.post("/api/auth/login", json={"email": "admin@example.com", "password": "geheim123"})
+    response = client.put("/api/auth/me/email", json={"email": "anderer@example.com"})
+    assert response.status_code == 409
+
+
+def test_eigenes_passwort_aendern(client: TestClient, admin_user: Nutzer) -> None:
+    client.post("/api/auth/login", json={"email": "admin@example.com", "password": "geheim123"})
+    response = client.post(
+        "/api/auth/me/passwort",
+        json={"aktuelles_passwort": "geheim123", "neues_passwort": "neuesPasswort1"},
+    )
+    assert response.status_code == 204
+
+    login = client.post(
+        "/api/auth/login", json={"email": "admin@example.com", "password": "neuesPasswort1"}
+    )
+    assert login.status_code == 200
+
+
+def test_eigenes_passwort_aendern_mit_falschem_aktuellen_passwort(
+    client: TestClient, admin_user: Nutzer
+) -> None:
+    client.post("/api/auth/login", json={"email": "admin@example.com", "password": "geheim123"})
+    response = client.post(
+        "/api/auth/me/passwort",
+        json={"aktuelles_passwort": "falsch", "neues_passwort": "neuesPasswort1"},
+    )
+    assert response.status_code == 401
+
+    # Das alte Passwort funktioniert danach weiterhin.
+    login = client.post(
+        "/api/auth/login", json={"email": "admin@example.com", "password": "geheim123"}
+    )
+    assert login.status_code == 200
+
+
+def test_eigenes_passwort_aendern_ohne_login(client: TestClient) -> None:
+    response = client.post(
+        "/api/auth/me/passwort",
+        json={"aktuelles_passwort": "geheim123", "neues_passwort": "neuesPasswort1"},
+    )
+    assert response.status_code == 401

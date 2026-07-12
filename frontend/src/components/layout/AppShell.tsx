@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarRange, LogOut, Settings, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, CalendarRange, LogOut, Settings, ShieldCheck, UserCircle } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 
@@ -78,7 +78,19 @@ export function AppShell({
                   Admin
                 </NavLink>
               )}
-              <span className="hidden text-sm text-ink-soft sm:inline">{user.email}</span>
+              <NavLink
+                to="/profil"
+                className={({ isActive }) =>
+                  `inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm transition-colors ${
+                    isActive
+                      ? 'bg-pine-tint text-pine-dark'
+                      : 'text-ink-soft hover:bg-paper-dim hover:text-ink'
+                  }`
+                }
+              >
+                <UserCircle className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{user.email}</span>
+              </NavLink>
               <button
                 onClick={logout}
                 className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-sm text-ink-soft transition-colors hover:bg-paper-dim hover:text-ink"
