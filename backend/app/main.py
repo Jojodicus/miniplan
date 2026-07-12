@@ -4,6 +4,17 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+
+class _ImmutableCachedStaticFiles(StaticFiles):
+    """Vite hasht Dateinamen in `assets/` bei jeder inhaltlichen Änderung neu - derselbe Pfad
+    liefert also immer denselben Inhalt und darf unbegrenzt (statt nur bis zur nächsten
+    Revalidierung) im Browser-Cache bleiben."""
+
+    def file_response(self, *args: object, **kwargs: object) -> Response:
+        response = super().file_response(*args, **kwargs)  # type: ignore[arg-type]
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
 from app.api import (
     admin,
     auth,
@@ -55,7 +66,9 @@ static_dir = Path(settings.static_files_dir)
 if static_dir.is_dir():
     assets_dir = static_dir / "assets"
     if assets_dir.is_dir():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="static-assets")
+        app.mount(
+            "/assets", _ImmutableCachedStaticFiles(directory=assets_dir), name="static-assets"
+        )
 
     resolved_static_dir = static_dir.resolve()
 

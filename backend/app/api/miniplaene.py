@@ -1,10 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
-from app.models.dienstbedarf import Dienstbedarf, DienstbedarfZuweisung
+from app.models.dienstbedarf import (
+    Dienstbedarf,
+    DienstbedarfGruppenAnforderung,
+    DienstbedarfZuweisung,
+)
 from app.models.gottesdienst import Gottesdienst
 from app.models.miniplan import Miniplan, MiniplanStatus
 from app.models.nutzer import PfarreiRolle
@@ -30,9 +34,27 @@ require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICH
 require_lesend = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER, PfarreiRolle.BETRACHTER)
 
 
+def _mit_geladenem_planstand(query):
+    """Lädt die komplette Gottesdienst/Dienstbedarf/Zuweisungs-Kette per selectinload statt der
+    SQLAlchemy-Default-Lazy-Loads - sonst löst die Ausgabe der verschachtelten Response-Schemas
+    (MiniplanOut) für jede Zeile eine eigene Query aus (N+1), was v.a. die alle 500ms aufgerufene
+    Live-Vorschau spürbar verlangsamt."""
+    return query.options(
+        selectinload(Miniplan.gottesdienste).options(
+            selectinload(Gottesdienst.dienstbedarf).options(
+                selectinload(Dienstbedarf.dienst_typ),
+                selectinload(Dienstbedarf.gruppen_anforderungen).selectinload(
+                    DienstbedarfGruppenAnforderung.gruppe
+                ),
+                selectinload(Dienstbedarf.zuweisungen).selectinload(DienstbedarfZuweisung.mini),
+            )
+        )
+    )
+
+
 def _get_miniplan_or_404(pfarrei_id: int, miniplan_id: int, db: Session) -> Miniplan:
     miniplan = (
-        db.query(Miniplan)
+        _mit_geladenem_planstand(db.query(Miniplan))
         .filter(Miniplan.id == miniplan_id, Miniplan.pfarrei_id == pfarrei_id)
         .first()
     )
@@ -93,7 +115,7 @@ def liste(
     _=Depends(require_verantwortlich),
 ) -> list[Miniplan]:
     return (
-        db.query(Miniplan)
+        _mit_geladenem_planstand(db.query(Miniplan))
         .filter(Miniplan.pfarrei_id == pfarrei_id)
         .order_by(Miniplan.jahr.desc(), Miniplan.monat.desc())
         .all()
