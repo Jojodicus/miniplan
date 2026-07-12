@@ -8,21 +8,24 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
 COPY frontend/ ./
 RUN pnpm run build
 
-FROM python:3.12-slim AS backend
-WORKDIR /app
-
+FROM python:3.12-slim AS typst-fetch
+ARG TYPST_VERSION=0.14.2
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl xz-utils \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
-
-ARG TYPST_VERSION=0.14.2
-RUN curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
     | tar -xJ -C /tmp \
     && mv "/tmp/typst-x86_64-unknown-linux-musl/typst" /usr/local/bin/typst \
     && rm -rf /tmp/typst-x86_64-unknown-linux-musl \
     && typst --version
+
+# Eigener Stage nur fuers Herunterladen: curl/xz-utils (und der ungenutzte Rest des Release-Tarballs)
+# landen so nicht im Backend-Image, es wird nur die fertige typst-Binary rueberkopiert.
+FROM python:3.12-slim AS backend
+WORKDIR /app
+
+COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
+COPY --from=typst-fetch /usr/local/bin/typst /usr/local/bin/typst
 
 # venv statt System-Python, damit `uv sync` unter dem späteren non-root User (miniplan) nicht
 # gegen /usr/lib/python3.12/site-packages schreiben muss.
@@ -61,6 +64,8 @@ VOLUME ["/data"]
 USER miniplan
 
 EXPOSE 8000
+# python statt curl fuers Healthcheck, damit curl nicht extra ins Image muss (wird sonst
+# nirgends zur Laufzeit gebraucht).
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
-    CMD curl -fsS http://localhost:8000/api/health || exit 1
+    CMD python -c "import urllib.request as u; u.urlopen('http://localhost:8000/api/health', timeout=2)" || exit 1
 ENTRYPOINT ["./docker-entrypoint.sh"]
