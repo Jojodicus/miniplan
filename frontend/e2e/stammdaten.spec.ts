@@ -42,6 +42,11 @@ test('Nutzer kann Gruppe, Mini und Dienst-Typ mit Gruppen-Mindestanzahl anlegen'
   // teilt einen einzelnen Docker-Container/eine einzelne SQLite-DB über alle parallel laufenden
   // Playwright-Worker hinweg, wodurch Anfragen unter Last spürbar langsamer werden können.
   await expect(page.getByText('Sondergruppe', { exact: true })).toBeVisible({ timeout: 15_000 })
+  // Modal/Popover spielen beim Schließen eine kurze Exit-Animation (siehe usePresence) - der
+  // Dialog bleibt währenddessen noch (unsichtbar werdend) im DOM. Warten, bis er wirklich weg
+  // ist, sonst kann ein direkt danach geöffneter zweiter Dialog kurzzeitig mit diesem
+  // kollidieren (zwei role="dialog"-Elemente gleichzeitig).
+  await expect(gruppeDialog).toBeHidden()
 
   await page.getByRole('tab', { name: 'Minis' }).click()
   await page.getByRole('button', { name: 'Mini', exact: true }).click()
@@ -53,6 +58,7 @@ test('Nutzer kann Gruppe, Mini und Dienst-Typ mit Gruppen-Mindestanzahl anlegen'
   await miniDialog.getByLabel('Schüler', { exact: true }).click({ force: true })
   await miniDialog.getByRole('button', { name: 'Anlegen' }).click()
   await expect(page.getByText('Max Muster')).toBeVisible({ timeout: 15_000 })
+  await expect(miniDialog).toBeHidden()
 
   await page.getByRole('tab', { name: 'Dienst-Typen' }).click()
   await page.getByRole('button', { name: 'Dienst-Typ', exact: true }).click()
@@ -85,11 +91,11 @@ test('Nutzer kann Verfügbarkeits-Status anlegen und Zeitfenster hinzufügen', a
   await expect(page.getByText('Azubi', { exact: true })).toBeVisible({ timeout: 15_000 })
 
   // Die Sperrzeiten-Sektion ist standardmäßig eingeklappt und muss erst über den Toggle in der
-  // Zeile des neu angelegten Verfügbarkeits-Status geöffnet werden. Das Wochenraster ist die
-  // Hauptansicht (Ziehen zum Anlegen) - für minutengenaue Eingaben bleibt das Text-Formular über
-  // einen zusätzlichen Link erreichbar.
-  const azubiZeile = page.getByText('Azubi', { exact: true }).locator('xpath=../..')
-  await azubiZeile.getByRole('button', { name: 'Sperrzeiten' }).click()
+  // Zeile des neu angelegten Verfügbarkeits-Status geöffnet werden. Die ganze Zeile ist selbst
+  // der Toggle (`role="button"`, kein separat beschrifteter "Sperrzeiten"-Button darin). Das
+  // Wochenraster ist die Hauptansicht (Ziehen zum Anlegen) - für minutengenaue Eingaben bleibt
+  // das Text-Formular über einen zusätzlichen Link erreichbar.
+  await page.getByRole('button').filter({ hasText: 'Azubi' }).click()
 
   await page.getByRole('button', { name: 'Stattdessen per Text-Formular hinzufügen' }).click()
   const zeitfensterForm = page.locator('form').filter({ hasText: 'Zeitfenster hinzufügen' }).last()

@@ -79,6 +79,7 @@ import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
+import { Collapse } from '../components/ui/Collapse'
 import { DateInput } from '../components/ui/DateInput'
 import { CheckboxChip, Input, Label, Select } from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
@@ -589,15 +590,17 @@ function DienstbedarfBelegung({
           ),
         )}
       </div>
-      {!readonly && sucheOffen && !voll && (
-        <div className="mt-2">
-          <MiniAdder
-            minis={minis}
-            belegteMiniIds={gottesdienstBelegteMiniIds}
-            disabled={voll}
-            onAdd={(miniId) => toggleMini(miniId)}
-          />
-        </div>
+      {!readonly && (
+        <Collapse open={sucheOffen && !voll}>
+          <div className="mt-2">
+            <MiniAdder
+              minis={minis}
+              belegteMiniIds={gottesdienstBelegteMiniIds}
+              disabled={voll}
+              onAdd={(miniId) => toggleMini(miniId)}
+            />
+          </div>
+        </Collapse>
       )}
     </div>
   )
@@ -1198,7 +1201,7 @@ function GottesdienstKarte({
   )
 
   return (
-    <Card className="animate-rise">
+    <Card className="animate-rise" data-testid="gottesdienst-karte">
       <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-2">

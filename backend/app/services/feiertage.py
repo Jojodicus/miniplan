@@ -1,6 +1,7 @@
 import re
 import unicodedata
 from datetime import date, timedelta
+from functools import lru_cache
 from typing import TypedDict
 
 import holidays
@@ -32,6 +33,13 @@ def _buss_und_bettag(jahr: int) -> date:
     return nov23 - timedelta(days=(nov23.weekday() - 2) % 7)
 
 
+# Reines Funktionsergebnis von (bundesland, jahr) - `holidays.Germany(...)` baut bei jedem Aufruf
+# einen kompletten Kalender inkl. Locale-Lookups neu auf und ist damit teuer genug, dass ein
+# ungecachter Aufruf pro (Mini, Datum)-Kombination in `verfuegbarkeit.ist_blockiert` die
+# automatische Zuteilung (die genau das für jede Kombination tut) spürbar verlangsamt.
+# maxsize genügend über der eigentlichen Domäne (16 Bundesländer x ein paar Jahre) für ein
+# klares Limit statt unbegrenzten Wachstums über die Prozess-Laufzeit.
+@lru_cache(maxsize=256)
 def berechne_feiertage(bundesland: str, jahr: int) -> list[BerechneterFeiertag]:
     feiertage = holidays.Germany(subdiv=bundesland, years=jahr, language="de")
     berechnete = [

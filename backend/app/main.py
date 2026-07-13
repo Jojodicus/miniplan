@@ -58,6 +58,11 @@ app.include_router(feiertage.router)
 app.include_router(miniplaene.router)
 app.include_router(gottesdienste.router)
 
+if settings.enable_test_stubs:
+    from app.api import ferien_stub
+
+    app.include_router(ferien_stub.router)
+
 
 @app.get("/api/health", include_in_schema=False)
 async def health() -> dict[str, str]:

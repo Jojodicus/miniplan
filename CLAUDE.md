@@ -255,3 +255,22 @@ docker compose -p miniplan-e2e -f docker-compose.e2e.yml up -d --build   # manue
 - CLAUDE.md bleibt ein Überblick (Struktur, Datenmodell, Befehle) und wächst nicht mit jeder
   Änderung mit. Nicht-offensichtliches Warum (Design-Entscheidungen, Bugs die eine Änderung
   motiviert haben) gehört als knapper Kommentar direkt an die betroffene Stelle im Code.
+- Die Playwright-Suite teilt sich einen einzigen Docker-Container samt SQLite-DB und einem
+  einzelnen (nicht mit `--workers` skalierten) Uvicorn-Prozess über alle Tests/Worker eines Laufs
+  hinweg (`docker-compose.e2e.yml`) - Testdaten aus früheren Tests (z.B. weitere Pfarreien aus
+  `admin.spec.ts`) bleiben für den Rest des Laufs bestehen. Locators deshalb immer auf den
+  relevanten Bereich scopen (z.B. `getByRole('navigation')` für die Pfarrei-Kontext-Nav statt
+  eines ungescopten `getByRole('link', { name: '...' })`, das bei mehreren Pfarreien mehrdeutig
+  wird) statt anzunehmen, es gäbe nur eine Pfarrei/einen passenden Treffer auf der Seite. Nach
+  jedem Klick, der clientseitig navigiert, explizit auf die neue URL warten, bevor auf der
+  Folgeseite weitergeklickt wird (sonst rennt der nächste Klick gegen die alte, noch sichtbare
+  Seite). `frontend/playwright.config.ts` begrenzt `workers` bewusst auf 4, da mehr parallele
+  Browser-Sessions den einen Backend-Prozess unter Last einzelne Requests reißen lassen. Modal/
+  Popover spielen beim Schließen eine kurze Exit-Animation (`usePresence`) - der Dialog bleibt
+  währenddessen noch (unsichtbar werdend) im DOM; vor dem Öffnen eines zweiten Dialogs mit
+  `await expect(dialog).toBeHidden()` auf das Verschwinden warten, sonst können kurzzeitig zwei
+  `role="dialog"`-Elemente gleichzeitig existieren. Echte externe Abhängigkeiten (aktuell
+  ferien-api.de) sind für die E2E-Umgebung über `MINIPLAN_ENABLE_TEST_STUBS`/
+  `MINIPLAN_FERIEN_API_URL` auf einen lokalen Stub (`app/api/ferien_stub.py`) umgebogen - nie auf
+  eine echte, mit anderen Nutzern geteilte externe Quelle testen (Rate-Limits machen das
+  unzuverlässig).

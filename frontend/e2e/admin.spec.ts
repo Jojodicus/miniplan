@@ -13,7 +13,7 @@ test('Admin kann Pfarrei und Nutzer anlegen, Rolle zuweisen - Nutzer sieht danac
 }) => {
   await login(page, 'admin@example.com', 'geheim123')
 
-  await page.getByRole('link', { name: 'Admin' }).click()
+  await page.getByRole('link', { name: 'Admin', exact: true }).click()
   await expect(page).toHaveURL(/\/admin$/)
 
   // Pfarrei anlegen.
@@ -51,7 +51,7 @@ test('Admin kann Pfarrei und Nutzer anlegen, Rolle zuweisen - Nutzer sieht danac
   await expect(page).toHaveURL(/\/login$/)
   await login(page, 'admintest@example.com', 'geheim1234')
 
-  await expect(page.getByRole('link', { name: 'Admin' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Admin', exact: true })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Meine Pfarreien' })).toBeVisible()
   await expect(page.getByText('Admin-Test-Pfarrei', { exact: true })).toBeVisible()
   await expect(page.getByText('St. Beispiel', { exact: true })).toHaveCount(0)

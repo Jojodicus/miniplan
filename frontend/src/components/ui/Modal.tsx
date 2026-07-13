@@ -1,7 +1,10 @@
 import { X } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { usePresence } from '../../lib/usePresence'
 import { IconButton } from './IconButton'
+
+const EXIT_DURATION_MS = 180
 
 /**
  * Zentrierter Dialog (Portal auf `document.body`) für "Neu anlegen"/"Bearbeiten"-Formulare, die
@@ -21,6 +24,8 @@ export function Modal({
   children: ReactNode
   maxWidth?: string
 }) {
+  const { mounted, closing } = usePresence(open, EXIT_DURATION_MS)
+
   useEffect(() => {
     if (!open) return
     function handleKey(event: KeyboardEvent) {
@@ -35,11 +40,11 @@ export function Modal({
     }
   }, [open, onClose])
 
-  if (!open) return null
+  if (!mounted) return null
 
   return createPortal(
     <div
-      className="animate-fade fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 backdrop-blur-sm sm:items-center"
+      className={`${closing ? 'animate-fade-out' : 'animate-fade'} fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 backdrop-blur-sm sm:items-center`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -47,7 +52,7 @@ export function Modal({
       <div
         role="dialog"
         aria-modal="true"
-        className={`animate-rise my-8 flex max-h-[calc(100dvh-4rem)] w-full ${maxWidth} flex-col overflow-hidden rounded-xl border border-line bg-paper shadow-xl shadow-ink/20`}
+        className={`${closing ? 'animate-sink-out' : 'animate-rise'} my-8 flex max-h-[calc(100dvh-4rem)] w-full ${maxWidth} flex-col overflow-hidden rounded-xl border border-line bg-paper shadow-xl shadow-ink/20`}
       >
         <div className="flex shrink-0 items-center justify-between gap-4 border-b border-line px-5 py-4">
           <h2 className="font-display text-lg font-semibold text-ink">{title}</h2>

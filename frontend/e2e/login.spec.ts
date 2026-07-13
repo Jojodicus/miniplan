@@ -33,8 +33,16 @@ test('Pfarrei-Karussell zeigt Karten und lässt sich durchsuchen', async ({ page
   await expect(page).toHaveURL('http://localhost:8100/')
 
   await expect(page.getByText('St. Beispiel', { exact: true })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Stammdaten' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Minipläne' })).toBeVisible()
+  // Scoped auf die Karte von "St. Beispiel": andere Tests (z.B. admin.spec.ts) können im Lauf
+  // der Suite weitere Pfarreien anlegen, die im selben Docker-Container/derselben DB über die
+  // ganze Suite hinweg bestehen bleiben - ein ungescoptes `getByRole('link')` würde dann
+  // mehrdeutig auf mehrere gleich beschriftete Karten-Links treffen.
+  const karte = page
+    .locator('div')
+    .filter({ hasText: /^St\. Beispiel$/ })
+    .locator('..')
+  await expect(karte.getByRole('link', { name: 'Stammdaten' })).toBeVisible()
+  await expect(karte.getByRole('link', { name: 'Minipläne' })).toBeVisible()
 
   await page.getByLabel('Pfarrei suchen').fill('nichts-passt-hier-xyz')
   await expect(page.getByText('Keine Pfarrei gefunden.')).toBeVisible()

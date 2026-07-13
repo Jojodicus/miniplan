@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { usePresence } from '../../lib/usePresence'
+
+const EXIT_DURATION_MS = 150
 
 /**
  * Am Auslöser (`anchorRef`) verankertes Popover (Portal auf `document.body`) für kompakte
@@ -76,7 +79,9 @@ export function Popover({
     }
   }, [open, onClose, anchorRef])
 
-  if (!open || !position) return null
+  const { mounted, closing } = usePresence(open, EXIT_DURATION_MS)
+
+  if (!mounted || !position) return null
 
   return createPortal(
     <div
@@ -89,7 +94,7 @@ export function Popover({
         width,
         maxHeight: Math.max(position.maxHeight, 120),
       }}
-      className="animate-rise fixed z-50 overflow-y-auto rounded-xl border border-line bg-paper p-4 shadow-xl shadow-ink/20"
+      className={`${closing ? 'animate-sink-out' : 'animate-rise'} fixed z-50 overflow-y-auto rounded-xl border border-line bg-paper p-4 shadow-xl shadow-ink/20`}
     >
       {title && <h3 className="mb-3 font-display text-base font-semibold text-ink">{title}</h3>}
       {children}

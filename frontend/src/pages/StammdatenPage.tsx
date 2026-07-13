@@ -331,16 +331,29 @@ function GruppenSection({
   gruppen,
   geladen,
   reload,
+  aktiv,
 }: {
   pfarreiId: number
   gruppen: Gruppe[]
   geladen: boolean
   reload: () => void
+  aktiv: boolean
 }) {
   const [error, setError] = useState<string | null>(null)
   const [neuOffen, setNeuOffen] = useState(false)
   const [bearbeitenId, setBearbeitenId] = useState<number | null>(null)
   const neuButtonRef = useRef<HTMLButtonElement>(null)
+
+  // Diese Sektion bleibt beim Tab-Wechsel gemountet (siehe StammdatenPage), damit kein
+  // Lade-Skeleton erneut aufblitzt - ein offenes Popover/Modal ist aber per Portal in
+  // `document.body` gerendert und würde vom `hidden`-Wrapper des inaktiven Tabs NICHT versteckt.
+  // Beim Verlassen also explizit schließen.
+  useEffect(() => {
+    if (!aktiv) {
+      setNeuOffen(false)
+      setBearbeitenId(null)
+    }
+  }, [aktiv])
   const { showToast } = useToast()
 
   async function handleErstellen(name: string) {
@@ -441,10 +454,12 @@ function MinisSection({
   pfarreiId,
   gruppen,
   filtertags,
+  aktiv,
 }: {
   pfarreiId: number
   gruppen: Gruppe[]
   filtertags: FiltertagDef[]
+  aktiv: boolean
 }) {
   const [minis, setMinis] = useState<Mini[]>([])
   const [geladen, setGeladen] = useState(false)
@@ -467,6 +482,11 @@ function MinisSection({
   useEffect(() => {
     reload()
   }, [reload])
+
+  // Siehe Kommentar in GruppenSection - portalte Modals überstehen sonst einen Tab-Wechsel.
+  useEffect(() => {
+    if (!aktiv) setModalOffen(false)
+  }, [aktiv])
 
   function oeffnenNeu() {
     setEditId(null)
@@ -713,7 +733,15 @@ function GruppenAnforderungenEditor({
   )
 }
 
-function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen: Gruppe[] }) {
+function DienstTypenSection({
+  pfarreiId,
+  gruppen,
+  aktiv,
+}: {
+  pfarreiId: number
+  gruppen: Gruppe[]
+  aktiv: boolean
+}) {
   const [dienstTypen, setDienstTypen] = useState<DienstTyp[]>([])
   const [geladen, setGeladen] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -731,6 +759,11 @@ function DienstTypenSection({ pfarreiId, gruppen }: { pfarreiId: number; gruppen
       setGeladen(true)
     })
   }, [pfarreiId])
+
+  // Siehe Kommentar in GruppenSection - portalte Modals überstehen sonst einen Tab-Wechsel.
+  useEffect(() => {
+    if (!aktiv) setModalOffen(false)
+  }, [aktiv])
 
   useEffect(() => {
     reload()
@@ -1274,11 +1307,13 @@ function FiltertagsSection({
   filtertags,
   geladen,
   reload,
+  aktiv,
 }: {
   pfarreiId: number
   filtertags: FiltertagDef[]
   geladen: boolean
   reload: () => void
+  aktiv: boolean
 }) {
   const [blocker, setBlocker] = useState<FiltertagBlocker[]>([])
   const [offeneSperrzeiten, setOffeneSperrzeiten] = useState<Set<number>>(new Set())
@@ -1288,6 +1323,15 @@ function FiltertagsSection({
   const [error, setError] = useState<string | null>(null)
   const neuButtonRef = useRef<HTMLButtonElement>(null)
   const { showToast } = useToast()
+
+  // Siehe Kommentar in GruppenSection - portalte Popover/Modals überstehen sonst einen
+  // (Sub-)Tab-Wechsel.
+  useEffect(() => {
+    if (!aktiv) {
+      setNeuOffen(false)
+      setBearbeitenId(null)
+    }
+  }, [aktiv])
 
   const reloadBlocker = useCallback(() => {
     filtertagBlockerListe(pfarreiId).then(setBlocker)
@@ -1540,8 +1584,7 @@ function hatRegionaleAusnahme(name: string): boolean {
   return REGIONALE_AUSNAHME_KEYWORDS.some((keyword) => normalisiert.includes(keyword))
 }
 
-function FerienFeiertageSection({ pfarreiId }: { pfarreiId: number }) {
-  const { showToast } = useToast()
+function FerienFeiertageSection({ pfarreiId, aktiv }: { pfarreiId: number; aktiv: boolean }) {
   const [auswahl, setAuswahl] = useState<Bundesland>('BY')
   const [ferien, setFerien] = useState<Ferienzeitraum[]>([])
   const [ferienGeladen, setFerienGeladen] = useState(false)
@@ -1615,14 +1658,21 @@ function FerienFeiertageSection({ pfarreiId }: { pfarreiId: number }) {
     }
   }
 
-  function zeigeRegionaleAusnahmeHinweis(name: string) {
-    showToast(
-      `${name} ist nicht überall einheitlich arbeitsfrei: Ob dieser Tag gesetzlich arbeitsfrei ` +
-        'ist, hängt hier von der mehrheitlichen Konfession der Gemeinde/des Landkreises ab. ' +
-        'Bitte bei Bedarf oben von Hand anpassen.',
-      'info',
-    )
+  // Ein einzelnes Popover für alle Hinweis-Buttons der Liste statt eines pro Zeile - der
+  // Auslöser-Ref wird beim Klick auf den jeweiligen Button neu gesetzt.
+  const [hinweisFeiertag, setHinweisFeiertag] = useState<Feiertag | null>(null)
+  const hinweisAnchorRef = useRef<HTMLButtonElement>(null)
+
+  function toggleRegionaleAusnahmeHinweis(feiertag: Feiertag, anchor: HTMLButtonElement) {
+    hinweisAnchorRef.current = anchor
+    setHinweisFeiertag((aktuell) => (aktuell?.key === feiertag.key ? null : feiertag))
   }
+
+  // Siehe Kommentar in GruppenSection - das Popover ist per Portal gerendert und würde einen
+  // Tab-Wechsel sonst überstehen.
+  useEffect(() => {
+    if (!aktiv) setHinweisFeiertag(null)
+  }, [aktiv])
 
   return (
     <div className="flex flex-col gap-4">
@@ -1726,7 +1776,7 @@ function FerienFeiertageSection({ pfarreiId }: { pfarreiId: number }) {
                   {hatRegionaleAusnahme(f.name) && (
                     <IconButton
                       label={`Hinweis zu ${f.name}`}
-                      onClick={() => zeigeRegionaleAusnahmeHinweis(f.name)}
+                      onClick={(e) => toggleRegionaleAusnahmeHinweis(f, e.currentTarget)}
                       className="h-6 w-6 text-gold-dark hover:text-gold-dark"
                     >
                       <Info className="h-3.5 w-3.5" />
@@ -1752,6 +1802,20 @@ function FerienFeiertageSection({ pfarreiId }: { pfarreiId: number }) {
           </div>
         )}
       </Card>
+
+      <Popover
+        open={hinweisFeiertag !== null}
+        onClose={() => setHinweisFeiertag(null)}
+        anchorRef={hinweisAnchorRef}
+        title={hinweisFeiertag?.name}
+        width={280}
+      >
+        <p className="text-sm text-ink-soft">
+          Nicht überall einheitlich arbeitsfrei: Ob dieser Tag gesetzlich arbeitsfrei ist, hängt
+          hier von der mehrheitlichen Konfession der Gemeinde/des Landkreises ab. Bitte bei Bedarf
+          oben von Hand anpassen.
+        </p>
+      </Popover>
     </div>
   )
 }
@@ -1777,26 +1841,45 @@ function VerfuegbarkeitSection({
   filtertags,
   filtertagsGeladen,
   reloadFiltertags,
+  aktiv,
 }: {
   pfarreiId: number
   filtertags: FiltertagDef[]
   filtertagsGeladen: boolean
   reloadFiltertags: () => void
+  aktiv: boolean
 }) {
   const [subTab, setSubTab] = useState<VerfuegbarkeitTabKey>('status')
+  const [besuchteSubTabs, setBesuchteSubTabs] = useState<Set<VerfuegbarkeitTabKey>>(
+    () => new Set(['status']),
+  )
+
+  useEffect(() => {
+    setBesuchteSubTabs((aktuell) => (aktuell.has(subTab) ? aktuell : new Set(aktuell).add(subTab)))
+  }, [subTab])
 
   return (
     <div className="flex flex-col gap-4">
       <TabBar tabs={VERFUEGBARKEIT_TABS} active={subTab} onChange={setSubTab} variant="pills" />
-      {subTab === 'status' && (
-        <FiltertagsSection
-          pfarreiId={pfarreiId}
-          filtertags={filtertags}
-          geladen={filtertagsGeladen}
-          reload={reloadFiltertags}
-        />
+      {besuchteSubTabs.has('status') && (
+        <div hidden={subTab !== 'status'}>
+          <FiltertagsSection
+            pfarreiId={pfarreiId}
+            filtertags={filtertags}
+            geladen={filtertagsGeladen}
+            reload={reloadFiltertags}
+            aktiv={aktiv && subTab === 'status'}
+          />
+        </div>
       )}
-      {subTab === 'ferien-feiertage' && <FerienFeiertageSection pfarreiId={pfarreiId} />}
+      {besuchteSubTabs.has('ferien-feiertage') && (
+        <div hidden={subTab !== 'ferien-feiertage'}>
+          <FerienFeiertageSection
+            pfarreiId={pfarreiId}
+            aktiv={aktiv && subTab === 'ferien-feiertage'}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -1810,6 +1893,14 @@ export function StammdatenPage() {
   const [filtertags, setFiltertags] = useState<FiltertagDef[]>([])
   const [filtertagsGeladen, setFiltertagsGeladen] = useState(false)
   const [tab, setTab] = useState<TabKey>('gruppen')
+  // Einmal besuchte Tabs bleiben gemountet (nur per CSS versteckt) statt beim Wechsel
+  // unzumountet zu werden - sonst verliert die Sektion ihren bereits geladenen State und zeigt
+  // bei jedem erneuten Aufruf wieder kurz das Lade-Skeleton samt Höhensprung an.
+  const [besuchteTabs, setBesuchteTabs] = useState<Set<TabKey>>(() => new Set(['gruppen']))
+
+  useEffect(() => {
+    setBesuchteTabs((aktuell) => (aktuell.has(tab) ? aktuell : new Set(aktuell).add(tab)))
+  }, [tab])
 
   const reloadGruppen = useCallback(() => {
     gruppenListe(id).then((liste) => {
@@ -1840,25 +1931,42 @@ export function StammdatenPage() {
       <TabBar tabs={TABS} active={tab} onChange={setTab} className="mt-6" />
 
       <div className="mt-6">
-        {tab === 'gruppen' && (
-          <GruppenSection
-            pfarreiId={id}
-            gruppen={gruppen}
-            geladen={gruppenGeladen}
-            reload={reloadGruppen}
-          />
+        {besuchteTabs.has('gruppen') && (
+          <div hidden={tab !== 'gruppen'}>
+            <GruppenSection
+              pfarreiId={id}
+              gruppen={gruppen}
+              geladen={gruppenGeladen}
+              reload={reloadGruppen}
+              aktiv={tab === 'gruppen'}
+            />
+          </div>
         )}
-        {tab === 'minis' && (
-          <MinisSection pfarreiId={id} gruppen={gruppen} filtertags={filtertags} />
+        {besuchteTabs.has('minis') && (
+          <div hidden={tab !== 'minis'}>
+            <MinisSection
+              pfarreiId={id}
+              gruppen={gruppen}
+              filtertags={filtertags}
+              aktiv={tab === 'minis'}
+            />
+          </div>
         )}
-        {tab === 'dienst-typen' && <DienstTypenSection pfarreiId={id} gruppen={gruppen} />}
-        {tab === 'verfuegbarkeit' && (
-          <VerfuegbarkeitSection
-            pfarreiId={id}
-            filtertags={filtertags}
-            filtertagsGeladen={filtertagsGeladen}
-            reloadFiltertags={reloadFiltertags}
-          />
+        {besuchteTabs.has('dienst-typen') && (
+          <div hidden={tab !== 'dienst-typen'}>
+            <DienstTypenSection pfarreiId={id} gruppen={gruppen} aktiv={tab === 'dienst-typen'} />
+          </div>
+        )}
+        {besuchteTabs.has('verfuegbarkeit') && (
+          <div hidden={tab !== 'verfuegbarkeit'}>
+            <VerfuegbarkeitSection
+              pfarreiId={id}
+              aktiv={tab === 'verfuegbarkeit'}
+              filtertags={filtertags}
+              filtertagsGeladen={filtertagsGeladen}
+              reloadFiltertags={reloadFiltertags}
+            />
+          </div>
         )}
       </div>
     </AppShell>

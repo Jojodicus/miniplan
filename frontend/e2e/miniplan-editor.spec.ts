@@ -26,6 +26,11 @@ async function legeGruppeAn(page: Page, name: string) {
   await dialog.getByLabel('Name').fill(name)
   await dialog.getByRole('button', { name: 'Anlegen' }).click()
   await expect(page.getByText(name, { exact: true })).toBeVisible({ timeout: 15_000 })
+  // Modal/Popover spielen beim Schließen eine kurze Exit-Animation (siehe usePresence) - der
+  // Dialog bleibt währenddessen noch (unsichtbar werdend) im DOM. Warten, bis er wirklich weg
+  // ist, sonst kann ein direkt danach geöffneter zweiter Dialog kurzzeitig mit diesem
+  // kollidieren (zwei role="dialog"-Elemente gleichzeitig).
+  await expect(dialog).toBeHidden()
 }
 
 async function legeMiniAn(page: Page, name: string, gruppe: string) {
@@ -38,10 +43,15 @@ async function legeMiniAn(page: Page, name: string, gruppe: string) {
   await dialog.getByLabel(gruppe, { exact: true }).click({ force: true })
   await dialog.getByRole('button', { name: 'Anlegen' }).click()
   await expect(page.getByText(name, { exact: true })).toBeVisible({ timeout: 15_000 })
+  await expect(dialog).toBeHidden()
 }
 
 async function legeMiniplanAn(page: Page, monat: string, jahr: string) {
-  await page.getByRole('link', { name: 'Minipläne' }).click()
+  // Scoped auf die `<nav>`-Bereichsnavigation der aktuellen Pfarrei (AppShell) statt eines
+  // generischen `getByRole('link')`: das Dashboard-Karussell zeigt pro Pfarrei ebenfalls einen
+  // gleich beschrifteten "Minipläne"-Link (kein <nav>-Landmark) - sind mehrere Pfarreien
+  // vorhanden (z.B. nach vorherigen Tests), matcht die ungescopte Variante mehrdeutig.
+  await page.getByRole('navigation').getByRole('link', { name: 'Minipläne' }).click()
   await expect(page).toHaveURL(/\/miniplaene$/)
   const form = page.getByRole('form', { name: 'Miniplan anlegen' })
   await form.getByLabel('Monat').selectOption(monat)
@@ -70,8 +80,10 @@ async function waehleUhrzeit(page: Page, form: Locator, wert: string) {
   await trigger.click()
 }
 
-// Legt einen Gottesdienst über das "Neuer Gottesdienst"-Modal an. Danach öffnet sich automatisch
-// der Bearbeiten-Editor des frisch angelegten Gottesdienstes.
+// Legt einen Gottesdienst über das "Neuer Gottesdienst"-Modal an. Die Belegung ist danach direkt
+// in der neuen Karte editierbar (kein Auto-Öffnen eines Editors mehr) - hier zusätzlich über
+// "Bearbeiten" den Struktur-Editor öffnen, damit anschließend wie zuvor Dienste hinzugefügt
+// werden können.
 async function legeGottesdienstAn(
   page: Page,
   daten: { tag: number; uhrzeit: string; name: string },
@@ -86,6 +98,10 @@ async function legeGottesdienstAn(
   await waehleUhrzeit(page, dialog, daten.uhrzeit)
   await dialog.getByLabel('Name').fill(daten.name)
   await dialog.getByRole('button', { name: 'Anlegen' }).click()
+  await expect(dialog).toBeHidden({ timeout: 15_000 })
+
+  const karte = page.getByTestId('gottesdienst-karte').filter({ hasText: daten.name })
+  await karte.getByRole('button', { name: 'Bearbeiten' }).click()
   await expect(page.getByRole('heading', { name: 'Gottesdienst bearbeiten' })).toBeVisible({
     timeout: 15_000,
   })
@@ -208,6 +224,7 @@ test('Nutzer kann Miniplan abschließen und das finale PDF herunterladen', async
   await login(page)
 
   await zuStammdaten(page, 'St. Beispiel')
+  await expect(page).toHaveURL(/\/stammdaten$/)
   await legeMiniplanAn(page, '8', '2032')
   await expect(page.getByRole('heading', { name: 'Miniplan August 2032' })).toBeVisible({
     timeout: 15_000,
@@ -233,7 +250,8 @@ test('Nutzer kann Miniplan abschließen und das finale PDF herunterladen', async
   expect(download.suggestedFilename()).toBe('miniplan-2032-08.pdf')
 
   // Auf der Übersichtsseite gibt es für abgeschlossene Pläne ebenfalls einen Download-Button.
-  await page.getByRole('link', { name: 'Minipläne' }).click()
+  // Scoped auf die Bereichsnavigation, siehe Kommentar in legeMiniplanAn.
+  await page.getByRole('navigation').getByRole('link', { name: 'Minipläne' }).click()
   await expect(page).toHaveURL(/\/miniplaene$/)
   const zeile = page.getByText('August 2032', { exact: false }).locator('..')
   const listenDownloadEvent = page.waitForEvent('download')
@@ -298,6 +316,7 @@ test('Auto-Fill-Einstellungen lassen sich im Popover ändern und speichern', asy
   await login(page)
 
   await zuStammdaten(page, 'St. Beispiel')
+  await expect(page).toHaveURL(/\/stammdaten$/)
   await legeMiniplanAn(page, '2', '2035')
   await expect(page.getByRole('heading', { name: 'Miniplan Februar 2035' })).toBeVisible({
     timeout: 15_000,
@@ -338,6 +357,7 @@ test('Automatisch zugewiesener Mini lässt sich fest übernehmen und übersteht 
   await login(page)
 
   await zuStammdaten(page, 'St. Beispiel')
+  await expect(page).toHaveURL(/\/stammdaten$/)
   await legeGruppeAn(page, 'PIN-Gruppe')
   await legeMiniAn(page, 'PIN-Mini-A', 'PIN-Gruppe')
   await legeMiniAn(page, 'PIN-Mini-B', 'PIN-Gruppe')
@@ -393,6 +413,7 @@ test('Zwei fest zugewiesene Minis lassen sich über zwei Gottesdienst-Karten hin
   await login(page)
 
   await zuStammdaten(page, 'St. Beispiel')
+  await expect(page).toHaveURL(/\/stammdaten$/)
   await legeGruppeAn(page, 'SWAP-Gruppe')
   await legeMiniAn(page, 'SWAP-Mini-X', 'SWAP-Gruppe')
   await legeMiniAn(page, 'SWAP-Mini-Y', 'SWAP-Gruppe')

@@ -272,7 +272,7 @@ def test_miniplan_fuellen_synchronisiert_ferien_fuer_planjahr(
         aufrufe.append(jahre)
         return []
 
-    monkeypatch.setattr(miniplaene_api, "sync_ferien", fake_sync_ferien)
+    monkeypatch.setattr(miniplaene_api, "sync_ferien_falls_fehlend", fake_sync_ferien)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     response = client.post(
@@ -297,7 +297,7 @@ def test_miniplan_fuellen_ignoriert_ferien_sync_fehler(
     def failing_sync_ferien(pfarrei_arg, db, jahre=None):
         raise miniplaene_api.FerienSyncFehler("keine Verbindung")
 
-    monkeypatch.setattr(miniplaene_api, "sync_ferien", failing_sync_ferien)
+    monkeypatch.setattr(miniplaene_api, "sync_ferien_falls_fehlend", failing_sync_ferien)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     response = client.post(
