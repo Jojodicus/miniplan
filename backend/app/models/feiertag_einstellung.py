@@ -11,7 +11,7 @@ class FeiertagEinstellung(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id"))
+    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id", ondelete="CASCADE"))
     feiertag_key: Mapped[str] = mapped_column(String(64))
     schulfrei: Mapped[bool] = mapped_column(Boolean, default=True)
     arbeiter_frei: Mapped[bool] = mapped_column(Boolean, default=False)

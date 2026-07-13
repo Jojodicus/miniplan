@@ -25,7 +25,7 @@ export function BearbeitenAbschnitt({ children }: { children: React.ReactNode })
 
 export function Row({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 last:border-b-0">
+    <div className="animate-rise flex items-center justify-between gap-3 border-b border-line px-5 py-3 last:border-b-0">
       {children}
     </div>
   )

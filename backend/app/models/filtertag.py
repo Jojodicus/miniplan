@@ -18,7 +18,7 @@ class Filtertag(Base):
     __table_args__ = (UniqueConstraint("pfarrei_id", "key", name="uq_filtertag_pfarrei_key"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id"))
+    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id", ondelete="CASCADE"))
     key: Mapped[str] = mapped_column(String(64))
     label: Mapped[str] = mapped_column(String(255))
     ist_schueler_artig: Mapped[bool] = mapped_column(Boolean, default=False)

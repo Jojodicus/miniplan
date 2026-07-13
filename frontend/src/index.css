@@ -44,8 +44,11 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, var(--color-pine-tint) 0%, transparent 100%);
+    background-image: radial-gradient(
+      ellipse 80% 50% at 50% -20%,
+      var(--color-pine-tint) 0%,
+      transparent 100%
+    );
     background-repeat: no-repeat;
     min-height: 100svh;
   }
@@ -70,6 +73,32 @@
   }
 }
 
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .animate-rise {
   animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade {
+  animation: fade-in 0.2s ease-out both;
+}
+
+/* Sicherheitsnetz für Nutzer mit `prefers-reduced-motion` - deckt auch künftig neu hinzukommende
+   Animationen/Transitions ab, ohne dass jede Stelle das einzeln berücksichtigen muss. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

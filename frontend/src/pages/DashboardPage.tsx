@@ -4,8 +4,10 @@ import { meinePfarreien, type Pfarrei } from '../api/pfarreien'
 import { PfarreiCarousel } from '../components/PfarreiCarousel'
 import { AppShell } from '../components/layout/AppShell'
 import { EmptyState } from '../components/ui/EmptyState'
+import { useDocumentTitle } from '../lib/useDocumentTitle'
 
 export function DashboardPage() {
+  useDocumentTitle('Übersicht')
   const [pfarreien, setPfarreien] = useState<Pfarrei[] | null>(null)
 
   useEffect(() => {

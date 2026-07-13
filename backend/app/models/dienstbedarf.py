@@ -16,8 +16,13 @@ class Dienstbedarf(Base):
     __tablename__ = "dienstbedarf"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    gottesdienst_id: Mapped[int] = mapped_column(ForeignKey("gottesdienste.id"))
-    dienst_typ_id: Mapped[int | None] = mapped_column(ForeignKey("dienst_typen.id"), default=None)
+    gottesdienst_id: Mapped[int] = mapped_column(ForeignKey("gottesdienste.id", ondelete="CASCADE"))
+    # SET NULL statt CASCADE: dienst_typ_id ist nur eine Ableitungs-Referenz, Anzahl und
+    # Gruppen-Anforderungen werden beim Anlegen als eigene Kopie übernommen (siehe CLAUDE.md) -
+    # ein gelöschter DienstTyp soll bestehende Dienstbedarf-Einträge nicht mitlöschen.
+    dienst_typ_id: Mapped[int | None] = mapped_column(
+        ForeignKey("dienst_typen.id", ondelete="SET NULL"), default=None
+    )
     name: Mapped[str | None] = mapped_column(String(255), default=None)
     anzahl: Mapped[int] = mapped_column(Integer)
     erforderliche_filtertags: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -46,8 +51,8 @@ class DienstbedarfGruppenAnforderung(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    dienstbedarf_id: Mapped[int] = mapped_column(ForeignKey("dienstbedarf.id"))
-    gruppe_id: Mapped[int] = mapped_column(ForeignKey("gruppen.id"))
+    dienstbedarf_id: Mapped[int] = mapped_column(ForeignKey("dienstbedarf.id", ondelete="CASCADE"))
+    gruppe_id: Mapped[int] = mapped_column(ForeignKey("gruppen.id", ondelete="CASCADE"))
     mindest_anzahl: Mapped[int] = mapped_column(Integer, default=0)
 
     dienstbedarf: Mapped["Dienstbedarf"] = relationship(back_populates="gruppen_anforderungen")
@@ -61,8 +66,8 @@ class DienstbedarfZuweisung(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    dienstbedarf_id: Mapped[int] = mapped_column(ForeignKey("dienstbedarf.id"))
-    mini_id: Mapped[int] = mapped_column(ForeignKey("minis.id"))
+    dienstbedarf_id: Mapped[int] = mapped_column(ForeignKey("dienstbedarf.id", ondelete="CASCADE"))
+    mini_id: Mapped[int] = mapped_column(ForeignKey("minis.id", ondelete="CASCADE"))
     manuell_fixiert: Mapped[bool] = mapped_column(Boolean, default=True)
 
     dienstbedarf: Mapped["Dienstbedarf"] = relationship(back_populates="zuweisungen")

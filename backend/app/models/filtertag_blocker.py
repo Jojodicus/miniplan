@@ -14,8 +14,8 @@ class FiltertagBlocker(Base):
     __tablename__ = "filtertag_blocker"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id"))
-    filtertag_id: Mapped[int] = mapped_column(ForeignKey("filtertags.id"))
+    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id", ondelete="CASCADE"))
+    filtertag_id: Mapped[int] = mapped_column(ForeignKey("filtertags.id", ondelete="CASCADE"))
     wochentag: Mapped[int] = mapped_column(Integer)
     start_zeit: Mapped[time] = mapped_column(Time)
     end_zeit: Mapped[time] = mapped_column(Time)

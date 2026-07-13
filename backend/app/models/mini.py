@@ -13,7 +13,9 @@ class Mini(Base):
     __tablename__ = "minis"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id"))
+    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id", ondelete="CASCADE"))
+    # kein ondelete=CASCADE: Gruppe.loeschen blockiert (409) solange Minis existieren, siehe
+    # api/gruppen.py - eine Gruppe mit Minis soll nie einfach mitgelöscht werden.
     gruppe_id: Mapped[int] = mapped_column(ForeignKey("gruppen.id"))
     name: Mapped[str] = mapped_column(String(255))
     filtertags: Mapped[list[str]] = mapped_column(JSON, default=list)

@@ -33,8 +33,8 @@ class NutzerPfarreiRolle(Base):
     __table_args__ = (UniqueConstraint("nutzer_id", "pfarrei_id", name="uq_nutzer_pfarrei"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    nutzer_id: Mapped[int] = mapped_column(ForeignKey("nutzer.id"))
-    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id"))
+    nutzer_id: Mapped[int] = mapped_column(ForeignKey("nutzer.id", ondelete="CASCADE"))
+    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id", ondelete="CASCADE"))
     rolle: Mapped[PfarreiRolle] = mapped_column(Enum(PfarreiRolle))
 
     nutzer: Mapped["Nutzer"] = relationship(back_populates="pfarrei_rollen")

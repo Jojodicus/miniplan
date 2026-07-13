@@ -1,4 +1,4 @@
-import { CheckCircle2, X, XCircle } from 'lucide-react'
+import { CheckCircle2, Info, X, XCircle } from 'lucide-react'
 import {
   createContext,
   useCallback,
@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 
-type ToastTone = 'success' | 'error'
+type ToastTone = 'success' | 'error' | 'info'
 
 interface ToastEintrag {
   id: number
@@ -23,11 +23,15 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
+// Info-Toasts erklären längere Sachverhalte (z.B. regionale Feiertags-Ausnahmen) - etwas mehr
+// Lesezeit als die kurze Erfolgs-/Fehler-Bestätigung.
 const AUTO_DISMISS_MS = 4000
+const AUTO_DISMISS_INFO_MS = 8000
 
 const toneStyles: Record<ToastTone, string> = {
   success: 'border-pine/30 bg-white text-ink',
   error: 'border-wine/30 bg-wine-tint text-wine',
+  info: 'border-gold/30 bg-gold-tint text-ink',
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -43,7 +47,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       naechsteId.current += 1
       const id = naechsteId.current
       setToasts((aktuell) => [...aktuell, { id, text, tone }])
-      setTimeout(() => dismiss(id), AUTO_DISMISS_MS)
+      setTimeout(() => dismiss(id), tone === 'info' ? AUTO_DISMISS_INFO_MS : AUTO_DISMISS_MS)
     },
     [dismiss],
   )
@@ -60,11 +64,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             role="status"
             className={`pointer-events-auto flex w-full max-w-sm items-center gap-2 rounded-lg border px-4 py-2.5 text-sm shadow-md shadow-ink/10 animate-rise ${toneStyles[toast.tone]}`}
           >
-            {toast.tone === 'success' ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-pine" />
-            ) : (
-              <XCircle className="h-4 w-4 shrink-0 text-wine" />
-            )}
+            {toast.tone === 'success' && <CheckCircle2 className="h-4 w-4 shrink-0 text-pine" />}
+            {toast.tone === 'error' && <XCircle className="h-4 w-4 shrink-0 text-wine" />}
+            {toast.tone === 'info' && <Info className="h-4 w-4 shrink-0 text-gold-dark" />}
             <span className="flex-1">{toast.text}</span>
             <button
               type="button"

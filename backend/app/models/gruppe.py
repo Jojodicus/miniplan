@@ -14,7 +14,7 @@ class Gruppe(Base):
     __table_args__ = (UniqueConstraint("pfarrei_id", "name", name="uq_gruppe_pfarrei_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id"))
+    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(255))
 
     pfarrei: Mapped["Pfarrei"] = relationship()

@@ -1,6 +1,7 @@
 import { ArrowLeft, CalendarRange, LogOut, Settings, ShieldCheck, UserCircle } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
+import { AppIcon } from '../AppIcon'
 
 // Bereichs-Navigation innerhalb einer Pfarrei im Header statt verstreuter
 // "Zu den ..."-Links auf den Einzelseiten.
@@ -58,8 +59,8 @@ export function AppShell({
           className={`mx-auto flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 ${containerWidth}`}
         >
           <Link to="/" className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-pine text-sm font-semibold text-paper">
-              M
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-pine text-paper">
+              <AppIcon className="h-5 w-5" />
             </span>
             <span className="font-display text-xl font-semibold text-ink">Miniplan</span>
           </Link>

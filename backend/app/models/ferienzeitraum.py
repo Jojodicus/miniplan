@@ -10,7 +10,7 @@ class Ferienzeitraum(Base):
     __tablename__ = "ferienzeitraeume"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id"))
+    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(255))
     start_datum: Mapped[date] = mapped_column(Date)
     end_datum: Mapped[date] = mapped_column(Date)

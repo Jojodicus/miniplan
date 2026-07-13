@@ -64,7 +64,9 @@ async function waehleDatum(page: Page, form: Locator, tag: number) {
 async function waehleUhrzeit(page: Page, form: Locator, wert: string) {
   const trigger = form.getByLabel('Uhrzeit', { exact: true })
   await trigger.click()
-  await page.getByLabel('Uhrzeit minutengenau').fill(wert)
+  const [stunde, minute] = wert.split(':')
+  await page.getByRole('button', { name: stunde, exact: true }).click()
+  await page.getByLabel('Minute genau').fill(minute)
   await trigger.click()
 }
 
@@ -74,7 +76,11 @@ async function legeGottesdienstAn(
   page: Page,
   daten: { tag: number; uhrzeit: string; name: string },
 ) {
-  await page.getByRole('button', { name: 'Gottesdienst', exact: true }).click()
+  // Trigger-Label hängt davon ab, ob der Miniplan bereits Gottesdienste hat ("Gottesdienst
+  // hinzufügen") oder noch leer ist ("Ersten Gottesdienst anlegen").
+  await page
+    .getByRole('button', { name: /^(Ersten Gottesdienst anlegen|Gottesdienst hinzufügen)$/ })
+    .click()
   const dialog = page.getByRole('dialog')
   await waehleDatum(page, dialog, daten.tag)
   await waehleUhrzeit(page, dialog, daten.uhrzeit)
@@ -209,7 +215,7 @@ test('Nutzer kann Miniplan abschließen und das finale PDF herunterladen', async
 
   await expect(page.getByText('In Bearbeitung')).toBeVisible()
   await expect(page.getByRole('button', { name: 'PDF herunterladen' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Gottesdienst', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ersten Gottesdienst anlegen' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Füllen', exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Plan abschließen' }).click()
@@ -218,7 +224,7 @@ test('Nutzer kann Miniplan abschließen und das finale PDF herunterladen', async
   // Ein abgeschlossener Plan ist schreibgeschützt: Mutations-Buttons verschwinden, der Hinweis
   // erscheint stattdessen.
   await expect(page.getByText('Schreibgeschützt')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Gottesdienst', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Ersten Gottesdienst anlegen' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Füllen', exact: true })).toHaveCount(0)
 
   const downloadEvent = page.waitForEvent('download')
@@ -226,10 +232,23 @@ test('Nutzer kann Miniplan abschließen und das finale PDF herunterladen', async
   const download = await downloadEvent
   expect(download.suggestedFilename()).toBe('miniplan-2032-08.pdf')
 
+  // Auf der Übersichtsseite gibt es für abgeschlossene Pläne ebenfalls einen Download-Button.
+  await page.getByRole('link', { name: 'Minipläne' }).click()
+  await expect(page).toHaveURL(/\/miniplaene$/)
+  const zeile = page.getByText('August 2032', { exact: false }).locator('..')
+  const listenDownloadEvent = page.waitForEvent('download')
+  await zeile.getByRole('button', { name: 'PDF', exact: true }).click()
+  const listenDownload = await listenDownloadEvent
+  expect(listenDownload.suggestedFilename()).toBe('miniplan-2032-08.pdf')
+
+  await page.getByRole('link', { name: 'August 2032', exact: false }).click()
+  await expect(page.getByRole('heading', { name: 'Miniplan August 2032' })).toBeVisible({
+    timeout: 15_000,
+  })
   await page.getByRole('button', { name: 'Wieder öffnen' }).click()
   await expect(page.getByText('In Bearbeitung')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('Schreibgeschützt')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Gottesdienst', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ersten Gottesdienst anlegen' })).toBeVisible()
 })
 
 test('Füllen-Button teilt Minis automatisch einem Dienstbedarf zu', async ({ page }) => {
@@ -284,8 +303,15 @@ test('Auto-Fill-Einstellungen lassen sich im Popover ändern und speichern', asy
     timeout: 15_000,
   })
 
-  await page.getByRole('button', { name: 'Auto-Fill-Einstellungen' }).click()
+  const einstellungenButton = page.getByRole('button', { name: 'Auto-Fill-Einstellungen' })
+  await einstellungenButton.click()
   const popover = page.getByRole('dialog').filter({ hasText: 'Auto-Fill-Einstellungen' })
+  await expect(popover).toBeVisible()
+
+  // Erneutes Klicken auf denselben Button muss das Popover wieder schließen (nicht erneut öffnen).
+  await einstellungenButton.click()
+  await expect(popover).toBeHidden()
+  await einstellungenButton.click()
   await expect(popover).toBeVisible()
 
   await popover.getByLabel('Teams durchmischen').fill('5')

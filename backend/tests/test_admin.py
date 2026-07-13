@@ -1,7 +1,9 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.models.nutzer import Nutzer
 from app.models.pfarrei import Pfarrei
+from app.services import ferien_sync
 from tests.conftest import _create_user, auth_headers
 
 
@@ -141,6 +143,55 @@ def test_pfarrei_crud_mit_seed(client: TestClient, admin_user: Nutzer) -> None:
     )
     assert response.status_code == 409
 
+    # Gruppe/Mini anlegen, damit das Löschen echte abhängige Zeilen mitreißen muss.
+    response = client.post(
+        f"/api/pfarreien/{pfarrei_id}/gruppen", json={"name": "Gruppe A"}, headers=headers
+    )
+    gruppe_id = response.json()["id"]
+    client.post(
+        f"/api/pfarreien/{pfarrei_id}/minis",
+        json={"name": "Max", "gruppe_id": gruppe_id, "filtertags": []},
+        headers=headers,
+    )
+
     # Löschen.
     response = client.delete(f"/api/admin/pfarreien/{pfarrei_id}", headers=headers)
     assert response.status_code == 204
+
+    # Erneutes Anlegen darf nicht an wiederverwendeten IDs/verwaisten Zeilen scheitern (siehe
+    # ON DELETE CASCADE + AUTOINCREMENT in den Migrationen).
+    response = client.post("/api/admin/pfarreien", json={"name": "St. Neu"}, headers=headers)
+    assert response.status_code == 201
+    neue_pfarrei_id = response.json()["id"]
+    assert neue_pfarrei_id != pfarrei_id
+
+    response = client.get(f"/api/pfarreien/{neue_pfarrei_id}/filtertags", headers=headers)
+    assert response.status_code == 200
+    assert len(response.json()) > 0
+
+
+def test_pfarrei_anlegen_synct_ferien_direkt(
+    client: TestClient, admin_user: Nutzer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_ferien_fuer_jahr(bundesland, jahr, client):
+        return [
+            {
+                "start": f"{jahr}-08-01",
+                "end": f"{jahr}-09-10",
+                "year": jahr,
+                "stateCode": bundesland,
+                "name": "sommerferien",
+                "slug": "sommerferien",
+            }
+        ]
+
+    monkeypatch.setattr(ferien_sync, "_ferien_fuer_jahr", fake_ferien_fuer_jahr)
+    headers = auth_headers(client, "admin@example.com", "geheim123")
+
+    response = client.post("/api/admin/pfarreien", json={"name": "St. Ferien"}, headers=headers)
+    assert response.status_code == 201
+    pfarrei_id = response.json()["id"]
+
+    response = client.get(f"/api/pfarreien/{pfarrei_id}/ferien", headers=headers)
+    assert response.status_code == 200
+    assert len(response.json()) > 0

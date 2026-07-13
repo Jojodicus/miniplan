@@ -12,6 +12,11 @@ if TYPE_CHECKING:
 
 class Pfarrei(Base):
     __tablename__ = "pfarreien"
+    # Erzwingt in SQLite eine strikt monoton steigende ID (statt der niedrigsten freien Zahl) -
+    # Pfarrei-IDs werden ansonsten nach dem Löschen einer Pfarrei wiederverwendet, was zu
+    # Unique-Constraint-Konflikten führen kann, falls irgendwo doch verwaiste Zeilen übrig
+    # bleiben (siehe pfarrei_loeschen in api/admin.py).
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), unique=True)

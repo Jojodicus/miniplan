@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import sys
 
 from sqlalchemy.exc import IntegrityError
@@ -8,6 +9,7 @@ from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
 from app.models.pfarrei import Pfarrei
 from app.security import hash_password
 from app.services.demo_seed import seed_demo_daten
+from app.services.ferien_sync import FerienSyncFehler, sync_ferien
 from app.services.stammdaten_seed import seed_default_stammdaten
 
 
@@ -68,6 +70,8 @@ def create_pfarrei(name: str) -> None:
             raise SystemExit(1) from None
         db.refresh(pfarrei)
         seed_default_stammdaten(db, pfarrei)
+        with contextlib.suppress(FerienSyncFehler):
+            sync_ferien(pfarrei, db)
         print(f"Pfarrei '{name}' angelegt.")
     finally:
         db.close()

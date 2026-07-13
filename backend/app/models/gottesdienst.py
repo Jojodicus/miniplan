@@ -15,7 +15,7 @@ class Gottesdienst(Base):
     __tablename__ = "gottesdienste"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    miniplan_id: Mapped[int] = mapped_column(ForeignKey("miniplaene.id"))
+    miniplan_id: Mapped[int] = mapped_column(ForeignKey("miniplaene.id", ondelete="CASCADE"))
     datum: Mapped[date] = mapped_column(Date)
     uhrzeit: Mapped[time] = mapped_column(Time)
     name: Mapped[str | None] = mapped_column(String(255), default=None)

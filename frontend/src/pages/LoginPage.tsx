@@ -3,11 +3,14 @@ import { useState, type SubmitEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { AppIcon } from '../components/AppIcon'
 import { Alert } from '../components/ui/Alert'
 import { Button } from '../components/ui/Button'
 import { Input, Label } from '../components/ui/FormField'
+import { useDocumentTitle } from '../lib/useDocumentTitle'
 
 export function LoginPage() {
+  useDocumentTitle('Anmelden')
   const { login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -37,8 +40,8 @@ export function LoginPage() {
     <div className="flex min-h-svh items-center justify-center px-6">
       <div className="w-full max-w-sm animate-rise">
         <div className="mb-8 flex flex-col items-center text-center">
-          <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-pine text-lg font-semibold text-paper shadow-sm shadow-pine/30">
-            M
+          <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-pine text-paper shadow-sm shadow-pine/30">
+            <AppIcon className="h-7 w-7" />
           </span>
           <h1 className="font-display text-3xl font-semibold text-ink">Miniplan</h1>
           <p className="mt-1 text-sm text-ink-soft">Dienstplanung für Ministranten</p>

@@ -112,5 +112,7 @@ def loeschen(
     _=Depends(require_verantwortlich),
 ) -> None:
     filtertag = _get_filtertag_or_404(pfarrei_id, filtertag_id, db)
+    # FiltertagBlocker-Zeilen werden per ON DELETE CASCADE mitgelöscht (siehe
+    # models/filtertag_blocker.py).
     db.delete(filtertag)
     db.commit()

@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
 import { Input, Label } from '../components/ui/FormField'
 import { useToast } from '../components/ui/Toast'
+import { useDocumentTitle } from '../lib/useDocumentTitle'
 
 function fehlerText(err: unknown): string {
   return err instanceof ApiError ? err.message : 'Ein Fehler ist aufgetreten'
@@ -157,6 +158,7 @@ function PasswortKarte() {
 }
 
 export function ProfilePage() {
+  useDocumentTitle('Profil')
   const { user } = useAuth()
   if (!user) return null
 

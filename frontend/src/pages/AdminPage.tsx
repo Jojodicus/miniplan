@@ -46,6 +46,7 @@ import { ListSkeleton } from '../components/ui/Skeleton'
 import { Modal } from '../components/ui/Modal'
 import { Popover } from '../components/ui/Popover'
 import { useToast } from '../components/ui/Toast'
+import { useDocumentTitle } from '../lib/useDocumentTitle'
 
 const ROLLEN: { wert: PfarreiRolle; label: string }[] = [
   { wert: 'pfarrei_verantwortlicher', label: 'Verantwortlich' },
@@ -57,6 +58,7 @@ function fehlerText(err: unknown): string {
 }
 
 export function AdminPage() {
+  useDocumentTitle('Admin')
   const { user } = useAuth()
   if (user && !user.ist_admin) return <Navigate to="/" replace />
 

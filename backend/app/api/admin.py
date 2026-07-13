@@ -1,3 +1,5 @@
+import contextlib
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -16,6 +18,7 @@ from app.schemas.nutzer import (
 )
 from app.schemas.pfarrei import PfarreiCreate, PfarreiOut, PfarreiUpdate
 from app.security import hash_password
+from app.services.ferien_sync import FerienSyncFehler, sync_ferien
 from app.services.stammdaten_seed import seed_default_stammdaten
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -178,6 +181,10 @@ def pfarrei_anlegen(daten: PfarreiCreate, db: Session = Depends(get_db)) -> Pfar
         ) from None
     db.refresh(pfarrei)
     seed_default_stammdaten(db, pfarrei)
+    # Best-effort: schlägt die externe Ferien-Quelle fehl, ist die Pfarrei trotzdem angelegt
+    # (Ferien lassen sich später über "Aktualisieren" nachholen, siehe bundesland_setzen).
+    with contextlib.suppress(FerienSyncFehler):
+        sync_ferien(pfarrei, db)
     return pfarrei
 
 
@@ -201,6 +208,9 @@ def pfarrei_bearbeiten(
 
 @router.delete("/pfarreien/{pfarrei_id}", status_code=status.HTTP_204_NO_CONTENT)
 def pfarrei_loeschen(pfarrei_id: int, db: Session = Depends(get_db)) -> None:
+    # Alle abhängigen Zeilen (Gruppen, Minis, DienstTypen, Filtertags, Miniplaene, ...) werden per
+    # ON DELETE CASCADE mitgelöscht (siehe Modelle unter app/models/, PRAGMA foreign_keys=ON in
+    # database.py).
     pfarrei = _get_pfarrei_or_404(pfarrei_id, db)
     db.delete(pfarrei)
     db.commit()

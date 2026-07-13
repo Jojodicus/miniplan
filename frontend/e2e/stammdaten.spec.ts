@@ -117,10 +117,12 @@ test('Nutzer kann Bundesland wählen und Ferienkalender aktualisieren', async ({
   await expect(page).toHaveURL(/\/stammdaten$/)
 
   await page.getByRole('tab', { name: 'Verfügbarkeit', exact: true }).click()
-  await page.getByRole('tab', { name: 'Ferien' }).click()
+  await page.getByRole('tab', { name: 'Ferien & Feiertage' }).click()
   await expect(page.getByLabel('Bundesland')).toHaveValue('BY')
   await page.getByRole('button', { name: 'Speichern' }).click()
-  await expect(page.getByText('Gespeichert, Ferienkalender aktualisiert.')).toBeVisible({
+  await expect(
+    page.getByText('Gespeichert, Ferien- und Feiertagskalender aktualisiert.'),
+  ).toBeVisible({
     timeout: 15000,
   })
   await expect(page.getByText(/Schuljahr \d{4}\/\d{4}/).first()).toBeVisible()
@@ -170,7 +172,7 @@ test('Nutzer kann Feiertags-Einstellung für Fronleichnam umschalten', async ({ 
   await expect(page).toHaveURL(/\/stammdaten$/)
 
   await page.getByRole('tab', { name: 'Verfügbarkeit', exact: true }).click()
-  await page.getByRole('tab', { name: 'Feiertage' }).click()
+  await page.getByRole('tab', { name: 'Ferien & Feiertage' }).click()
   await expect(page.getByText('Fronleichnam', { exact: false })).toBeVisible()
   const arbeiterFreiCheckbox = page.locator('#feiertag-fronleichnam-arbeiterfrei')
   // Fronleichnam ist ein gesetzlicher, arbeitsfreier Feiertag - ohne explizite Einstellung ist
@@ -178,4 +180,17 @@ test('Nutzer kann Feiertags-Einstellung für Fronleichnam umschalten', async ({ 
   await expect(arbeiterFreiCheckbox).toBeChecked()
   await arbeiterFreiCheckbox.click({ force: true })
   await expect(arbeiterFreiCheckbox).not.toBeChecked()
+})
+
+test('Nutzer sieht Hinweis zur regionalen Ausnahme bei Fronleichnam', async ({ page }) => {
+  await login(page)
+
+  await zuStammdaten(page, 'St. Beispiel')
+  await expect(page).toHaveURL(/\/stammdaten$/)
+
+  await page.getByRole('tab', { name: 'Verfügbarkeit', exact: true }).click()
+  await page.getByRole('tab', { name: 'Ferien & Feiertage' }).click()
+  await expect(page.getByText('Fronleichnam', { exact: false })).toBeVisible()
+  await page.getByRole('button', { name: /Hinweis zu Fronleichnam/ }).click()
+  await expect(page.getByText(/mehrheitlichen Konfession der Gemeinde/)).toBeVisible()
 })

@@ -90,6 +90,7 @@ import { Popover } from '../components/ui/Popover'
 import { TimeInput } from '../components/ui/TimeInput'
 import { useToast } from '../components/ui/Toast'
 import { formatDatumMitWochentag, monatsName } from '../lib/datum'
+import { useDocumentTitle } from '../lib/useDocumentTitle'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -1718,6 +1719,7 @@ export function MiniplanEditorPage() {
   const planId = Number(miniplanId)
 
   const [miniplan, setMiniplan] = useState<Miniplan | null>(null)
+  useDocumentTitle(miniplan ? `${monatsName(miniplan.monat)} ${miniplan.jahr}` : 'Miniplan')
   const [gruppen, setGruppen] = useState<Gruppe[]>([])
   const [minis, setMinis] = useState<Mini[]>([])
   const [dienstTypen, setDienstTypen] = useState<DienstTyp[]>([])
@@ -1737,7 +1739,7 @@ export function MiniplanEditorPage() {
   const [downloadFehler, setDownloadFehler] = useState<string | null>(null)
   const [fuelltGerade, setFuelltGerade] = useState(false)
   const [einstellungenOffen, setEinstellungenOffen] = useState(false)
-  const fuellenButtonRef = useRef<HTMLButtonElement>(null)
+  const einstellungenButtonRef = useRef<HTMLButtonElement>(null)
   // Jede Gottesdienst-Karte hält ihre Zuweisungen in eigenem State (nur beim ersten Rendern aus den
   // Props übernommen) - nach "Füllen"/"Leeren"/Tauschen/Fixieren ändert sich das serverseitig, ohne
   // dass die Karten das von selbst bemerken. Ein Revisions-Zähler im Karten-`key` erzwingt daher
@@ -1969,8 +1971,16 @@ export function MiniplanEditorPage() {
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {!readonly && (
+            <IconButton
+              ref={einstellungenButtonRef}
+              label="Auto-Fill-Einstellungen"
+              onClick={() => setEinstellungenOffen((o) => !o)}
+            >
+              <Settings2 className="h-4 w-4" />
+            </IconButton>
+          )}
+          {!readonly && (
             <Button
-              ref={fuellenButtonRef}
               variant="secondary"
               size="sm"
               title={fuelltGerade ? 'Befüllt…' : 'Füllen'}
@@ -1980,14 +1990,6 @@ export function MiniplanEditorPage() {
               <Wand2 className="h-4 w-4" />
               <span className="hidden sm:inline">{fuelltGerade ? 'Befüllt…' : 'Füllen'}</span>
             </Button>
-          )}
-          {!readonly && (
-            <IconButton
-              label="Auto-Fill-Einstellungen"
-              onClick={() => setEinstellungenOffen((o) => !o)}
-            >
-              <Settings2 className="h-4 w-4" />
-            </IconButton>
           )}
           {!readonly && hatAutoZuweisungen && (
             <Button
@@ -2035,7 +2037,7 @@ export function MiniplanEditorPage() {
       <ZuteilungEinstellungenPopover
         open={einstellungenOffen}
         onClose={() => setEinstellungenOffen(false)}
-        anchorRef={fuellenButtonRef}
+        anchorRef={einstellungenButtonRef}
         miniplan={miniplan}
         onSave={handleEinstellungenSpeichern}
       />

@@ -1,4 +1,4 @@
-import { CalendarRange, Plus } from 'lucide-react'
+import { CalendarRange, Download, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type SubmitEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
@@ -6,6 +6,7 @@ import {
   miniplaeneListe,
   miniplanErstellen,
   miniplanLoeschen,
+  miniplanPdfHerunterladen,
   type Miniplan,
 } from '../api/miniplaene'
 import { AppShell } from '../components/layout/AppShell'
@@ -19,6 +20,7 @@ import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { Input, Label, Select } from '../components/ui/FormField'
 import { useToast } from '../components/ui/Toast'
 import { MONATE, monatsName } from '../lib/datum'
+import { useDocumentTitle } from '../lib/useDocumentTitle'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -40,6 +42,7 @@ function naechsterMonatsVorschlag(miniplaene: Miniplan[]): { monat: number; jahr
 }
 
 export function MiniplaenePage() {
+  useDocumentTitle('Minipläne')
   const { pfarreiId } = useParams<{ pfarreiId: string }>()
   const id = Number(pfarreiId)
   const navigate = useNavigate()
@@ -88,6 +91,15 @@ export function MiniplaenePage() {
     }
   }
 
+  async function handleDownload(miniplan: Miniplan) {
+    setError(null)
+    try {
+      await miniplanPdfHerunterladen(id, miniplan)
+    } catch (err) {
+      setError(fehlerText(err, 'PDF konnte nicht heruntergeladen werden'))
+    }
+  }
+
   return (
     <AppShell pfarreiId={id}>
       <h1 className="font-display text-3xl font-semibold text-ink">Minipläne</h1>
@@ -102,10 +114,11 @@ export function MiniplaenePage() {
           <EmptyState icon={CalendarRange} title="Noch keine Minipläne angelegt" />
         ) : (
           <div>
-            {(miniplaene ?? []).map((miniplan) => (
+            {(miniplaene ?? []).map((miniplan, index) => (
               <div
                 key={miniplan.id}
-                className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 last:border-b-0"
+                style={{ animationDelay: `${Math.min(index, 8) * 35}ms` }}
+                className="animate-rise flex items-center justify-between gap-3 border-b border-line px-5 py-3 last:border-b-0"
               >
                 <Link
                   to={`/pfarreien/${id}/miniplaene/${miniplan.id}`}
@@ -116,14 +129,27 @@ export function MiniplaenePage() {
                     {miniplan.status === 'abgeschlossen' ? 'Abgeschlossen' : 'In Bearbeitung'}
                   </Badge>
                 </Link>
-                <InlineConfirmButton
-                  onConfirm={() => handleDelete(miniplan.id)}
-                  confirmLabel={
-                    miniplan.gottesdienste.length > 0
-                      ? `Plan mit ${miniplan.gottesdienste.length} Gottesdiensten löschen?`
-                      : 'Wirklich löschen?'
-                  }
-                />
+                <div className="flex items-center gap-2">
+                  {miniplan.status === 'abgeschlossen' && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      title="PDF herunterladen"
+                      onClick={() => handleDownload(miniplan)}
+                    >
+                      <Download className="h-4 w-4" />
+                      <span className="hidden sm:inline">PDF</span>
+                    </Button>
+                  )}
+                  <InlineConfirmButton
+                    onConfirm={() => handleDelete(miniplan.id)}
+                    confirmLabel={
+                      miniplan.gottesdienste.length > 0
+                        ? `Plan mit ${miniplan.gottesdienste.length} Gottesdiensten löschen?`
+                        : 'Wirklich löschen?'
+                    }
+                  />
+                </div>
               </div>
             ))}
           </div>

@@ -22,7 +22,7 @@ class Miniplan(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id"))
+    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id", ondelete="CASCADE"))
     monat: Mapped[int] = mapped_column(Integer)
     jahr: Mapped[int] = mapped_column(Integer)
     status: Mapped[MiniplanStatus] = mapped_column(

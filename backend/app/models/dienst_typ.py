@@ -14,7 +14,7 @@ class DienstTyp(Base):
     __table_args__ = (UniqueConstraint("pfarrei_id", "name", name="uq_dienst_typ_pfarrei_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id"))
+    pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(255))
     standard_anzahl: Mapped[int] = mapped_column(Integer, default=1)
     zeige_label: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -31,8 +31,8 @@ class DienstTypGruppenAnforderung(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    dienst_typ_id: Mapped[int] = mapped_column(ForeignKey("dienst_typen.id"))
-    gruppe_id: Mapped[int] = mapped_column(ForeignKey("gruppen.id"))
+    dienst_typ_id: Mapped[int] = mapped_column(ForeignKey("dienst_typen.id", ondelete="CASCADE"))
+    gruppe_id: Mapped[int] = mapped_column(ForeignKey("gruppen.id", ondelete="CASCADE"))
     mindest_anzahl: Mapped[int] = mapped_column(Integer, default=0)
 
     dienst_typ: Mapped["DienstTyp"] = relationship(back_populates="gruppen_anforderungen")

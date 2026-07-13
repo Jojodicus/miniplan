@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ClipboardList,
   Clock,
+  Info,
   Landmark,
   Pencil,
   Plus,
@@ -85,6 +86,7 @@ import { ListSkeleton } from '../components/ui/Skeleton'
 import { TabBar } from '../components/ui/TabBar'
 import { useToast } from '../components/ui/Toast'
 import { formatDatum } from '../lib/datum'
+import { useDocumentTitle } from '../lib/useDocumentTitle'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -1434,41 +1436,44 @@ function FiltertagsSection({
                   />
                 </div>
               ) : (
-                <Row>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => toggleSperrzeiten(filtertag.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      toggleSperrzeiten(filtertag.id)
+                    }
+                  }}
+                  className="flex cursor-pointer items-center justify-between gap-3 border-b border-line px-5 py-3 transition-colors last:border-b-0 hover:bg-pine-tint/30"
+                >
                   <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleSperrzeiten(filtertag.id)}
-                      className="inline-flex cursor-pointer items-center rounded-md p-1 text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
-                    >
-                      <ChevronRight
-                        className={`h-3.5 w-3.5 transition-transform ${
-                          offeneSperrzeiten.has(filtertag.id) ? 'rotate-90' : ''
-                        }`}
-                      />
-                    </button>
+                    <ChevronRight
+                      className={`h-3.5 w-3.5 shrink-0 text-ink-soft transition-transform ${
+                        offeneSperrzeiten.has(filtertag.id) ? 'rotate-90' : ''
+                      }`}
+                    />
                     <span className="text-sm font-medium text-ink">{filtertag.label}</span>
                     {filtertag.ist_schueler_artig && (
                       <Badge tone="gold">folgt Schulferien-Regeln</Badge>
                     )}
                   </div>
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => toggleSperrzeiten(filtertag.id)}
-                      className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-pine-tint hover:text-pine-dark"
-                    >
+                    <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft">
                       <span className="rounded-full bg-pine-tint px-1.5 text-[10px] text-pine-dark">
                         {blocker.filter((b) => b.filtertag_id === filtertag.id).length}
                       </span>
                       Sperrzeiten
-                    </button>
-                    <IconButton label="Bearbeiten" onClick={() => setBearbeitenId(filtertag.id)}>
-                      <Pencil className="h-4 w-4" />
-                    </IconButton>
-                    <InlineConfirmButton onConfirm={() => handleDelete(filtertag.id)} />
+                    </span>
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <IconButton label="Bearbeiten" onClick={() => setBearbeitenId(filtertag.id)}>
+                        <Pencil className="h-4 w-4" />
+                      </IconButton>
+                      <InlineConfirmButton onConfirm={() => handleDelete(filtertag.id)} />
+                    </div>
                   </div>
-                </Row>
+                </div>
               )}
               {offeneSperrzeiten.has(filtertag.id) && (
                 <div className="bg-pine-tint/20">
@@ -1522,25 +1527,56 @@ const BUNDESLAND_NAMEN: Record<Bundesland, string> = {
   TH: 'Thüringen',
 }
 
-function FerienSection({ pfarreiId }: { pfarreiId: number }) {
+// Feiertage, deren Arbeitsfrei-Status nicht landesweit einheitlich ist, sondern (auch innerhalb
+// des per Bundesland berechneten `holidays`-Datensatzes) davon abhängt, ob die jeweilige
+// Gemeinde/der Landkreis mehrheitlich katholisch/evangelisch ist (z.B. Fronleichnam in Sachsen/
+// Thüringen nur in katholisch geprägten Gemeinden, Mariä Himmelfahrt in Bayern nur dort) - simple
+// Namens-Heuristik statt Bundesland-spezifischer Sonderfall-Liste, da `holidays.Germany` diese
+// Gemeinde-Ebene nicht selbst abbildet.
+const REGIONALE_AUSNAHME_KEYWORDS = ['fronleichnam', 'mariä himmelfahrt', 'mariae himmelfahrt']
+
+function hatRegionaleAusnahme(name: string): boolean {
+  const normalisiert = name.toLowerCase()
+  return REGIONALE_AUSNAHME_KEYWORDS.some((keyword) => normalisiert.includes(keyword))
+}
+
+function FerienFeiertageSection({ pfarreiId }: { pfarreiId: number }) {
+  const { showToast } = useToast()
   const [auswahl, setAuswahl] = useState<Bundesland>('BY')
   const [ferien, setFerien] = useState<Ferienzeitraum[]>([])
-  const [geladen, setGeladen] = useState(false)
+  const [ferienGeladen, setFerienGeladen] = useState(false)
   const [speichertGerade, setSpeichertGerade] = useState(false)
   const [gespeichert, setGespeichert] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const reload = useCallback(() => {
+  const [feiertage, setFeiertage] = useState<Feiertag[]>([])
+  const [feiertageGeladen, setFeiertageGeladen] = useState(false)
+  const [feiertageError, setFeiertageError] = useState<string | null>(null)
+  // Umschaltbar, weil z. B. im Dezember bereits der Januar des Folgejahres geplant wird.
+  const [jahr, setJahr] = useState(() => new Date().getFullYear())
+
+  const reloadFerien = useCallback(() => {
     pfarreiDetail(pfarreiId).then((info) => setAuswahl(info.bundesland))
     ferienListe(pfarreiId).then((liste) => {
       setFerien(liste)
-      setGeladen(true)
+      setFerienGeladen(true)
     })
   }, [pfarreiId])
 
+  const reloadFeiertage = useCallback(() => {
+    feiertageListe(pfarreiId, jahr).then((liste) => {
+      setFeiertage(liste)
+      setFeiertageGeladen(true)
+    })
+  }, [pfarreiId, jahr])
+
   useEffect(() => {
-    reload()
-  }, [reload])
+    reloadFerien()
+  }, [reloadFerien])
+
+  useEffect(() => {
+    reloadFeiertage()
+  }, [reloadFeiertage])
 
   async function handleSpeichern() {
     setError(null)
@@ -1550,10 +1586,12 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
       // Setzt das Bundesland der gesamten Pfarrei (gilt für alle Ministranten/Dienstpläne) und
       // stößt serverseitig bereits einen Ferien-Sync an - explizit erneut abrufen statt nur der
       // Server-Antwort zu vertrauen, damit auch bei einem Ferien-Sync-Fehler klares Feedback kommt
-      // (statt eines still veralteten Kalenders) und die Liste hier sicher aktuell ist.
+      // (statt eines still veralteten Kalenders) und die Liste hier sicher aktuell ist. Feiertage
+      // hängen ebenfalls vom Bundesland ab, daher hier ebenfalls neu laden.
       await bundeslandSetzen(pfarreiId, auswahl)
       const neueFerien = await ferienAktualisieren(pfarreiId)
       setFerien(neueFerien)
+      reloadFeiertage()
       setGespeichert(true)
     } catch (err) {
       setError(fehlerText(err, 'Fehler beim Speichern des Bundeslands'))
@@ -1562,82 +1600,8 @@ function FerienSection({ pfarreiId }: { pfarreiId: number }) {
     }
   }
 
-  return (
-    <Card>
-      <CardHeader title="Ferien" description="Automatisch abgerufen für das gewählte Bundesland." />
-      {error && (
-        <div className="px-5 pt-4">
-          <Alert>{error}</Alert>
-        </div>
-      )}
-      <div className="flex flex-wrap items-end gap-4 border-b border-line p-5">
-        <div>
-          <Label htmlFor="ferien-bundesland" hint="gilt für die ganze Pfarrei">
-            Bundesland
-          </Label>
-          <Select
-            id="ferien-bundesland"
-            value={auswahl}
-            onChange={(e) => {
-              setAuswahl(e.target.value as Bundesland)
-              setGespeichert(false)
-            }}
-          >
-            {BUNDESLAENDER.map((code) => (
-              <option key={code} value={code}>
-                {BUNDESLAND_NAMEN[code]}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <Button type="button" onClick={handleSpeichern} disabled={speichertGerade}>
-          <RefreshCw className="h-4 w-4" />
-          {speichertGerade ? 'Speichert…' : 'Speichern'}
-        </Button>
-        {gespeichert && (
-          <span className="text-sm text-ink-soft">Gespeichert, Ferienkalender aktualisiert.</span>
-        )}
-      </div>
-      {!geladen ? (
-        <ListSkeleton rows={3} />
-      ) : ferien.length === 0 ? (
-        <EmptyState icon={CalendarDays} title="Noch keine Ferien geladen" />
-      ) : (
-        <div>
-          {ferien.map((f) => (
-            <Row key={f.id}>
-              <span className="text-sm text-ink">
-                {f.name} ({formatDatum(f.start_datum)}–{formatDatum(f.end_datum)})
-              </span>
-              <Badge tone="neutral">Schuljahr {f.schuljahr}</Badge>
-            </Row>
-          ))}
-        </div>
-      )}
-    </Card>
-  )
-}
-
-function FeiertageSection({ pfarreiId }: { pfarreiId: number }) {
-  const [feiertage, setFeiertage] = useState<Feiertag[]>([])
-  const [geladen, setGeladen] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  // Umschaltbar, weil z. B. im Dezember bereits der Januar des Folgejahres geplant wird.
-  const [jahr, setJahr] = useState(() => new Date().getFullYear())
-
-  const reload = useCallback(() => {
-    feiertageListe(pfarreiId, jahr).then((liste) => {
-      setFeiertage(liste)
-      setGeladen(true)
-    })
-  }, [pfarreiId, jahr])
-
-  useEffect(() => {
-    reload()
-  }, [reload])
-
   async function handleToggle(feiertag: Feiertag, feld: 'schulfrei' | 'arbeiter_frei') {
-    setError(null)
+    setFeiertageError(null)
     const aktualisiert = { ...feiertag, [feld]: !feiertag[feld] }
     setFeiertage((aktuell) => aktuell.map((f) => (f.key === feiertag.key ? aktualisiert : f)))
     try {
@@ -1646,67 +1610,149 @@ function FeiertageSection({ pfarreiId }: { pfarreiId: number }) {
         arbeiter_frei: aktualisiert.arbeiter_frei,
       })
     } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Speichern der Feiertags-Einstellung'))
-      reload()
+      setFeiertageError(fehlerText(err, 'Fehler beim Speichern der Feiertags-Einstellung'))
+      reloadFeiertage()
     }
   }
 
+  function zeigeRegionaleAusnahmeHinweis(name: string) {
+    showToast(
+      `${name} ist nicht überall einheitlich arbeitsfrei: Ob dieser Tag gesetzlich arbeitsfrei ` +
+        'ist, hängt hier von der mehrheitlichen Konfession der Gemeinde/des Landkreises ab. ' +
+        'Bitte bei Bedarf oben von Hand anpassen.',
+      'info',
+    )
+  }
+
   return (
-    <Card>
-      <CardHeader
-        title="Gesetzliche Feiertage"
-        description="Mit Unterscheidung ob schulfrei und/oder arbeitsfrei."
-        action={
-          <div className="flex items-center gap-1">
-            <IconButton label="Vorheriges Jahr" onClick={() => setJahr((j) => j - 1)}>
-              <ChevronLeft className="h-4 w-4" />
-            </IconButton>
-            <span className="w-12 text-center text-sm font-medium tabular-nums text-ink">
-              {jahr}
-            </span>
-            <IconButton label="Nächstes Jahr" onClick={() => setJahr((j) => j + 1)}>
-              <ChevronRight className="h-4 w-4" />
-            </IconButton>
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader title="Bundesland" description="Bestimmt Ferien- und Feiertagskalender." />
+        {error && (
+          <div className="px-5 pt-4">
+            <Alert>{error}</Alert>
           </div>
-        }
-      />
-      {error && (
-        <div className="px-5 pt-4">
-          <Alert>{error}</Alert>
+        )}
+        <div className="flex flex-wrap items-end gap-4 p-5">
+          <div>
+            <Label htmlFor="ferien-bundesland" hint="gilt für die ganze Pfarrei">
+              Bundesland
+            </Label>
+            <Select
+              id="ferien-bundesland"
+              value={auswahl}
+              onChange={(e) => {
+                setAuswahl(e.target.value as Bundesland)
+                setGespeichert(false)
+              }}
+            >
+              {BUNDESLAENDER.map((code) => (
+                <option key={code} value={code}>
+                  {BUNDESLAND_NAMEN[code]}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <Button type="button" onClick={handleSpeichern} disabled={speichertGerade}>
+            <RefreshCw className="h-4 w-4" />
+            {speichertGerade ? 'Speichert…' : 'Speichern'}
+          </Button>
+          {gespeichert && (
+            <span className="text-sm text-ink-soft">
+              Gespeichert, Ferien- und Feiertagskalender aktualisiert.
+            </span>
+          )}
         </div>
-      )}
-      {!geladen ? (
-        <ListSkeleton rows={4} />
-      ) : feiertage.length === 0 ? (
-        <EmptyState icon={Landmark} title="Keine Feiertage gefunden" />
-      ) : (
-        <div>
-          {feiertage.map((f) => (
-            <Row key={f.key}>
-              <span className="text-sm text-ink">
-                {f.name} ({formatDatum(f.datum)})
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Ferien"
+          description="Automatisch abgerufen für das gewählte Bundesland."
+        />
+        {!ferienGeladen ? (
+          <ListSkeleton rows={3} />
+        ) : ferien.length === 0 ? (
+          <EmptyState icon={CalendarDays} title="Noch keine Ferien geladen" />
+        ) : (
+          <div>
+            {ferien.map((f) => (
+              <Row key={f.id}>
+                <span className="text-sm text-ink">
+                  {f.name} ({formatDatum(f.start_datum)}–{formatDatum(f.end_datum)})
+                </span>
+                <Badge tone="neutral">Schuljahr {f.schuljahr}</Badge>
+              </Row>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Gesetzliche Feiertage"
+          description="Mit Unterscheidung ob schulfrei und/oder arbeitsfrei."
+          action={
+            <div className="flex items-center gap-1">
+              <IconButton label="Vorheriges Jahr" onClick={() => setJahr((j) => j - 1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </IconButton>
+              <span className="w-12 text-center text-sm font-medium tabular-nums text-ink">
+                {jahr}
               </span>
-              <div className="flex items-center gap-2">
-                <CheckboxChip
-                  id={`feiertag-${f.key}-schulfrei`}
-                  checked={f.schulfrei}
-                  onChange={() => handleToggle(f, 'schulfrei')}
-                >
-                  schulfrei
-                </CheckboxChip>
-                <CheckboxChip
-                  id={`feiertag-${f.key}-arbeiterfrei`}
-                  checked={f.arbeiter_frei}
-                  onChange={() => handleToggle(f, 'arbeiter_frei')}
-                >
-                  arbeitsfrei
-                </CheckboxChip>
-              </div>
-            </Row>
-          ))}
-        </div>
-      )}
-    </Card>
+              <IconButton label="Nächstes Jahr" onClick={() => setJahr((j) => j + 1)}>
+                <ChevronRight className="h-4 w-4" />
+              </IconButton>
+            </div>
+          }
+        />
+        {feiertageError && (
+          <div className="px-5 pt-4">
+            <Alert>{feiertageError}</Alert>
+          </div>
+        )}
+        {!feiertageGeladen ? (
+          <ListSkeleton rows={4} />
+        ) : feiertage.length === 0 ? (
+          <EmptyState icon={Landmark} title="Keine Feiertage gefunden" />
+        ) : (
+          <div>
+            {feiertage.map((f) => (
+              <Row key={f.key}>
+                <span className="text-sm text-ink">
+                  {f.name} ({formatDatum(f.datum)})
+                </span>
+                <div className="flex items-center gap-2">
+                  {hatRegionaleAusnahme(f.name) && (
+                    <IconButton
+                      label={`Hinweis zu ${f.name}`}
+                      onClick={() => zeigeRegionaleAusnahmeHinweis(f.name)}
+                      className="h-6 w-6 text-gold-dark hover:text-gold-dark"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </IconButton>
+                  )}
+                  <CheckboxChip
+                    id={`feiertag-${f.key}-schulfrei`}
+                    checked={f.schulfrei}
+                    onChange={() => handleToggle(f, 'schulfrei')}
+                  >
+                    schulfrei
+                  </CheckboxChip>
+                  <CheckboxChip
+                    id={`feiertag-${f.key}-arbeiterfrei`}
+                    checked={f.arbeiter_frei}
+                    onChange={() => handleToggle(f, 'arbeiter_frei')}
+                  >
+                    arbeitsfrei
+                  </CheckboxChip>
+                </div>
+              </Row>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
   )
 }
 
@@ -1721,8 +1767,7 @@ type TabKey = (typeof TABS)[number]['key']
 
 const VERFUEGBARKEIT_TABS = [
   { key: 'status', label: 'Verfügbarkeits-Status', icon: Clock },
-  { key: 'ferien', label: 'Ferien', icon: CalendarDays },
-  { key: 'feiertage', label: 'Feiertage', icon: Landmark },
+  { key: 'ferien-feiertage', label: 'Ferien & Feiertage', icon: CalendarDays },
 ] as const
 
 type VerfuegbarkeitTabKey = (typeof VERFUEGBARKEIT_TABS)[number]['key']
@@ -1751,13 +1796,13 @@ function VerfuegbarkeitSection({
           reload={reloadFiltertags}
         />
       )}
-      {subTab === 'ferien' && <FerienSection pfarreiId={pfarreiId} />}
-      {subTab === 'feiertage' && <FeiertageSection pfarreiId={pfarreiId} />}
+      {subTab === 'ferien-feiertage' && <FerienFeiertageSection pfarreiId={pfarreiId} />}
     </div>
   )
 }
 
 export function StammdatenPage() {
+  useDocumentTitle('Stammdaten')
   const { pfarreiId } = useParams<{ pfarreiId: string }>()
   const id = Number(pfarreiId)
   const [gruppen, setGruppen] = useState<Gruppe[]>([])
