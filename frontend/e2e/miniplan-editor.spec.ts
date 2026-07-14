@@ -54,8 +54,16 @@ async function legeMiniplanAn(page: Page, monat: string, jahr: string) {
   await page.getByRole('navigation').getByRole('link', { name: 'Minipläne' }).click()
   await expect(page).toHaveURL(/\/miniplaene$/)
   const form = page.getByRole('form', { name: 'Miniplan anlegen' })
+  // Das "Neu anlegen"-Formular ist schon sichtbar, bevor die Miniplan-Liste geladen ist - der
+  // "nächster Monat"-Vorschlag (naechsterMonatsVorschlag in MiniplaenePage.tsx) setzt Monat/Jahr
+  // erst asynchron danach. Erst auf diesen Default warten, bevor die eigene Auswahl getroffen
+  // wird, sonst kann unter Last (mehrere Pfarrei-weit geteilte Tests parallel) die eigene Auswahl
+  // mit dem asynchronen Default kollidieren.
+  await expect(form.getByLabel('Jahr')).not.toHaveValue('')
   await form.getByLabel('Monat').selectOption(monat)
   await form.getByLabel('Jahr').fill(jahr)
+  await expect(form.getByLabel('Monat')).toHaveValue(monat)
+  await expect(form.getByLabel('Jahr')).toHaveValue(jahr)
   await form.getByRole('button', { name: 'Miniplan anlegen' }).click()
   await expect(page).toHaveURL(/\/miniplaene\/\d+$/)
 }
