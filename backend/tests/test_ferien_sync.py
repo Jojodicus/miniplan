@@ -39,6 +39,36 @@ def test_sync_ferien_speichert_zeitraeume(
     assert len(gespeichert) == 1
 
 
+def test_sync_ferien_verarbeitet_datetime_start_und_bevorzugt_name_cp(
+    db_session: Session, pfarrei: Pfarrei, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ferien-api.maxleistner.de liefert start/end als Datetime mit Zeit+Z-Suffix statt eines
+    reinen Datums, sowie sowohl ein kleingeschriebenes `name` als auch ein großgeschriebenes
+    `name_cp` - das Ferienzeitraum.name soll die großgeschriebene Variante übernehmen."""
+
+    def fake_ferien_fuer_jahr(bundesland, jahr, client):
+        return [
+            {
+                "start": "2026-08-03T00:00Z",
+                "end": "2026-09-14T23:59Z",
+                "year": 2026,
+                "stateCode": bundesland,
+                "name": "sommerferien",
+                "name_cp": "Sommerferien",
+                "slug": "sommerferien-2026-BY",
+            }
+        ]
+
+    monkeypatch.setattr(ferien_sync, "_ferien_fuer_jahr", fake_ferien_fuer_jahr)
+
+    ergebnis = ferien_sync.sync_ferien(pfarrei, db_session, jahre={2026})
+
+    assert len(ergebnis) == 1
+    assert ergebnis[0].name == "Sommerferien"
+    assert ergebnis[0].start_datum == date(2026, 8, 3)
+    assert ergebnis[0].end_datum == date(2026, 9, 14)
+
+
 def test_sync_ferien_ersetzt_bestehende_eintraege(
     db_session: Session, pfarrei: Pfarrei, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -136,15 +136,25 @@ def _hole_rohdaten(pfarrei: Pfarrei, jahre: set[int]) -> list[dict]:
         ) from exc
 
 
+def _datum(wert: str) -> date:
+    # ferien-api.maxleistner.de liefert "2026-02-16T00:00Z" statt eines reinen Datums - die ersten
+    # 10 Zeichen sind in beiden Formaten (und im Test-/E2E-Stub, der weiterhin ein reines Datum
+    # liefert) gleich, ein strptime auf den vollen Wert bräuchte sonst zwei Formate.
+    return datetime.strptime(wert[:10], "%Y-%m-%d").date()
+
+
 def _als_zeitraeume(pfarrei: Pfarrei, rohdaten: list[dict]) -> list[Ferienzeitraum]:
     zeitraeume = []
     for eintrag in rohdaten:
-        start_datum = datetime.strptime(eintrag["start"], "%Y-%m-%d").date()
-        end_datum = datetime.strptime(eintrag["end"], "%Y-%m-%d").date()
+        start_datum = _datum(eintrag["start"])
+        end_datum = _datum(eintrag["end"])
         zeitraeume.append(
             Ferienzeitraum(
                 pfarrei_id=pfarrei.id,
-                name=eintrag["name"],
+                # name_cp ("Winterferien") ist die großgeschriebene Variante von name
+                # ("winterferien") - fällt auf name zurück, falls ein Aufrufer (z.B. der
+                # Test-/E2E-Stub) kein name_cp liefert.
+                name=eintrag.get("name_cp") or eintrag["name"],
                 start_datum=start_datum,
                 end_datum=end_datum,
                 schuljahr=_schuljahr(start_datum),

@@ -59,9 +59,7 @@ export function AppShell({
           className={`mx-auto flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 ${containerWidth}`}
         >
           <Link to="/" className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-pine text-paper">
-              <AppIcon className="h-5 w-5" />
-            </span>
+            <AppIcon className="h-8 w-8" />
             <span className="font-display text-xl font-semibold text-ink">Miniplan</span>
           </Link>
           {user && (

@@ -270,7 +270,7 @@ docker compose -p miniplan-e2e -f docker-compose.e2e.yml up -d --build   # manue
   währenddessen noch (unsichtbar werdend) im DOM; vor dem Öffnen eines zweiten Dialogs mit
   `await expect(dialog).toBeHidden()` auf das Verschwinden warten, sonst können kurzzeitig zwei
   `role="dialog"`-Elemente gleichzeitig existieren. Echte externe Abhängigkeiten (aktuell
-  ferien-api.de) sind für die E2E-Umgebung über `MINIPLAN_ENABLE_TEST_STUBS`/
+  ferien-api.maxleistner.de) sind für die E2E-Umgebung über `MINIPLAN_ENABLE_TEST_STUBS`/
   `MINIPLAN_FERIEN_API_URL` auf einen lokalen Stub (`app/api/ferien_stub.py`) umgebogen - nie auf
   eine echte, mit anderen Nutzern geteilte externe Quelle testen (Rate-Limits machen das
   unzuverlässig).

@@ -40,9 +40,7 @@ export function LoginPage() {
     <div className="flex min-h-svh items-center justify-center px-6">
       <div className="w-full max-w-sm animate-rise">
         <div className="mb-8 flex flex-col items-center text-center">
-          <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-pine text-paper shadow-sm shadow-pine/30">
-            <AppIcon className="h-7 w-7" />
-          </span>
+          <AppIcon className="mb-3 h-12 w-12" />
           <h1 className="font-display text-3xl font-semibold text-ink">Miniplan</h1>
           <p className="mt-1 text-sm text-ink-soft">Dienstplanung für Ministranten</p>
         </div>

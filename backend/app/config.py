@@ -31,8 +31,10 @@ class Settings(BaseSettings):
     # Konfigurierbar, damit die Playwright-E2E-Umgebung (docker-compose.e2e.yml) auf einen lokalen
     # Stub (app.api.ferien_stub) statt die echte, gemeinsam mit anderen Nutzern geteilte externe
     # Quelle zeigen kann - deren Rate-Limit ist sonst eine externe, nicht-deterministische
-    # Fehlerquelle für die Tests. {bundesland}/{jahr} werden per .format() ersetzt.
-    ferien_api_url: str = "https://ferien-api.de/api/v1/holidays/{bundesland}/{jahr}"
+    # Fehlerquelle für die Tests. {bundesland}/{jahr} werden per .format() ersetzt. War früher
+    # ferien-api.de - dessen Rate-Limit erholte sich praktisch nie mehr, siehe
+    # _RATE_LIMIT_COOLDOWN_SECONDS in services/ferien_sync.py.
+    ferien_api_url: str = "https://www.ferien-api.maxleistner.de/api/v1/{jahr}/{bundesland}"
     # Registriert zusätzliche, ausschließlich für die E2E-Suite gedachte Endpunkte (siehe
     # app/api/ferien_stub.py) - in einem echten Deployment nie setzen.
     enable_test_stubs: bool = False
