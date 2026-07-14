@@ -236,6 +236,7 @@ test('Nutzer kann Miniplan abschließen und das finale PDF herunterladen', async
   await expect(page.getByRole('button', { name: 'Füllen', exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Plan abschließen' }).click()
+  await page.getByRole('button', { name: 'Abschließen bestätigen' }).click()
   await expect(page.getByText('Abgeschlossen', { exact: true })).toBeVisible({ timeout: 10_000 })
 
   // Ein abgeschlossener Plan ist schreibgeschützt: Mutations-Buttons verschwinden, der Hinweis
