@@ -518,6 +518,7 @@ function DienstbedarfBelegung({
   // Die Mini-Suche ist standardmäßig verborgen (weniger Unruhe, wenn mehrere Dienste
   // gleichzeitig sichtbar sind) - ein Klick auf einen "offen"-Platzhalter blendet sie ein.
   const [sucheOffen, setSucheOffen] = useState(false)
+  const [autoLeerenBestaetigen, setAutoLeerenBestaetigen] = useState(false)
 
   const autoZuweisungen = serverZuweisungen.filter((z) => !z.manuell_fixiert)
   const belegteMiniIds = new Set([
@@ -541,16 +542,35 @@ function DienstbedarfBelegung({
             <span className="text-xs text-ink-faint">· {einschraenkungen.join(', ')}</span>
           )}
         </div>
-        {!readonly && autoZuweisungen.length > 0 && (
-          <button
-            type="button"
-            onClick={onClearAuto}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-ink-faint transition-colors hover:bg-wine-tint hover:text-wine"
-          >
-            <Eraser className="h-3.5 w-3.5" />
-            Auto leeren
-          </button>
-        )}
+        {!readonly &&
+          autoZuweisungen.length > 0 &&
+          (autoLeerenBestaetigen ? (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-wine">Automatische Zuweisungen leeren?</span>
+              <IconButton
+                label="Leeren bestätigen"
+                tone="danger"
+                onClick={() => {
+                  setAutoLeerenBestaetigen(false)
+                  onClearAuto()
+                }}
+              >
+                <Check className="h-3.5 w-3.5" />
+              </IconButton>
+              <IconButton label="Abbrechen" onClick={() => setAutoLeerenBestaetigen(false)}>
+                <X className="h-3.5 w-3.5" />
+              </IconButton>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAutoLeerenBestaetigen(true)}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-ink-faint transition-colors hover:bg-wine-tint hover:text-wine"
+            >
+              <Eraser className="h-3.5 w-3.5" />
+              Auto leeren
+            </button>
+          ))}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {bedarf.fixierteMiniIds.map((miniId) => {
@@ -1218,7 +1238,7 @@ function GottesdienstKarte({
 
   return (
     <Card className="animate-rise" data-testid="gottesdienst-karte">
-      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-2">
             <span className="font-medium text-ink">
@@ -1758,6 +1778,7 @@ export function MiniplanEditorPage() {
   const [downloadFehler, setDownloadFehler] = useState<string | null>(null)
   const [fuelltGerade, setFuelltGerade] = useState(false)
   const [autoLeerenBestaetigen, setAutoLeerenBestaetigen] = useState(false)
+  const [abschliessenBestaetigen, setAbschliessenBestaetigen] = useState(false)
   const [einstellungenOffen, setEinstellungenOffen] = useState(false)
   const einstellungenButtonRef = useRef<HTMLButtonElement>(null)
   // Jede Gottesdienst-Karte hält ihre Zuweisungen in eigenem State (nur beim ersten Rendern aus den
@@ -2066,12 +2087,30 @@ export function MiniplanEditorPage() {
                 Wieder öffnen
               </Button>
             </>
+          ) : abschliessenBestaetigen ? (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-ink-soft">Plan wirklich abschließen?</span>
+              <IconButton
+                label="Abschließen bestätigen"
+                tone="danger"
+                disabled={statusWirdGeaendert}
+                onClick={() => {
+                  setAbschliessenBestaetigen(false)
+                  void handleStatusWechsel('abgeschlossen')
+                }}
+              >
+                <Check className="h-4 w-4" />
+              </IconButton>
+              <IconButton label="Abbrechen" onClick={() => setAbschliessenBestaetigen(false)}>
+                <X className="h-4 w-4" />
+              </IconButton>
+            </div>
           ) : (
             <Button
               variant="primary"
               size="sm"
               disabled={statusWirdGeaendert}
-              onClick={() => handleStatusWechsel('abgeschlossen')}
+              onClick={() => setAbschliessenBestaetigen(true)}
             >
               Plan abschließen
             </Button>

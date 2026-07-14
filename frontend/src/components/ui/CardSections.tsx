@@ -1,8 +1,5 @@
 import { Plus } from 'lucide-react'
 
-// Optische Trennung von "neu anlegen" (Formular am Karten-Ende, dezent hervorgehoben) und
-// "bearbeiten" (Zeile expandiert inline, Akzentbalken links) - vorher waren beide kaum
-// unterscheidbar.
 export function NeuAnlegenAbschnitt({ children }: { children: React.ReactNode }) {
   return (
     <div className="border-t border-line bg-paper-dim/50 p-5">
@@ -10,14 +7,6 @@ export function NeuAnlegenAbschnitt({ children }: { children: React.ReactNode })
         <Plus className="h-4 w-4" />
         Neu anlegen
       </div>
-      {children}
-    </div>
-  )
-}
-
-export function BearbeitenAbschnitt({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="border-b border-l-4 border-line border-l-pine p-4 last:border-b-0">
       {children}
     </div>
   )

@@ -40,7 +40,15 @@ def bild_speichern(pfarrei_id: int, content_type: str, daten: bytes) -> str:
 
 
 def bild_pfad(dateiname: str) -> Path:
-    return _media_dir() / dateiname
+    """Löst `dateiname` relativ zum media_dir auf. `dateiname` stammt normalerweise aus
+    `Pfarrei.bild_dateiname` (immer im sanitierten `pfarrei-{id}.{ext}`-Format aus
+    `bild_speichern`), wird hier aber defensiv gegen Path-Traversal (z.B. "../../etc/passwd")
+    abgesichert, falls dieser Wert je auf anderem Weg als über `bild_speichern` gesetzt würde."""
+    verzeichnis = _media_dir().resolve()
+    pfad = (verzeichnis / dateiname).resolve()
+    if not pfad.is_relative_to(verzeichnis):
+        raise ValueError(f"Ungültiger Bild-Dateiname: {dateiname!r}")
+    return pfad
 
 
 def bild_loeschen(dateiname: str) -> None:

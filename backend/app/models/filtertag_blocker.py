@@ -1,7 +1,7 @@
 from datetime import time
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Integer, Time
+from sqlalchemy import ForeignKey, Index, Integer, Time
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -12,6 +12,9 @@ if TYPE_CHECKING:
 
 class FiltertagBlocker(Base):
     __tablename__ = "filtertag_blocker"
+    __table_args__ = (
+        Index("ix_filtertag_blocker_lookup", "pfarrei_id", "filtertag_id", "wochentag"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     pfarrei_id: Mapped[int] = mapped_column(ForeignKey("pfarreien.id", ondelete="CASCADE"))

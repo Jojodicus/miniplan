@@ -65,7 +65,12 @@ def bild_abrufen(
 ) -> FileResponse:
     if pfarrei.bild_dateiname is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kein Bild vorhanden")
-    pfad = bild_pfad(pfarrei.bild_dateiname)
+    try:
+        pfad = bild_pfad(pfarrei.bild_dateiname)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Bild nicht gefunden"
+        ) from exc
     if not pfad.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bild nicht gefunden")
     return FileResponse(pfad)
