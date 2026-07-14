@@ -22,6 +22,11 @@ function detailZuNachricht(detail: unknown): string {
     )
     return nachrichten.join('; ') || 'Unbekannter Fehler'
   }
+  // z.B. der Typst-Vorschau-Endpunkt: {"detail": {"fehler": ["error: ..."]}}
+  if (detail && typeof detail === 'object' && 'fehler' in detail) {
+    const fehler = (detail as { fehler: unknown }).fehler
+    if (Array.isArray(fehler)) return fehler.map(String).join('; ') || 'Unbekannter Fehler'
+  }
   return 'Unbekannter Fehler'
 }
 

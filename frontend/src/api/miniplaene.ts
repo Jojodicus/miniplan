@@ -22,6 +22,17 @@ export interface Miniplan extends ZuteilungEinstellungen {
   gottesdienste: Gottesdienst[]
 }
 
+// Schlanke Variante für die Übersichtsliste (`GET /miniplaene`) - ohne den kompletten
+// Gottesdienst/Dienstbedarf-Baum, den nur der Editor lädt.
+export interface MiniplanListeEintrag {
+  id: number
+  pfarrei_id: number
+  monat: number
+  jahr: number
+  status: MiniplanStatus
+  gottesdienste_anzahl: number
+}
+
 export interface MiniplanEingabe {
   monat: number
   jahr: number
@@ -32,8 +43,8 @@ export interface MiniplanFreitextEingabe {
   ankuendigungen: string | null
 }
 
-export function miniplaeneListe(pfarreiId: number): Promise<Miniplan[]> {
-  return api.get<Miniplan[]>(`/api/pfarreien/${pfarreiId}/miniplaene`)
+export function miniplaeneListe(pfarreiId: number): Promise<MiniplanListeEintrag[]> {
+  return api.get<MiniplanListeEintrag[]>(`/api/pfarreien/${pfarreiId}/miniplaene`)
 }
 
 export function miniplanErstellen(pfarreiId: number, daten: MiniplanEingabe): Promise<Miniplan> {
@@ -123,7 +134,7 @@ export function miniplanStatusAendern(
 
 export async function miniplanPdfHerunterladen(
   pfarreiId: number,
-  miniplan: Miniplan,
+  miniplan: Pick<Miniplan, 'id' | 'jahr' | 'monat'>,
 ): Promise<void> {
   const response = await fetch(`/api/pfarreien/${pfarreiId}/miniplaene/${miniplan.id}/pdf`, {
     credentials: 'same-origin',

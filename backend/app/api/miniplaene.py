@@ -1,6 +1,7 @@
 import contextlib
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -22,6 +23,7 @@ from app.schemas.dienstbedarf import (
 )
 from app.schemas.miniplan import (
     MiniplanCreate,
+    MiniplanListeOut,
     MiniplanOut,
     MiniplanStatusUpdate,
     MiniplanUpdate,
@@ -94,6 +96,16 @@ def _get_zuweisung_or_404(
     return zuweisung
 
 
+def _render_pdf_oder_422(pfarrei_name: str, planstand: MiniplanVorschauIn) -> bytes:
+    try:
+        return render_miniplan_pdf(pfarrei_name, planstand)
+    except TypstCompileError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"fehler": exc.errors},
+        ) from exc
+
+
 def _mini_bereits_im_gottesdienst(
     db: Session, gottesdienst_id: int, mini_id: int, ausser_zuweisung_ids: set[int]
 ) -> bool:
@@ -110,19 +122,35 @@ def _mini_bereits_im_gottesdienst(
     )
 
 
-@router.get("", response_model=list[MiniplanOut])
+@router.get("", response_model=list[MiniplanListeOut])
 def liste(
     pfarrei_id: int,
     db: Session = Depends(get_db),
     _pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
-) -> list[Miniplan]:
-    return (
-        _mit_geladenem_planstand(db.query(Miniplan))
+) -> list[MiniplanListeOut]:
+    # Übersichtsliste braucht nur Eckdaten + Gottesdienst-Anzahl, nicht den kompletten
+    # verschachtelten Planstand - ein gezählter Join statt `_mit_geladenem_planstand` erspart die
+    # teuren selectinload-Ketten für jeden je angelegten Miniplan der Pfarrei.
+    zeilen = (
+        db.query(Miniplan, func.count(Gottesdienst.id))
+        .outerjoin(Gottesdienst, Gottesdienst.miniplan_id == Miniplan.id)
         .filter(Miniplan.pfarrei_id == pfarrei_id)
+        .group_by(Miniplan.id)
         .order_by(Miniplan.jahr.desc(), Miniplan.monat.desc())
         .all()
     )
+    return [
+        MiniplanListeOut(
+            id=miniplan.id,
+            pfarrei_id=miniplan.pfarrei_id,
+            monat=miniplan.monat,
+            jahr=miniplan.jahr,
+            status=miniplan.status,
+            gottesdienste_anzahl=anzahl,
+        )
+        for miniplan, anzahl in zeilen
+    ]
 
 
 @router.post("", response_model=MiniplanOut, status_code=status.HTTP_201_CREATED)
@@ -387,13 +415,7 @@ def pdf_herunterladen(
             status_code=status.HTTP_409_CONFLICT,
             detail="Nur abgeschlossene Minipläne können heruntergeladen werden",
         )
-    try:
-        pdf_bytes = render_miniplan_pdf(pfarrei.name, miniplan_zu_vorschau(miniplan))
-    except TypstCompileError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"fehler": exc.errors},
-        ) from exc
+    pdf_bytes = _render_pdf_oder_422(pfarrei.name, miniplan_zu_vorschau(miniplan))
     dateiname = f"miniplan-{miniplan.jahr}-{miniplan.monat:02d}.pdf"
     return Response(
         content=pdf_bytes,
@@ -412,13 +434,7 @@ def vorschau(
     _=Depends(require_verantwortlich),
 ) -> Response:
     _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
-    try:
-        pdf_bytes = render_miniplan_pdf(pfarrei.name, daten)
-    except TypstCompileError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"fehler": exc.errors},
-        ) from exc
+    pdf_bytes = _render_pdf_oder_422(pfarrei.name, daten)
     return Response(content=pdf_bytes, media_type="application/pdf")
 
 

@@ -47,6 +47,34 @@ def test_miniplan_anlegen_und_auflisten(
     assert len(response.json()) == 1
 
 
+def test_miniplaene_liste_zeigt_gottesdienste_anzahl(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, db_session
+) -> None:
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=9, jahr=2026)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+    db_session.add_all(
+        [
+            Gottesdienst(
+                miniplan_id=miniplan.id, datum=date(2026, 9, 6), uhrzeit=time(10, 0), name="Messe"
+            ),
+            Gottesdienst(
+                miniplan_id=miniplan.id, datum=date(2026, 9, 13), uhrzeit=time(10, 0), name="Messe"
+            ),
+        ]
+    )
+    db_session.commit()
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.get(f"/api/pfarreien/{pfarrei.id}/miniplaene", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["gottesdienste_anzahl"] == 2
+    assert "gottesdienste" not in body[0]
+
+
 def test_miniplan_anlegen_doppelter_monat_konflikt(
     client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei
 ) -> None:

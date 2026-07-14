@@ -44,3 +44,18 @@ class MiniplanOut(BaseModel):
     mixing_gewicht: float
     wiederholung_gewicht: float
     gottesdienste: list[GottesdienstOut]
+
+
+class MiniplanListeOut(BaseModel):
+    """Schlanke Variante für die Übersichtsliste - ohne den kompletten Gottesdienst/Dienstbedarf/
+    Zuweisungs-Baum, den nur der Editor braucht (siehe `_mit_geladenem_planstand` in
+    api/miniplaene.py)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    pfarrei_id: int
+    monat: int
+    jahr: int
+    status: MiniplanStatus
+    gottesdienste_anzahl: int

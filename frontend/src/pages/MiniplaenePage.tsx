@@ -7,7 +7,7 @@ import {
   miniplanErstellen,
   miniplanLoeschen,
   miniplanPdfHerunterladen,
-  type Miniplan,
+  type MiniplanListeEintrag,
 } from '../api/miniplaene'
 import { AppShell } from '../components/layout/AppShell'
 import { Alert } from '../components/ui/Alert'
@@ -18,6 +18,7 @@ import { NeuAnlegenAbschnitt } from '../components/ui/CardSections'
 import { EmptyState } from '../components/ui/EmptyState'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { Input, Label, Select } from '../components/ui/FormField'
+import { ListSkeleton } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
 import { MONATE, monatsName } from '../lib/datum'
 import { useDocumentTitle } from '../lib/useDocumentTitle'
@@ -28,7 +29,10 @@ function fehlerText(err: unknown, fallback: string): string {
 
 // Geplant wird immer ein zukünftiger Monat: Vorschlag ist der Monat nach dem neuesten
 // vorhandenen Plan, ohne Pläne der nächste Kalendermonat.
-function naechsterMonatsVorschlag(miniplaene: Miniplan[]): { monat: number; jahr: number } {
+function naechsterMonatsVorschlag(miniplaene: MiniplanListeEintrag[]): {
+  monat: number
+  jahr: number
+} {
   const heute = new Date()
   let monat = heute.getMonth() + 1
   let jahr = heute.getFullYear()
@@ -48,7 +52,7 @@ export function MiniplaenePage() {
   const navigate = useNavigate()
   const { showToast } = useToast()
 
-  const [miniplaene, setMiniplaene] = useState<Miniplan[] | null>(null)
+  const [miniplaene, setMiniplaene] = useState<MiniplanListeEintrag[] | null>(null)
   const [monat, setMonat] = useState<number | null>(null)
   const [jahr, setJahr] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -91,7 +95,7 @@ export function MiniplaenePage() {
     }
   }
 
-  async function handleDownload(miniplan: Miniplan) {
+  async function handleDownload(miniplan: MiniplanListeEintrag) {
     setError(null)
     try {
       await miniplanPdfHerunterladen(id, miniplan)
@@ -110,7 +114,9 @@ export function MiniplaenePage() {
             <Alert>{error}</Alert>
           </div>
         )}
-        {miniplaene !== null && miniplaene.length === 0 ? (
+        {miniplaene === null ? (
+          <ListSkeleton rows={3} />
+        ) : miniplaene.length === 0 ? (
           <EmptyState icon={CalendarRange} title="Noch keine Minipläne angelegt" />
         ) : (
           <div>
@@ -144,8 +150,8 @@ export function MiniplaenePage() {
                   <InlineConfirmButton
                     onConfirm={() => handleDelete(miniplan.id)}
                     confirmLabel={
-                      miniplan.gottesdienste.length > 0
-                        ? `Plan mit ${miniplan.gottesdienste.length} Gottesdiensten löschen?`
+                      miniplan.gottesdienste_anzahl > 0
+                        ? `Plan mit ${miniplan.gottesdienste_anzahl} Gottesdiensten löschen?`
                         : 'Wirklich löschen?'
                     }
                   />

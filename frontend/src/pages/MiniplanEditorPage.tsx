@@ -18,6 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   CalendarPlus,
+  Check,
   Copy,
   Download,
   Eraser,
@@ -95,6 +96,21 @@ import { useDocumentTitle } from '../lib/useDocumentTitle'
 
 function fehlerText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
+}
+
+// Zählt unbesetzte Stellen über den ganzen Plan - harte Constraints (Gruppen-Mindestanzahl,
+// Filtertags, Verfügbarkeit) können beim automatischen Füllen dazu führen, dass Stellen offen
+// bleiben; ohne diesen Hinweis müsste man jede Karte einzeln nach weinroten "offen"-Chips absuchen.
+function offeneStellenAnzahl(plan: Miniplan): number {
+  return plan.gottesdienste.reduce(
+    (summe, gd) =>
+      summe +
+      gd.dienstbedarf.reduce(
+        (s, bedarf) => s + Math.max(0, bedarf.anzahl - bedarf.zuweisungen.length),
+        0,
+      ),
+    0,
+  )
 }
 
 let naechsterSchluessel = 0
@@ -1741,6 +1757,7 @@ export function MiniplanEditorPage() {
   const [statusWirdGeaendert, setStatusWirdGeaendert] = useState(false)
   const [downloadFehler, setDownloadFehler] = useState<string | null>(null)
   const [fuelltGerade, setFuelltGerade] = useState(false)
+  const [autoLeerenBestaetigen, setAutoLeerenBestaetigen] = useState(false)
   const [einstellungenOffen, setEinstellungenOffen] = useState(false)
   const einstellungenButtonRef = useRef<HTMLButtonElement>(null)
   // Jede Gottesdienst-Karte hält ihre Zuweisungen in eigenem State (nur beim ersten Rendern aus den
@@ -1788,7 +1805,12 @@ export function MiniplanEditorPage() {
     try {
       const aktualisiert = await miniplanFuellen(id, planId)
       refreshNachMutation(aktualisiert)
-      showToast('Miniplan automatisch befüllt')
+      const offen = offeneStellenAnzahl(aktualisiert)
+      showToast(
+        offen > 0
+          ? `Miniplan automatisch befüllt – ${offen} Stelle${offen === 1 ? '' : 'n'} konnte${offen === 1 ? '' : 'n'} nicht besetzt werden`
+          : 'Miniplan automatisch befüllt',
+      )
     } catch (err) {
       showToast(fehlerText(err, 'Fehler beim automatischen Befüllen'), 'error')
     } finally {
@@ -1994,17 +2016,36 @@ export function MiniplanEditorPage() {
               <span className="hidden sm:inline">{fuelltGerade ? 'Befüllt…' : 'Füllen'}</span>
             </Button>
           )}
-          {!readonly && hatAutoZuweisungen && (
-            <Button
-              variant="secondary"
-              size="sm"
-              title="Auto leeren"
-              onClick={() => handleClearAuto()}
-            >
-              <Eraser className="h-4 w-4" />
-              <span className="hidden sm:inline">Auto leeren</span>
-            </Button>
-          )}
+          {!readonly &&
+            hatAutoZuweisungen &&
+            (autoLeerenBestaetigen ? (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-wine">Alle automatischen Zuweisungen leeren?</span>
+                <IconButton
+                  label="Leeren bestätigen"
+                  tone="danger"
+                  onClick={() => {
+                    setAutoLeerenBestaetigen(false)
+                    handleClearAuto()
+                  }}
+                >
+                  <Check className="h-4 w-4" />
+                </IconButton>
+                <IconButton label="Abbrechen" onClick={() => setAutoLeerenBestaetigen(false)}>
+                  <X className="h-4 w-4" />
+                </IconButton>
+              </div>
+            ) : (
+              <Button
+                variant="secondary"
+                size="sm"
+                title="Auto leeren"
+                onClick={() => setAutoLeerenBestaetigen(true)}
+              >
+                <Eraser className="h-4 w-4" />
+                <span className="hidden sm:inline">Auto leeren</span>
+              </Button>
+            ))}
           {miniplan.status === 'abgeschlossen' ? (
             <>
               <Button
