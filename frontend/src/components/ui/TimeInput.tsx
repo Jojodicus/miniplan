@@ -68,16 +68,22 @@ export function TimeInput({
         setOffen(false)
       }
     }
+    // Capture-Phase statt Bubble (siehe ausführlicher Kommentar in DateInput.tsx): stellt sicher,
+    // dass Escape zuerst nur diesen Popover schließt, auch wenn er in einem Modal geöffnet ist,
+    // dessen eigener Escape-Listener (Bubble-Phase auf `document`) sonst gleichzeitig feuern würde.
     function handleKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') setOffen(false)
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        setOffen(false)
+      }
     }
     document.addEventListener('mousedown', handleClick)
-    document.addEventListener('keydown', handleKey)
+    document.addEventListener('keydown', handleKey, true)
     return () => {
       window.removeEventListener('scroll', aktualisierePosition, true)
       window.removeEventListener('resize', aktualisierePosition)
       document.removeEventListener('mousedown', handleClick)
-      document.removeEventListener('keydown', handleKey)
+      document.removeEventListener('keydown', handleKey, true)
     }
   }, [offen])
 
@@ -115,7 +121,9 @@ export function TimeInput({
           <div
             ref={popoverRef}
             style={{ top: position.top, left: position.left }}
-            className="fixed z-50 w-64 rounded-lg border border-line bg-paper p-3 shadow-lg"
+            // "Kleines Dropdown"-Tier (siehe Kommentar in Modal.tsx) - dasselbe wie DateInput und
+            // Popover.
+            className="fixed z-50 w-64 rounded-lg border border-line bg-paper p-3 shadow-lg shadow-ink/10"
           >
             <p className="mb-1.5 text-xs font-medium text-ink-faint">Stunde</p>
             <div className="grid grid-cols-6 gap-1">

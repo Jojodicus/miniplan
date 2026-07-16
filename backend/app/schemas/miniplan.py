@@ -58,7 +58,7 @@ class MiniplanOut(BaseModel):
 
 class MiniplanListeOut(BaseModel):
     """Schlanke Variante für die Übersichtsliste - ohne den kompletten Gottesdienst/Dienstbedarf/
-    Zuweisungs-Baum, den nur der Editor braucht (siehe `_mit_geladenem_planstand` in
+    Zuweisungs-Baum, den nur der Editor braucht (siehe `_planstand_optionen` in
     api/miniplaene.py)."""
 
     model_config = ConfigDict(from_attributes=True)

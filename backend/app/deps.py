@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.api._helpers import get_or_404
 from app.database import get_db
 from app.models.nutzer import Nutzer, PfarreiRolle
 from app.models.pfarrei import Pfarrei
@@ -65,7 +66,4 @@ class RequirePfarreiRolle:
 
 
 def get_pfarrei(pfarrei_id: int, db: Session = Depends(get_db)) -> Pfarrei:
-    pfarrei = db.get(Pfarrei, pfarrei_id)
-    if pfarrei is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pfarrei nicht gefunden")
-    return pfarrei
+    return get_or_404(db, Pfarrei, pfarrei_id, not_found_detail="Pfarrei nicht gefunden")

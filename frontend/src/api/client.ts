@@ -45,6 +45,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>
 }
 
+// Zentraler Helfer für Fehleranzeigen: bei einem `ApiError` dessen Server-Nachricht, sonst ein
+// generischer Fallback (z.B. bei Netzwerkfehlern ohne Response). `fallback` ist optional, damit
+// Aufrufer ohne spezifischeren Text nicht jedes Mal denselben Standard-String wiederholen müssen.
+export function fehlerText(err: unknown, fallback = 'Ein Fehler ist aufgetreten'): string {
+  return err instanceof ApiError ? err.message : fallback
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, data?: unknown) =>

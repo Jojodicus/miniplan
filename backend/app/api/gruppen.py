@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api._helpers import get_or_404
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
 from app.models.gruppe import Gruppe
@@ -15,12 +16,7 @@ require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICH
 
 
 def _get_gruppe_or_404(pfarrei_id: int, gruppe_id: int, db: Session) -> Gruppe:
-    gruppe = (
-        db.query(Gruppe).filter(Gruppe.id == gruppe_id, Gruppe.pfarrei_id == pfarrei_id).first()
-    )
-    if gruppe is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gruppe nicht gefunden")
-    return gruppe
+    return get_or_404(db, Gruppe, gruppe_id, pfarrei_id=pfarrei_id)
 
 
 @router.get("", response_model=list[GruppeOut])

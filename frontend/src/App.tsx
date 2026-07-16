@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth/useAuth'
 import { AdminPage } from './pages/AdminPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { EinladungAnnehmenPage } from './pages/EinladungAnnehmenPage'
 import { LoginPage } from './pages/LoginPage'
 import { MiniplaenePage } from './pages/MiniplaenePage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -32,6 +33,7 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/einladung/:token" element={<EinladungAnnehmenPage />} />
       <Route
         path="/"
         element={

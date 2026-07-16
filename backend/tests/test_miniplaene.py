@@ -3,7 +3,6 @@ from datetime import date, time
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api import miniplaene as miniplaene_api
 from app.models.dienstbedarf import (
     Dienstbedarf,
     DienstbedarfGruppenAnforderung,
@@ -15,6 +14,7 @@ from app.models.mini import Mini
 from app.models.miniplan import Miniplan
 from app.models.nutzer import Nutzer
 from app.models.pfarrei import Pfarrei
+from app.services import miniplan_operations
 from tests.conftest import auth_headers
 
 
@@ -300,7 +300,7 @@ def test_miniplan_fuellen_synchronisiert_ferien_fuer_planjahr(
         aufrufe.append(jahre)
         return []
 
-    monkeypatch.setattr(miniplaene_api, "sync_ferien_falls_fehlend", fake_sync_ferien)
+    monkeypatch.setattr(miniplan_operations, "sync_ferien_falls_fehlend", fake_sync_ferien)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     response = client.post(
@@ -323,9 +323,9 @@ def test_miniplan_fuellen_ignoriert_ferien_sync_fehler(
     db_session.refresh(miniplan)
 
     def failing_sync_ferien(pfarrei_arg, db, jahre=None):
-        raise miniplaene_api.FerienSyncFehler("keine Verbindung")
+        raise miniplan_operations.FerienSyncFehler("keine Verbindung")
 
-    monkeypatch.setattr(miniplaene_api, "sync_ferien_falls_fehlend", failing_sync_ferien)
+    monkeypatch.setattr(miniplan_operations, "sync_ferien_falls_fehlend", failing_sync_ferien)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     response = client.post(

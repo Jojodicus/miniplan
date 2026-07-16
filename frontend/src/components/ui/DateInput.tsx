@@ -116,16 +116,26 @@ export function DateInput({
         setOffen(false)
       }
     }
+    // Capture-Phase statt Bubble: der Popover ist per Portal ein Geschwister (nicht Nachfahre) des
+    // umgebenden Modals im echten DOM, aber trotzdem inhaltlich "innerer" als ein evtl. offenes
+    // Modal, das ebenfalls auf Escape hört (`Modal.tsx`, Bubble-Phase auf `document`). Capture-Phase-
+    // Listener auf `document` feuern vor allen Bubble-Phase-Listenern auf demselben Ziel - so schließt
+    // Escape zuverlässig zuerst nur den Kalender, unabhängig davon, in welcher Reihenfolge die Effekte
+    // gemountet wurden (deren Zusammenspiel wäre bei zwei Bubble-Listenern auf `document` sonst nicht
+    // deterministisch).
     function handleKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') setOffen(false)
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        setOffen(false)
+      }
     }
     document.addEventListener('mousedown', handleClick)
-    document.addEventListener('keydown', handleKey)
+    document.addEventListener('keydown', handleKey, true)
     return () => {
       window.removeEventListener('scroll', aktualisierePosition, true)
       window.removeEventListener('resize', aktualisierePosition)
       document.removeEventListener('mousedown', handleClick)
-      document.removeEventListener('keydown', handleKey)
+      document.removeEventListener('keydown', handleKey, true)
     }
   }, [offen])
 
@@ -223,7 +233,9 @@ export function DateInput({
           <div
             ref={popoverRef}
             style={{ top: position.top, left: position.left }}
-            className="fixed z-50 w-72 rounded-lg border border-line bg-paper p-3 shadow-lg"
+            // "Kleines Dropdown"-Tier (siehe Kommentar in Modal.tsx) - dasselbe wie TimeInput und
+            // Popover.
+            className="fixed z-50 w-72 rounded-lg border border-line bg-paper p-3 shadow-lg shadow-ink/10"
           >
             <div className="mb-2 flex items-center justify-between">
               <IconButton label="Vorheriger Monat" onClick={() => monatWechseln(-1)}>

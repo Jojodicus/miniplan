@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api._helpers import get_or_404
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
 from app.models.gruppe import Gruppe
@@ -15,10 +16,7 @@ require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICH
 
 
 def _get_mini_or_404(pfarrei_id: int, mini_id: int, db: Session) -> Mini:
-    mini = db.query(Mini).filter(Mini.id == mini_id, Mini.pfarrei_id == pfarrei_id).first()
-    if mini is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mini nicht gefunden")
-    return mini
+    return get_or_404(db, Mini, mini_id, pfarrei_id=pfarrei_id)
 
 
 def _gruppe_pruefen(pfarrei_id: int, gruppe_id: int, db: Session) -> None:

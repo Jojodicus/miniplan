@@ -5,6 +5,10 @@ from collections.abc import Generator
 # einmalig aus den Umgebungsvariablen gebaut wird. Ein niedriger bcrypt-Kostenfaktor spart in der
 # Suite mehrere hundert bcrypt-Hashes à ~170ms (Default-Kostenfaktor 12) ein.
 os.environ.setdefault("MINIPLAN_BCRYPT_ROUNDS", "4")
+# Ohne MINIPLAN_SECRET_KEY_FILE/MINIPLAN_SECRET_KEY bricht app.config.Settings seit Issue #14 hart
+# ab (siehe dortiger Kommentar) - die Suite selbst läuft aber bewusst ohne konfigurierten Secret,
+# daher hier ausdrücklich das Opt-in setzen, das die Test-/Dev-Ausnahme aktiviert.
+os.environ.setdefault("MINIPLAN_ALLOW_DEV_SECRET", "1")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,7 +22,6 @@ from app.models.filtertag import Filtertag
 from app.models.gruppe import Gruppe
 from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
 from app.models.pfarrei import Pfarrei
-from app.rate_limit import _attempts
 from app.security import hash_password
 from app.services import ferien_sync
 
@@ -36,13 +39,6 @@ def _reset_db() -> Generator[None, None, None]:
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
-
-
-@pytest.fixture(autouse=True)
-def _reset_rate_limit() -> Generator[None, None, None]:
-    _attempts.clear()
-    yield
-    _attempts.clear()
 
 
 # Referenz auf die echte Implementierung, bevor der Autouse-Stub unten sie ersetzt - für Tests,

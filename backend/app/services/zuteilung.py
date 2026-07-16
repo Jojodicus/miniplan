@@ -173,14 +173,44 @@ def _badness(
     )
 
 
-def _akzeptieren(
-    alte_badness: float, neue_badness: float, temperatur: float, zufall: random.Random
-) -> bool:
-    if neue_badness <= alte_badness:
+def _sollte_akzeptieren(delta_badness: float, temperatur: float, zufallswert: float) -> bool:
+    """Reines Akzeptanzkriterium der simulierten Abkühlung, unabhängig von einer Zufallsquelle:
+    `delta_badness` = neue - alte Badness (verbessernde/gleich gute Züge werden immer akzeptiert),
+    `zufallswert` ist ein extern gezogener Wert aus [0, 1) (z.B. `random.random()`). Dadurch lässt
+    sich das Kriterium ohne echten Zufall deterministisch testen."""
+    if delta_badness <= 0:
         return True
     if temperatur <= 0:
         return False
-    return zufall.random() < math.exp((alte_badness - neue_badness) / temperatur)
+    return zufallswert < math.exp(-delta_badness / temperatur)
+
+
+def _akzeptieren(
+    alte_badness: float, neue_badness: float, temperatur: float, zufall: random.Random
+) -> bool:
+    return _sollte_akzeptieren(neue_badness - alte_badness, temperatur, zufall.random())
+
+
+def _abkuehlungsfaktor(iterationen: int, start_temperatur: float, ziel_temperatur: float) -> float:
+    """Multiplikativer Faktor, mit dem sich `start_temperatur` über `iterationen` Schritte auf
+    `ziel_temperatur` abkühlt (geometrische Folge)."""
+    return (ziel_temperatur / start_temperatur) ** (1 / iterationen)
+
+
+def _temperaturplan(
+    iterationen: int, start_temperatur: float = 4.0, ziel_temperatur: float = 0.001
+):
+    """Generator, der für jede der `iterationen` Iterationen der simulierten Abkühlung die
+    jeweils geltende Temperatur liefert - geometrisch fallend, sodass die Temperatur über die
+    volle Iterationszahl gegen ~`ziel_temperatur` geht. Sonst würden bis zum Schluss
+    verschlechternde Züge akzeptiert (Sinn von Simulated Annealing), aber das Endergebnis wäre
+    dann nicht mehr das beste gefundene - deshalb merkt sich `_simulated_annealing` zusätzlich
+    separat den besten je gesehenen Zustand und stellt ihn am Ende wieder her."""
+    abkuehlung = _abkuehlungsfaktor(iterationen, start_temperatur, ziel_temperatur)
+    temperatur = start_temperatur
+    for _ in range(iterationen):
+        temperatur *= abkuehlung
+        yield temperatur
 
 
 def _baue_slots(
@@ -265,6 +295,83 @@ def _greedy_konstruktion(
         belegt_je_gottesdienst[slot.gottesdienst_id].add(gewaehlt.id)
 
 
+def _setze_slot(
+    slot: _Slot, neuer_mini_id: int, belegt_je_gottesdienst: dict[int, set[int]]
+) -> None:
+    if slot.mini_id is not None:
+        belegt_je_gottesdienst[slot.gottesdienst_id].discard(slot.mini_id)
+    slot.mini_id = neuer_mini_id
+    belegt_je_gottesdienst[slot.gottesdienst_id].add(neuer_mini_id)
+
+
+def _swap_gueltig(
+    a: _Slot,
+    b: _Slot,
+    minis_by_id: dict[int, Mini],
+    belegt_je_gottesdienst: dict[int, set[int]],
+    ist_mini_blockiert,
+) -> bool:
+    """Prüft, ob die Minis zweier bereits besetzter Stellen getauscht werden dürften, ohne einen
+    harten Constraint zu verletzen - reine Prüfung, keine Mutation. Ein Tausch innerhalb desselben
+    Gottesdienstes ist immer unzulässig (der jeweils andere Mini wäre dort schon vertreten)."""
+    if a.gottesdienst_id == b.gottesdienst_id:
+        return False
+    mini_a, mini_b = minis_by_id[a.mini_id], minis_by_id[b.mini_id]
+    belegte_a = belegt_je_gottesdienst[a.gottesdienst_id] - {a.mini_id}
+    belegte_b = belegt_je_gottesdienst[b.gottesdienst_id] - {b.mini_id}
+    return _mini_passt(mini_b, a, belegte_a, ist_mini_blockiert) and _mini_passt(
+        mini_a, b, belegte_b, ist_mini_blockiert
+    )
+
+
+def _swap_anwenden(
+    a: _Slot, b: _Slot, belegt_je_gottesdienst: dict[int, set[int]]
+) -> tuple[int, int]:
+    """Tauscht die Minis zweier Slots (Aufrufer muss vorher `_swap_gueltig` geprüft haben) und
+    liefert die beiden alten `mini_id`-Werte zurück, damit ein Aufrufer den Zug bei Ablehnung per
+    `_swap_anwenden(a, b, ...)` mit vertauschten alten Werten rückgängig machen kann."""
+    alte_a, alte_b = a.mini_id, b.mini_id
+    _setze_slot(a, alte_b, belegt_je_gottesdienst)
+    _setze_slot(b, alte_a, belegt_je_gottesdienst)
+    return alte_a, alte_b
+
+
+def _ersatz_kandidaten(
+    slot: _Slot,
+    minis: list[Mini],
+    belegt_je_gottesdienst: dict[int, set[int]],
+    einsatz_anzahl: dict[int, int],
+    max_pro_mini: dict[int, int | None],
+    ist_mini_blockiert,
+) -> list[Mini]:
+    """Liefert alle Minis, die als Ersatz für den aktuell zugewiesenen Mini dieser Stelle infrage
+    kommen (harte Constraints + Einsatz-Obergrenze) - reine Prüfung, keine Mutation."""
+    belegte_ohne_eigene = belegt_je_gottesdienst[slot.gottesdienst_id] - {slot.mini_id}
+    return [
+        m
+        for m in minis
+        if m.id != slot.mini_id
+        and _mini_passt(m, slot, belegte_ohne_eigene, ist_mini_blockiert)
+        and _unter_maximum(m, einsatz_anzahl, max_pro_mini)
+    ]
+
+
+def _ersatz_anwenden(
+    slot: _Slot,
+    neuer_mini_id: int,
+    einsatz_anzahl: dict[int, int],
+    belegt_je_gottesdienst: dict[int, set[int]],
+) -> int:
+    """Ersetzt den Mini eines Slots durch `neuer_mini_id` und pflegt die Einsatz-Zähler nach.
+    Liefert die alte `mini_id` zurück, damit ein Aufrufer den Zug bei Ablehnung mit
+    `_ersatz_anwenden(slot, alter_mini_id, ...)` rückgängig machen kann."""
+    alter_mini_id = slot.mini_id
+    _setze_slot(slot, neuer_mini_id, belegt_je_gottesdienst)
+    einsatz_anzahl[alter_mini_id] -= 1
+    einsatz_anzahl[neuer_mini_id] += 1
+    return alter_mini_id
+
+
 def _simulated_annealing(
     slots: list[_Slot],
     minis: list[Mini],
@@ -282,12 +389,6 @@ def _simulated_annealing(
         return
 
     iterationen = min(6000, max(200, len(besetzte) * 150))
-    temperatur = 4.0
-    # Abkühlung so gewählt, dass die Temperatur über die volle Iterationszahl gegen ~0 geht -
-    # sonst werden bis zum Schluss verschlechternde Züge akzeptiert (Sinn von Simulated
-    # Annealing), aber das Endergebnis wäre dann nicht mehr das beste gefundene. Deshalb zusätzlich
-    # unten der beste je gesehene Zustand separat gemerkt und am Ende wiederhergestellt.
-    abkuehlung = (0.001 / temperatur) ** (1 / iterationen)
     aktuelle_badness = _badness(slots, einsatz_anzahl, config, fixierte_belegung)
     beste_badness = aktuelle_badness
     beste_zuweisung = [s.mini_id for s in slots]
@@ -298,67 +399,45 @@ def _simulated_annealing(
             beste_badness = aktuelle_badness
             beste_zuweisung = [s.mini_id for s in slots]
 
-    for _ in range(iterationen):
-        temperatur *= abkuehlung
+    for temperatur in _temperaturplan(iterationen):
         if zufall.random() < 0.5:
             a, b = zufall.sample(besetzte, 2)
-            if a.gottesdienst_id == b.gottesdienst_id:
+            if not _swap_gueltig(a, b, minis_by_id, belegt_je_gottesdienst, ist_mini_blockiert):
                 continue
-            mini_a, mini_b = minis_by_id[a.mini_id], minis_by_id[b.mini_id]
-            belegte_a = belegt_je_gottesdienst[a.gottesdienst_id] - {a.mini_id}
-            belegte_b = belegt_je_gottesdienst[b.gottesdienst_id] - {b.mini_id}
-            if not _mini_passt(mini_b, a, belegte_a, ist_mini_blockiert):
-                continue
-            if not _mini_passt(mini_a, b, belegte_b, ist_mini_blockiert):
-                continue
-
-            alte_a, alte_b = a.mini_id, b.mini_id
-            _setze_slot(a, mini_b.id, belegt_je_gottesdienst)
-            _setze_slot(b, mini_a.id, belegt_je_gottesdienst)
+            _swap_anwenden(a, b, belegt_je_gottesdienst)
             neue_badness = _badness(slots, einsatz_anzahl, config, fixierte_belegung)
             if _akzeptieren(aktuelle_badness, neue_badness, temperatur, zufall):
                 aktuelle_badness = neue_badness
                 _beste_ggf_merken()
             else:
-                _setze_slot(a, alte_a, belegt_je_gottesdienst)
-                _setze_slot(b, alte_b, belegt_je_gottesdienst)
+                # Tausch ist eine Involution: nochmaliges Anwenden stellt den vorherigen Zustand
+                # wieder her.
+                _swap_anwenden(a, b, belegt_je_gottesdienst)
         else:
             slot = zufall.choice(besetzte)
-            belegte_ohne_eigene = belegt_je_gottesdienst[slot.gottesdienst_id] - {slot.mini_id}
-            kandidaten = [
-                m
-                for m in minis
-                if m.id != slot.mini_id
-                and _mini_passt(m, slot, belegte_ohne_eigene, ist_mini_blockiert)
-                and _unter_maximum(m, einsatz_anzahl, max_pro_mini)
-            ]
+            kandidaten = _ersatz_kandidaten(
+                slot,
+                minis,
+                belegt_je_gottesdienst,
+                einsatz_anzahl,
+                max_pro_mini,
+                ist_mini_blockiert,
+            )
             if not kandidaten:
                 continue
             kandidat = zufall.choice(kandidaten)
-            alter_mini_id = slot.mini_id
-            _setze_slot(slot, kandidat.id, belegt_je_gottesdienst)
-            einsatz_anzahl[alter_mini_id] -= 1
-            einsatz_anzahl[kandidat.id] += 1
+            alter_mini_id = _ersatz_anwenden(
+                slot, kandidat.id, einsatz_anzahl, belegt_je_gottesdienst
+            )
             neue_badness = _badness(slots, einsatz_anzahl, config, fixierte_belegung)
             if _akzeptieren(aktuelle_badness, neue_badness, temperatur, zufall):
                 aktuelle_badness = neue_badness
                 _beste_ggf_merken()
             else:
-                _setze_slot(slot, alter_mini_id, belegt_je_gottesdienst)
-                einsatz_anzahl[alter_mini_id] += 1
-                einsatz_anzahl[kandidat.id] -= 1
+                _ersatz_anwenden(slot, alter_mini_id, einsatz_anzahl, belegt_je_gottesdienst)
 
     for slot, mini_id in zip(slots, beste_zuweisung, strict=True):
         slot.mini_id = mini_id
-
-
-def _setze_slot(
-    slot: _Slot, neuer_mini_id: int, belegt_je_gottesdienst: dict[int, set[int]]
-) -> None:
-    if slot.mini_id is not None:
-        belegt_je_gottesdienst[slot.gottesdienst_id].discard(slot.mini_id)
-    slot.mini_id = neuer_mini_id
-    belegt_je_gottesdienst[slot.gottesdienst_id].add(neuer_mini_id)
 
 
 def zuteilung_vorschlagen(
