@@ -2,6 +2,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.miniplan import MiniplanStatus
 from app.schemas.gottesdienst import GottesdienstOut
+from app.schemas.mini_miniplan_limit import MiniLimitOut
 
 
 class MiniplanCreate(BaseModel):
@@ -28,6 +29,9 @@ class ZuteilungEinstellungen(BaseModel):
     mixing_gewicht: float = Field(ge=0, le=100)
     wiederholung_gewicht: float = Field(ge=0, le=100)
     max_einsaetze_standard: int | None = Field(default=None, ge=0)
+    ignoriere_max_einsaetze: bool = False
+    ignoriere_gruppen_mindestanzahl: bool = False
+    ignoriere_verfuegbarkeit: bool = False
 
 
 class MiniplanOut(BaseModel):
@@ -45,6 +49,10 @@ class MiniplanOut(BaseModel):
     mixing_gewicht: float
     wiederholung_gewicht: float
     max_einsaetze_standard: int | None
+    ignoriere_max_einsaetze: bool
+    ignoriere_gruppen_mindestanzahl: bool
+    ignoriere_verfuegbarkeit: bool
+    mini_limits: list[MiniLimitOut]
     gottesdienste: list[GottesdienstOut]
 
 

@@ -12,6 +12,7 @@ from app.models.filtertag_blocker import FiltertagBlocker
 from app.models.gottesdienst import Gottesdienst
 from app.models.gruppe import Gruppe
 from app.models.mini import Mini
+from app.models.mini_miniplan_limit import MiniMiniplanLimit
 from app.models.miniplan import Miniplan, MiniplanStatus
 from app.models.nutzer import Nutzer, NutzerPfarreiRolle, PfarreiRolle
 from app.models.pfarrei import Pfarrei
@@ -30,6 +31,7 @@ __all__ = [
     "Gottesdienst",
     "Gruppe",
     "Mini",
+    "MiniMiniplanLimit",
     "Miniplan",
     "MiniplanStatus",
     "Nutzer",

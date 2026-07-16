@@ -169,7 +169,7 @@ test('Löschen einer Gruppe erfordert Inline-Bestätigung statt eines Browser-Di
   await expect(nameSpan).toBeVisible()
 
   await loeschenButton.click()
-  await zeile.getByRole('button', { name: 'Löschen bestätigen' }).click()
+  await zeile.getByRole('button', { name: 'Bestätigen' }).click()
 
   await expect(page.getByText('Gruppe gelöscht')).toBeVisible({ timeout: 15_000 })
   await expect(nameSpan).toHaveCount(0, { timeout: 15_000 })

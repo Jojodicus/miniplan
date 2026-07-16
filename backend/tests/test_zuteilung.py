@@ -9,6 +9,7 @@ from app.models.filtertag_blocker import FiltertagBlocker
 from app.models.gottesdienst import Gottesdienst
 from app.models.gruppe import Gruppe
 from app.models.mini import Mini
+from app.models.mini_miniplan_limit import MiniMiniplanLimit
 from app.models.miniplan import Miniplan
 from app.models.pfarrei import Pfarrei
 from app.services.zuteilung import zuteilung_vorschlagen
@@ -300,3 +301,138 @@ def test_zuteilung_persoenliches_limit_uebersteuert_planweiten_standard(
 
     einsaetze_begrenzt = sum(1 for zugeteilte in vorschlag.values() if begrenzt.id in zugeteilte)
     assert einsaetze_begrenzt <= 1
+
+
+def test_zuteilung_mini_limit_ueberschreibung_uebersteuert_alles(
+    db_session, pfarrei, gruppe
+) -> None:
+    # Globales Limit 1, planweiter Standard 1 - die planbezogene Ausnahme erlaubt trotzdem 3.
+    begrenzt = _mini(db_session, pfarrei, gruppe, "Begrenzt")
+    begrenzt.max_einsaetze_pro_monat = 1
+    db_session.commit()
+
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=7, jahr=2026, max_einsaetze_standard=1)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+    db_session.add(MiniMiniplanLimit(miniplan_id=miniplan.id, mini_id=begrenzt.id, max_einsaetze=3))
+    db_session.commit()
+    for woche in range(3):
+        bedarf = Dienstbedarf(name="Kreuz", anzahl=1)
+        _gottesdienst(db_session, miniplan, [bedarf], date(2026, 7, 5) + timedelta(days=7 * woche))
+    db_session.refresh(miniplan)
+
+    vorschlag = zuteilung_vorschlagen(db_session, pfarrei.id, miniplan, zufallsstart=1)
+
+    einsaetze_begrenzt = sum(1 for zugeteilte in vorschlag.values() if begrenzt.id in zugeteilte)
+    assert einsaetze_begrenzt == 3
+
+
+def test_zuteilung_mini_limit_ueberschreibung_kann_explizit_unbegrenzt_sein(
+    db_session, pfarrei, gruppe
+) -> None:
+    begrenzt = _mini(db_session, pfarrei, gruppe, "Begrenzt")
+    begrenzt.max_einsaetze_pro_monat = 1
+    db_session.commit()
+
+    miniplan = _miniplan(db_session, pfarrei)
+    db_session.add(
+        MiniMiniplanLimit(miniplan_id=miniplan.id, mini_id=begrenzt.id, max_einsaetze=None)
+    )
+    db_session.commit()
+    for woche in range(3):
+        bedarf = Dienstbedarf(name="Kreuz", anzahl=1)
+        _gottesdienst(db_session, miniplan, [bedarf], date(2026, 7, 5) + timedelta(days=7 * woche))
+    db_session.refresh(miniplan)
+
+    vorschlag = zuteilung_vorschlagen(db_session, pfarrei.id, miniplan, zufallsstart=1)
+
+    einsaetze_begrenzt = sum(1 for zugeteilte in vorschlag.values() if begrenzt.id in zugeteilte)
+    assert einsaetze_begrenzt == 3
+
+
+def test_zuteilung_ignoriere_max_einsaetze_schaltet_alle_limits_ab(
+    db_session, pfarrei, gruppe
+) -> None:
+    einziger = _mini(db_session, pfarrei, gruppe, "Einziger")
+    einziger.max_einsaetze_pro_monat = 1
+    db_session.commit()
+
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=7, jahr=2026, ignoriere_max_einsaetze=True)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+    for woche in range(3):
+        bedarf = Dienstbedarf(name="Kreuz", anzahl=1)
+        _gottesdienst(db_session, miniplan, [bedarf], date(2026, 7, 5) + timedelta(days=7 * woche))
+    db_session.refresh(miniplan)
+
+    vorschlag = zuteilung_vorschlagen(db_session, pfarrei.id, miniplan, zufallsstart=1)
+
+    einsaetze = sum(1 for zugeteilte in vorschlag.values() if einziger.id in zugeteilte)
+    assert einsaetze == 3
+
+
+def test_zuteilung_ignoriere_gruppen_mindestanzahl_besetzt_frei(db_session, pfarrei) -> None:
+    obermini = Gruppe(pfarrei_id=pfarrei.id, name="Obermini")
+    normal = Gruppe(pfarrei_id=pfarrei.id, name="normal")
+    db_session.add_all([obermini, normal])
+    db_session.commit()
+    db_session.refresh(obermini)
+    db_session.refresh(normal)
+
+    # Kein Mini in der Obermini-Gruppe vorhanden - ohne die Ausnahme müsste die Quoten-Stelle
+    # unbesetzt bleiben.
+    normal_minis = [_mini(db_session, pfarrei, normal, f"Normal {i}") for i in range(2)]
+
+    miniplan = Miniplan(
+        pfarrei_id=pfarrei.id, monat=7, jahr=2026, ignoriere_gruppen_mindestanzahl=True
+    )
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+    bedarf = Dienstbedarf(
+        name="Weihrauch",
+        anzahl=2,
+        gruppen_anforderungen=[
+            DienstbedarfGruppenAnforderung(gruppe_id=obermini.id, mindest_anzahl=1)
+        ],
+    )
+    _gottesdienst(db_session, miniplan, [bedarf], date(2026, 7, 5))
+    db_session.refresh(miniplan)
+
+    vorschlag = zuteilung_vorschlagen(db_session, pfarrei.id, miniplan, zufallsstart=7)
+
+    zugeteilt = vorschlag[bedarf.id]
+    assert len(zugeteilt) == 2
+    assert set(zugeteilt) == {m.id for m in normal_minis}
+
+
+def test_zuteilung_ignoriere_verfuegbarkeit_besetzt_blockierten_mini(
+    db_session, pfarrei, gruppe, filtertags
+) -> None:
+    db_session.add(
+        FiltertagBlocker(
+            pfarrei_id=pfarrei.id,
+            filtertag_id=filtertags["arbeiter"].id,
+            wochentag=0,
+            start_zeit=time(8, 0),
+            end_zeit=time(17, 0),
+        )
+    )
+    db_session.commit()
+
+    einziger = _mini(db_session, pfarrei, gruppe, "Blockiert", filtertags=["arbeiter"])
+
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=7, jahr=2026, ignoriere_verfuegbarkeit=True)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+    bedarf = Dienstbedarf(name="Kreuz", anzahl=1)
+    # Montag, 10 Uhr - läge normalerweise im Blocker-Fenster.
+    _gottesdienst(db_session, miniplan, [bedarf], date(2026, 7, 6), time(10, 0))
+    db_session.refresh(miniplan)
+
+    vorschlag = zuteilung_vorschlagen(db_session, pfarrei.id, miniplan, zufallsstart=4)
+
+    assert vorschlag.get(bedarf.id, []) == [einziger.id]

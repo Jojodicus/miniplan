@@ -13,6 +13,8 @@ from app.models.dienstbedarf import (
     DienstbedarfZuweisung,
 )
 from app.models.gottesdienst import Gottesdienst
+from app.models.mini import Mini
+from app.models.mini_miniplan_limit import MiniMiniplanLimit
 from app.models.miniplan import Miniplan, MiniplanStatus
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
@@ -21,6 +23,7 @@ from app.schemas.dienstbedarf import (
     ZuweisungFixierungIn,
     ZuweisungTauschenIn,
 )
+from app.schemas.mini_miniplan_limit import MiniLimitIn
 from app.schemas.miniplan import (
     MiniplanCreate,
     MiniplanListeOut,
@@ -53,7 +56,8 @@ def _mit_geladenem_planstand(query):
                 ),
                 selectinload(Dienstbedarf.zuweisungen).selectinload(DienstbedarfZuweisung.mini),
             )
-        )
+        ),
+        selectinload(Miniplan.mini_limits).selectinload(MiniMiniplanLimit.mini),
     )
 
 
@@ -236,8 +240,78 @@ def zuteilung_einstellungen_setzen(
     miniplan.mixing_gewicht = daten.mixing_gewicht
     miniplan.wiederholung_gewicht = daten.wiederholung_gewicht
     miniplan.max_einsaetze_standard = daten.max_einsaetze_standard
+    miniplan.ignoriere_max_einsaetze = daten.ignoriere_max_einsaetze
+    miniplan.ignoriere_gruppen_mindestanzahl = daten.ignoriere_gruppen_mindestanzahl
+    miniplan.ignoriere_verfuegbarkeit = daten.ignoriere_verfuegbarkeit
     db.commit()
     db.refresh(miniplan)
+    return miniplan
+
+
+def _get_mini_or_404(pfarrei_id: int, mini_id: int, db: Session) -> Mini:
+    mini = db.query(Mini).filter(Mini.id == mini_id, Mini.pfarrei_id == pfarrei_id).first()
+    if mini is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mini nicht gefunden")
+    return mini
+
+
+@router.put("/{miniplan_id}/minis/{mini_id}/limit", response_model=MiniplanOut)
+def mini_limit_setzen(
+    pfarrei_id: int,
+    miniplan_id: int,
+    mini_id: int,
+    daten: MiniLimitIn,
+    db: Session = Depends(get_db),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Miniplan:
+    """Überschreibt für diesen einen Mini das Einsatz-Limit nur innerhalb dieses Miniplans -
+    `max_einsaetze=None` hebt jedes Limit für ihn explizit auf, unabhängig von
+    `Mini.max_einsaetze_pro_monat`/`Miniplan.max_einsaetze_standard` (siehe
+    services/zuteilung.py)."""
+    miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(miniplan)
+    _get_mini_or_404(pfarrei_id, mini_id, db)
+    limit = (
+        db.query(MiniMiniplanLimit)
+        .filter(MiniMiniplanLimit.miniplan_id == miniplan_id, MiniMiniplanLimit.mini_id == mini_id)
+        .first()
+    )
+    if limit is None:
+        db.add(
+            MiniMiniplanLimit(
+                miniplan_id=miniplan_id, mini_id=mini_id, max_einsaetze=daten.max_einsaetze
+            )
+        )
+    else:
+        limit.max_einsaetze = daten.max_einsaetze
+    db.commit()
+    db.refresh(miniplan)
+    return miniplan
+
+
+@router.delete("/{miniplan_id}/minis/{mini_id}/limit", response_model=MiniplanOut)
+def mini_limit_entfernen(
+    pfarrei_id: int,
+    miniplan_id: int,
+    mini_id: int,
+    db: Session = Depends(get_db),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Miniplan:
+    """Entfernt die Ausnahme wieder - der Mini fällt für diesen Plan zurück auf
+    `Mini.max_einsaetze_pro_monat`/`Miniplan.max_einsaetze_standard`."""
+    miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(miniplan)
+    limit = (
+        db.query(MiniMiniplanLimit)
+        .filter(MiniMiniplanLimit.miniplan_id == miniplan_id, MiniMiniplanLimit.mini_id == mini_id)
+        .first()
+    )
+    if limit is not None:
+        db.delete(limit)
+        db.commit()
+        db.refresh(miniplan)
     return miniplan
 
 

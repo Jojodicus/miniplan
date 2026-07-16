@@ -26,8 +26,8 @@ export function Popover({
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<
-    | { left: number; maxHeight: number; top: number; bottom?: undefined }
-    | { left: number; maxHeight: number; bottom: number; top?: undefined }
+    | { left: number; maxHeight: number; width: number; top: number; bottom?: undefined }
+    | { left: number; maxHeight: number; width: number; bottom: number; top?: undefined }
     | null
   >(null)
 
@@ -38,8 +38,11 @@ export function Popover({
       if (!anchor) return
       const rect = anchor.getBoundingClientRect()
       const rand = 8
+      // Breite an den Viewport klemmen - sonst kann `left` auf schmalen (Mobil-)Viewports negativ
+      // werden und das Popover läuft über den Bildschirmrand hinaus.
+      const effectiveWidth = Math.min(width, window.innerWidth - 2 * rand)
       // Bevorzugt linksbündig unter dem Auslöser, aber am Viewport-Rand geklemmt.
-      const left = Math.min(Math.max(rand, rect.left), window.innerWidth - width - rand)
+      const left = Math.min(Math.max(rand, rect.left), window.innerWidth - effectiveWidth - rand)
       const platzUnten = window.innerHeight - rect.bottom - rand
       const platzOben = rect.top - rand
       // Unterhalb des Auslösers platzieren, außer dort ist zu wenig Platz und oben ist mehr -
@@ -47,9 +50,14 @@ export function Popover({
       // unterhalb des sichtbaren Bereichs landen. Bei "oben" über `bottom` statt `top` verankern,
       // damit es tatsächlich direkt am Auslöser wächst statt an der Viewport-Oberkante zu kleben.
       if (platzUnten < 200 && platzOben > platzUnten) {
-        setPosition({ bottom: window.innerHeight - rect.top + 6, left, maxHeight: platzOben })
+        setPosition({
+          bottom: window.innerHeight - rect.top + 6,
+          left,
+          maxHeight: platzOben,
+          width: effectiveWidth,
+        })
       } else {
-        setPosition({ top: rect.bottom + 6, left, maxHeight: platzUnten })
+        setPosition({ top: rect.bottom + 6, left, maxHeight: platzUnten, width: effectiveWidth })
       }
     }
     platzieren()
@@ -91,7 +99,7 @@ export function Popover({
         top: position.top,
         bottom: position.bottom,
         left: position.left,
-        width,
+        width: position.width,
         maxHeight: Math.max(position.maxHeight, 120),
       }}
       className={`${closing ? 'animate-sink-out' : 'animate-rise'} fixed z-50 overflow-y-auto rounded-xl border border-line bg-paper p-4 shadow-xl shadow-ink/20`}

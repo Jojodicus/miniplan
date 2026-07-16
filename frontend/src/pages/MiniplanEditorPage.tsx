@@ -18,7 +18,6 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   CalendarPlus,
-  Check,
   Copy,
   Download,
   Eraser,
@@ -54,6 +53,8 @@ import {
   miniplanAktualisieren,
   miniplanDetail,
   miniplanFuellen,
+  miniplanMiniLimitEntfernen,
+  miniplanMiniLimitSetzen,
   miniplanPdfHerunterladen,
   miniplanStatusAendern,
   miniplanVorschau,
@@ -62,6 +63,7 @@ import {
   miniplanZuweisungenTauschen,
   miniplanZuteilungEinstellungenSetzen,
   ZUTEILUNG_DEFAULTS,
+  type MiniLimit,
   type Miniplan,
   type MiniplanVorschauEingabe,
   type VorschauDienstbedarf,
@@ -75,7 +77,13 @@ import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
 import { Collapse } from '../components/ui/Collapse'
 import { DateInput } from '../components/ui/DateInput'
-import { CheckboxChip, Input, Label, Select, Slider } from '../components/ui/FormField'
+import {
+  CheckboxChip,
+  Input,
+  Label,
+  Select,
+  SliderWithNumberInput,
+} from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { MarkdownTextarea } from '../components/ui/MarkdownTextarea'
@@ -515,7 +523,6 @@ function DienstbedarfBelegung({
   // Die Mini-Suche ist standardmäßig verborgen (weniger Unruhe, wenn mehrere Dienste
   // gleichzeitig sichtbar sind) - ein Klick auf einen "offen"-Platzhalter blendet sie ein.
   const [sucheOffen, setSucheOffen] = useState(false)
-  const [autoLeerenBestaetigen, setAutoLeerenBestaetigen] = useState(false)
 
   const autoZuweisungen = serverZuweisungen.filter((z) => !z.manuell_fixiert)
   const belegteMiniIds = new Set([
@@ -539,35 +546,22 @@ function DienstbedarfBelegung({
             <span className="text-xs text-ink-faint">· {einschraenkungen.join(', ')}</span>
           )}
         </div>
-        {!readonly &&
-          autoZuweisungen.length > 0 &&
-          (autoLeerenBestaetigen ? (
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-wine">Automatische Zuweisungen leeren?</span>
-              <IconButton
-                label="Leeren bestätigen"
-                tone="danger"
-                onClick={() => {
-                  setAutoLeerenBestaetigen(false)
-                  onClearAuto()
-                }}
+        {!readonly && autoZuweisungen.length > 0 && (
+          <InlineConfirmButton
+            onConfirm={onClearAuto}
+            confirmLabel="Automatische Zuweisungen leeren?"
+            trigger={(open) => (
+              <button
+                type="button"
+                onClick={open}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-ink-faint transition-colors hover:bg-wine-tint hover:text-wine"
               >
-                <Check className="h-3.5 w-3.5" />
-              </IconButton>
-              <IconButton label="Abbrechen" onClick={() => setAutoLeerenBestaetigen(false)}>
-                <X className="h-3.5 w-3.5" />
-              </IconButton>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setAutoLeerenBestaetigen(true)}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-ink-faint transition-colors hover:bg-wine-tint hover:text-wine"
-            >
-              <Eraser className="h-3.5 w-3.5" />
-              Auto leeren
-            </button>
-          ))}
+                <Eraser className="h-3.5 w-3.5" />
+                Auto leeren
+              </button>
+            )}
+          />
+        )}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {bedarf.fixierteMiniIds.map((miniId) => {
@@ -752,7 +746,9 @@ function DienstbedarfEinstellungen({
           >
             Auf Plan
           </CheckboxChip>
-          <InlineConfirmButton onConfirm={onRemove} label="Dienst entfernen" size="sm" />
+          <IconButton label="Dienst entfernen" onClick={onRemove} className="h-7 w-7">
+            <Trash2 className="h-3.5 w-3.5" />
+          </IconButton>
         </div>
       </div>
 
@@ -1689,24 +1685,70 @@ function VorschauPanel({
 
 // Konfiguration der automatischen Zuteilung ("Füllen") als Popover am Füllen-Button - eigener
 // Endpunkt statt Teil des Freitext-Autosaves, damit sich beide unabhängig ändern lassen.
+// Ausnahme-Zeile für einen einzelnen Mini: eigenes Zahlen-Limit (oder explizit "kein Limit"), das
+// nur für diesen Miniplan gilt und alles andere übersteuert (siehe MiniMiniplanLimit im Backend).
+// Speichert sofort pro Zeile statt über den "Speichern"-Button der Gewichte - passt zum
+// bestehenden granularen Endpunkt-Stil dieser Funktion.
+function MiniLimitZeile({
+  limit,
+  onChange,
+  onRemove,
+}: {
+  limit: MiniLimit
+  onChange: (maxEinsaetze: number | null) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="min-w-0 flex-1 truncate text-sm text-ink">{limit.mini_name}</span>
+      <Input
+        type="number"
+        min={0}
+        placeholder="kein Limit"
+        value={limit.max_einsaetze ?? ''}
+        onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        className="h-8 !w-24 px-2"
+      />
+      <IconButton label="Ausnahme entfernen" onClick={onRemove} className="h-7 w-7">
+        <Trash2 className="h-3.5 w-3.5" />
+      </IconButton>
+    </div>
+  )
+}
+
 function ZuteilungEinstellungenPopover({
   open,
   onClose,
   anchorRef,
   miniplan,
+  minis,
+  pfarreiId,
   onSave,
+  onMiniLimitsChange,
 }: {
   open: boolean
   onClose: () => void
   anchorRef: React.RefObject<HTMLElement | null>
   miniplan: Miniplan
+  minis: Mini[]
+  pfarreiId: number
   onSave: (einstellungen: ZuteilungEinstellungen) => void | Promise<void>
+  onMiniLimitsChange: (aktualisiert: Miniplan) => void
 }) {
   const [fairness, setFairness] = useState(miniplan.fairness_gewicht)
   const [mindestabstand, setMindestabstand] = useState(miniplan.mindestabstand_tage)
   const [mixing, setMixing] = useState(miniplan.mixing_gewicht)
   const [wiederholung, setWiederholung] = useState(miniplan.wiederholung_gewicht)
   const [maxEinsaetze, setMaxEinsaetze] = useState(miniplan.max_einsaetze_standard)
+  const [ignoriereMaxEinsaetze, setIgnoriereMaxEinsaetze] = useState(
+    miniplan.ignoriere_max_einsaetze,
+  )
+  const [ignoriereGruppenMindestanzahl, setIgnoriereGruppenMindestanzahl] = useState(
+    miniplan.ignoriere_gruppen_mindestanzahl,
+  )
+  const [ignoriereVerfuegbarkeit, setIgnoriereVerfuegbarkeit] = useState(
+    miniplan.ignoriere_verfuegbarkeit,
+  )
 
   useEffect(() => {
     if (!open) return
@@ -1715,7 +1757,18 @@ function ZuteilungEinstellungenPopover({
     setMixing(miniplan.mixing_gewicht)
     setWiederholung(miniplan.wiederholung_gewicht)
     setMaxEinsaetze(miniplan.max_einsaetze_standard)
+    setIgnoriereMaxEinsaetze(miniplan.ignoriere_max_einsaetze)
+    setIgnoriereGruppenMindestanzahl(miniplan.ignoriere_gruppen_mindestanzahl)
+    setIgnoriereVerfuegbarkeit(miniplan.ignoriere_verfuegbarkeit)
   }, [open, miniplan])
+
+  const miniplanId = miniplan.id
+  async function limitSetzen(miniId: number, wert: number | null) {
+    onMiniLimitsChange(await miniplanMiniLimitSetzen(pfarreiId, miniplanId, miniId, wert))
+  }
+  async function limitEntfernen(miniId: number) {
+    onMiniLimitsChange(await miniplanMiniLimitEntfernen(pfarreiId, miniplanId, miniId))
+  }
 
   return (
     <Popover
@@ -1723,7 +1776,7 @@ function ZuteilungEinstellungenPopover({
       onClose={onClose}
       anchorRef={anchorRef}
       title="Auto-Fill-Einstellungen"
-      width={340}
+      width={360}
     >
       <form
         onSubmit={(e) => {
@@ -1734,6 +1787,9 @@ function ZuteilungEinstellungenPopover({
             mixing_gewicht: mixing,
             wiederholung_gewicht: wiederholung,
             max_einsaetze_standard: maxEinsaetze,
+            ignoriere_max_einsaetze: ignoriereMaxEinsaetze,
+            ignoriere_gruppen_mindestanzahl: ignoriereGruppenMindestanzahl,
+            ignoriere_verfuegbarkeit: ignoriereVerfuegbarkeit,
           })
         }}
         className="flex flex-col gap-4"
@@ -1742,7 +1798,7 @@ function ZuteilungEinstellungenPopover({
           <Label htmlFor="einstellung-fairness" hint="0 = aus">
             Fairness-Stärke
           </Label>
-          <Slider
+          <SliderWithNumberInput
             id="einstellung-fairness"
             min={0}
             max={20}
@@ -1756,7 +1812,7 @@ function ZuteilungEinstellungenPopover({
           <Label htmlFor="einstellung-abstand" hint="Tage">
             Mindestabstand zwischen Diensten
           </Label>
-          <Slider
+          <SliderWithNumberInput
             id="einstellung-abstand"
             min={0}
             max={31}
@@ -1770,7 +1826,7 @@ function ZuteilungEinstellungenPopover({
           <Label htmlFor="einstellung-mixing" hint="0 = aus">
             Teams durchmischen
           </Label>
-          <Slider
+          <SliderWithNumberInput
             id="einstellung-mixing"
             min={0}
             max={20}
@@ -1787,7 +1843,7 @@ function ZuteilungEinstellungenPopover({
           <Label htmlFor="einstellung-wiederholung" hint="0 = aus">
             Feste Zuteilung bevorzugen
           </Label>
-          <Slider
+          <SliderWithNumberInput
             id="einstellung-wiederholung"
             min={0}
             max={20}
@@ -1818,6 +1874,67 @@ function ZuteilungEinstellungenPopover({
             Füllen nie überschreitet.
           </p>
         </div>
+
+        <div className="border-t border-line pt-4">
+          <Label
+            hint={miniplan.mini_limits.length === 0 ? undefined : `${miniplan.mini_limits.length}`}
+          >
+            Ausnahmen pro Mini
+          </Label>
+          <p className="mb-2 text-xs text-ink-faint">
+            Überschreibt für einzelne Minis das Limit nur in diesem Plan - auch als "kein Limit",
+            selbst wenn der Mini sonst persönlich begrenzt ist.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {miniplan.mini_limits.map((limit) => (
+              <MiniLimitZeile
+                key={limit.mini_id}
+                limit={limit}
+                onChange={(wert) => void limitSetzen(limit.mini_id, wert)}
+                onRemove={() => void limitEntfernen(limit.mini_id)}
+              />
+            ))}
+          </div>
+          <div className="mt-2">
+            <MiniAdder
+              minis={minis}
+              belegteMiniIds={new Set(miniplan.mini_limits.map((l) => l.mini_id))}
+              disabled={false}
+              onAdd={(miniId) => void limitSetzen(miniId, 0)}
+            />
+          </div>
+        </div>
+
+        <div className="border-t border-line pt-4">
+          <Label>Harte Grenzen ignorieren</Label>
+          <p className="mb-2 text-xs text-ink-faint">
+            Nutzt die jeweilige harte Regel beim Füllen nicht mehr - nur für Ausnahmefälle.
+          </p>
+          <div className="flex flex-col gap-2">
+            <CheckboxChip
+              id="einstellung-ignoriere-max-einsaetze"
+              checked={ignoriereMaxEinsaetze}
+              onChange={() => setIgnoriereMaxEinsaetze((v) => !v)}
+            >
+              Max. Einsätze pro Mini
+            </CheckboxChip>
+            <CheckboxChip
+              id="einstellung-ignoriere-gruppen"
+              checked={ignoriereGruppenMindestanzahl}
+              onChange={() => setIgnoriereGruppenMindestanzahl((v) => !v)}
+            >
+              Gruppen-Mindestanzahl
+            </CheckboxChip>
+            <CheckboxChip
+              id="einstellung-ignoriere-verfuegbarkeit"
+              checked={ignoriereVerfuegbarkeit}
+              onChange={() => setIgnoriereVerfuegbarkeit((v) => !v)}
+            >
+              Verfügbarkeiten
+            </CheckboxChip>
+          </div>
+        </div>
+
         <div className="flex justify-between gap-2">
           <Button
             type="button"
@@ -1829,6 +1946,9 @@ function ZuteilungEinstellungenPopover({
               setMixing(ZUTEILUNG_DEFAULTS.mixing_gewicht)
               setWiederholung(ZUTEILUNG_DEFAULTS.wiederholung_gewicht)
               setMaxEinsaetze(ZUTEILUNG_DEFAULTS.max_einsaetze_standard)
+              setIgnoriereMaxEinsaetze(ZUTEILUNG_DEFAULTS.ignoriere_max_einsaetze)
+              setIgnoriereGruppenMindestanzahl(ZUTEILUNG_DEFAULTS.ignoriere_gruppen_mindestanzahl)
+              setIgnoriereVerfuegbarkeit(ZUTEILUNG_DEFAULTS.ignoriere_verfuegbarkeit)
             }}
           >
             Zurücksetzen
@@ -1872,8 +1992,6 @@ export function MiniplanEditorPage() {
   const [statusWirdGeaendert, setStatusWirdGeaendert] = useState(false)
   const [downloadFehler, setDownloadFehler] = useState<string | null>(null)
   const [fuelltGerade, setFuelltGerade] = useState(false)
-  const [autoLeerenBestaetigen, setAutoLeerenBestaetigen] = useState(false)
-  const [abschliessenBestaetigen, setAbschliessenBestaetigen] = useState(false)
   const [einstellungenOffen, setEinstellungenOffen] = useState(false)
   const einstellungenButtonRef = useRef<HTMLButtonElement>(null)
   const { showToast } = useToast()
@@ -2114,36 +2232,18 @@ export function MiniplanEditorPage() {
               <span className="hidden sm:inline">{fuelltGerade ? 'Befüllt…' : 'Füllen'}</span>
             </Button>
           )}
-          {!readonly &&
-            hatAutoZuweisungen &&
-            (autoLeerenBestaetigen ? (
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-wine">Alle automatischen Zuweisungen leeren?</span>
-                <IconButton
-                  label="Leeren bestätigen"
-                  tone="danger"
-                  onClick={() => {
-                    setAutoLeerenBestaetigen(false)
-                    handleClearAuto()
-                  }}
-                >
-                  <Check className="h-4 w-4" />
-                </IconButton>
-                <IconButton label="Abbrechen" onClick={() => setAutoLeerenBestaetigen(false)}>
-                  <X className="h-4 w-4" />
-                </IconButton>
-              </div>
-            ) : (
-              <Button
-                variant="secondary"
-                size="sm"
-                title="Auto leeren"
-                onClick={() => setAutoLeerenBestaetigen(true)}
-              >
-                <Eraser className="h-4 w-4" />
-                <span className="hidden sm:inline">Auto leeren</span>
-              </Button>
-            ))}
+          {!readonly && hatAutoZuweisungen && (
+            <InlineConfirmButton
+              onConfirm={() => handleClearAuto()}
+              confirmLabel="Alle automatischen Zuweisungen leeren?"
+              trigger={(open) => (
+                <Button variant="secondary" size="sm" title="Auto leeren" onClick={open}>
+                  <Eraser className="h-4 w-4" />
+                  <span className="hidden sm:inline">Auto leeren</span>
+                </Button>
+              )}
+            />
+          )}
           {miniplan.status === 'abgeschlossen' ? (
             <>
               <Button
@@ -2164,33 +2264,16 @@ export function MiniplanEditorPage() {
                 Wieder öffnen
               </Button>
             </>
-          ) : abschliessenBestaetigen ? (
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-ink-soft">Plan wirklich abschließen?</span>
-              <IconButton
-                label="Abschließen bestätigen"
-                tone="danger"
-                disabled={statusWirdGeaendert}
-                onClick={() => {
-                  setAbschliessenBestaetigen(false)
-                  void handleStatusWechsel('abgeschlossen')
-                }}
-              >
-                <Check className="h-4 w-4" />
-              </IconButton>
-              <IconButton label="Abbrechen" onClick={() => setAbschliessenBestaetigen(false)}>
-                <X className="h-4 w-4" />
-              </IconButton>
-            </div>
           ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={statusWirdGeaendert}
-              onClick={() => setAbschliessenBestaetigen(true)}
-            >
-              Plan abschließen
-            </Button>
+            <InlineConfirmButton
+              onConfirm={() => handleStatusWechsel('abgeschlossen')}
+              confirmLabel="Plan wirklich abschließen?"
+              trigger={(open) => (
+                <Button variant="primary" size="sm" disabled={statusWirdGeaendert} onClick={open}>
+                  Plan abschließen
+                </Button>
+              )}
+            />
           )}
         </div>
       </div>
@@ -2199,6 +2282,9 @@ export function MiniplanEditorPage() {
         onClose={() => setEinstellungenOffen(false)}
         anchorRef={einstellungenButtonRef}
         miniplan={miniplan}
+        minis={minis}
+        pfarreiId={id}
+        onMiniLimitsChange={refreshNachMutation}
         onSave={handleEinstellungenSpeichern}
       />
       {downloadFehler && (

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.filtertag import Filtertag
 from app.models.mini import Mini
+from app.models.mini_miniplan_limit import MiniMiniplanLimit
 from app.models.miniplan import Miniplan
 from app.services.verfuegbarkeit import ist_blockiert
 
@@ -26,6 +27,11 @@ class ZuteilungConfig:
     mindestabstand_tage: int = 6
     mixing_gewicht: float = 0.0
     wiederholung_gewicht: float = 0.0
+    # Schalter für Ausnahmefälle, die sonst harte Constraints komplett abschalten (siehe
+    # `Miniplan.ignoriere_*` und deren Verwendung unten).
+    ignoriere_max_einsaetze: bool = False
+    ignoriere_gruppen_mindestanzahl: bool = False
+    ignoriere_verfuegbarkeit: bool = False
 
     @classmethod
     def aus_miniplan(cls, miniplan: Miniplan) -> "ZuteilungConfig":
@@ -34,6 +40,9 @@ class ZuteilungConfig:
             mindestabstand_tage=miniplan.mindestabstand_tage,
             mixing_gewicht=miniplan.mixing_gewicht,
             wiederholung_gewicht=miniplan.wiederholung_gewicht,
+            ignoriere_max_einsaetze=miniplan.ignoriere_max_einsaetze,
+            ignoriere_gruppen_mindestanzahl=miniplan.ignoriere_gruppen_mindestanzahl,
+            ignoriere_verfuegbarkeit=miniplan.ignoriere_verfuegbarkeit,
         )
 
 
@@ -54,9 +63,15 @@ class _Slot:
     mini_id: int | None = None
 
 
-def _effektives_maximum(mini: Mini, miniplan_standard: int | None) -> int | None:
-    """None = kein Limit. Ein pro Mini gesetztes `max_einsaetze_pro_monat` übersteuert den
-    planweiten Standard, nicht umgekehrt."""
+def _effektives_maximum(
+    mini: Mini, miniplan_standard: int | None, override_map: dict[int, int | None]
+) -> int | None:
+    """None = kein Limit. Eine planweite Ausnahme für diesen einzelnen Mini
+    (`override_map`, aus `MiniMiniplanLimit`) übersteuert alles andere - auch als explizite
+    Aufhebung jedes Limits (Wert `None` bei vorhandenem Eintrag). Ohne Ausnahme übersteuert ein
+    pro Mini gesetztes `max_einsaetze_pro_monat` den planweiten Standard, nicht umgekehrt."""
+    if mini.id in override_map:
+        return override_map[mini.id]
     if mini.max_einsaetze_pro_monat is not None:
         return mini.max_einsaetze_pro_monat
     return miniplan_standard
@@ -169,7 +184,9 @@ def _akzeptieren(
 
 
 def _baue_slots(
-    miniplan: Miniplan, minis_by_id: dict[int, Mini]
+    miniplan: Miniplan,
+    minis_by_id: dict[int, Mini],
+    ignoriere_gruppen_mindestanzahl: bool = False,
 ) -> tuple[list[_Slot], dict[int, set[int]]]:
     slots: list[_Slot] = []
     belegt_je_gottesdienst: dict[int, set[int]] = {}
@@ -189,13 +206,14 @@ def _baue_slots(
 
             anzahl_frei = bedarf.anzahl - len(fixierte)
             quoten: list[int | None] = []
-            for anforderung in bedarf.gruppen_anforderungen:
-                defizit = anforderung.mindest_anzahl - fixiert_je_gruppe.get(
-                    anforderung.gruppe_id, 0
-                )
-                for _ in range(max(0, defizit)):
-                    if len(quoten) < anzahl_frei:
-                        quoten.append(anforderung.gruppe_id)
+            if not ignoriere_gruppen_mindestanzahl:
+                for anforderung in bedarf.gruppen_anforderungen:
+                    defizit = anforderung.mindest_anzahl - fixiert_je_gruppe.get(
+                        anforderung.gruppe_id, 0
+                    )
+                    for _ in range(max(0, defizit)):
+                        if len(quoten) < anzahl_frei:
+                            quoten.append(anforderung.gruppe_id)
             while len(quoten) < anzahl_frei:
                 quoten.append(None)
             # Stellen mit Gruppen-Quote zuerst besetzen, damit knappe Gruppen nicht durch
@@ -353,8 +371,10 @@ def zuteilung_vorschlagen(
     (Gruppen-Mindestanzahl, erforderliche Filtertags, Verfügbarkeit laut
     `services/verfuegbarkeit.ist_blockiert`, keine Doppelbelegung eines Minis innerhalb eines
     Gottesdienstes, Einsatz-Obergrenze aus `Mini.max_einsaetze_pro_monat`/
-    `Miniplan.max_einsaetze_standard`) werden nie verletzt - bleibt dafür kein passender Mini
-    übrig, bleibt die Stelle unbesetzt. Darüber hinaus optimiert eine simulierte Abkühlung
+    `Miniplan.max_einsaetze_standard`/`MiniMiniplanLimit`) werden nie verletzt - bleibt dafür kein
+    passender Mini übrig, bleibt die Stelle unbesetzt. Die Schalter `Miniplan.ignoriere_*` können
+    einzelne dieser harten Constraints für Ausnahmefälle komplett abschalten (siehe
+    `ZuteilungConfig`). Darüber hinaus optimiert eine simulierte Abkühlung
     (Swap-/Ersatz-Züge) auf Fairness (möglichst gleichmäßige Diensthäufigkeit) und Abstand (kein
     Mini an zu dicht aufeinanderfolgenden Terminen).
 
@@ -369,9 +389,13 @@ def zuteilung_vorschlagen(
         f.key: f.id for f in db.query(Filtertag).filter(Filtertag.pfarrei_id == pfarrei_id).all()
     }
 
+    config = ZuteilungConfig.aus_miniplan(miniplan)
+
     blockiert_cache: dict[tuple[int, date, time], bool] = {}
 
     def _ist_mini_blockiert(mini: Mini, datum: date, zeit: time) -> bool:
+        if config.ignoriere_verfuegbarkeit:
+            return False
         schluessel = (mini.id, datum, zeit)
         if schluessel not in blockiert_cache:
             blockiert_cache[schluessel] = any(
@@ -381,9 +405,9 @@ def zuteilung_vorschlagen(
             )
         return blockiert_cache[schluessel]
 
-    slots, belegt_je_gottesdienst = _baue_slots(miniplan, minis_by_id)
-
-    config = ZuteilungConfig.aus_miniplan(miniplan)
+    slots, belegt_je_gottesdienst = _baue_slots(
+        miniplan, minis_by_id, config.ignoriere_gruppen_mindestanzahl
+    )
 
     einsatz_anzahl: dict[int, int] = {m.id: 0 for m in minis}
     # Fixierte Zuweisungen zählen für Fairness und fließen als konstante Belegung in die
@@ -397,7 +421,19 @@ def zuteilung_vorschlagen(
                     einsatz_anzahl[zuweisung.mini_id] += 1
                     fixierte_belegung.append((gottesdienst.id, signatur, zuweisung.mini_id))
 
-    max_pro_mini = {m.id: _effektives_maximum(m, miniplan.max_einsaetze_standard) for m in minis}
+    if config.ignoriere_max_einsaetze:
+        max_pro_mini: dict[int, int | None] = {m.id: None for m in minis}
+    else:
+        override_map = {
+            limit.mini_id: limit.max_einsaetze
+            for limit in db.query(MiniMiniplanLimit)
+            .filter(MiniMiniplanLimit.miniplan_id == miniplan.id)
+            .all()
+        }
+        max_pro_mini = {
+            m.id: _effektives_maximum(m, miniplan.max_einsaetze_standard, override_map)
+            for m in minis
+        }
 
     _greedy_konstruktion(
         slots,
