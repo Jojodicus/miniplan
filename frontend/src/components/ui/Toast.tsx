@@ -1,27 +1,18 @@
 import { CheckCircle2, Info, X, XCircle } from 'lucide-react'
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
-
-type ToastTone = 'success' | 'error' | 'info'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ToastContext, type ToastTone } from './toastContextObject'
 
 interface ToastEintrag {
   id: number
   text: string
   tone: ToastTone
+  closing: boolean
 }
 
-interface ToastContextValue {
-  showToast: (text: string, tone?: ToastTone) => void
-}
-
-const ToastContext = createContext<ToastContextValue | null>(null)
+// Muss zur Dauer von `.animate-sink-out` in index.css passen, sonst wird der Toast entweder vor
+// Animationsende aus dem DOM entfernt (Ruckler) oder bleibt nach Animationsende unnötig lange als
+// unsichtbarer Platzhalter stehen.
+const EXIT_DURATION_MS = 180
 
 // Info-Toasts erklären längere Sachverhalte (z.B. regionale Feiertags-Ausnahmen) - etwas mehr
 // Lesezeit als die kurze Erfolgs-/Fehler-Bestätigung.
@@ -38,15 +29,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastEintrag[]>([])
   const naechsteId = useRef(0)
 
+  // Zweistufig: erst per `closing`-Flag die Exit-Animation anstoßen, den Toast aber noch
+  // gemountet lassen, damit sie abspielen kann (analog `usePresence` für Modal/Popover) - danach
+  // erst tatsächlich aus dem Array entfernen.
   const dismiss = useCallback((id: number) => {
-    setToasts((aktuell) => aktuell.filter((t) => t.id !== id))
+    setToasts((aktuell) => aktuell.map((t) => (t.id === id ? { ...t, closing: true } : t)))
+    setTimeout(() => {
+      setToasts((aktuell) => aktuell.filter((t) => t.id !== id))
+    }, EXIT_DURATION_MS)
   }, [])
 
   const showToast = useCallback(
     (text: string, tone: ToastTone = 'success') => {
       naechsteId.current += 1
       const id = naechsteId.current
-      setToasts((aktuell) => [...aktuell, { id, text, tone }])
+      setToasts((aktuell) => [...aktuell, { id, text, tone, closing: false }])
       setTimeout(() => dismiss(id), tone === 'info' ? AUTO_DISMISS_INFO_MS : AUTO_DISMISS_MS)
     },
     [dismiss],
@@ -62,7 +59,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={toast.id}
             role="status"
-            className={`pointer-events-auto flex w-full max-w-sm items-center gap-2 rounded-lg border px-4 py-2.5 text-sm shadow-md shadow-ink/10 animate-rise ${toneStyles[toast.tone]}`}
+            className={`pointer-events-auto flex w-full max-w-sm items-center gap-2 rounded-lg border px-4 py-2.5 text-sm shadow-md shadow-ink/10 ${toast.closing ? 'animate-sink-out' : 'animate-rise'} ${toneStyles[toast.tone]}`}
           >
             {toast.tone === 'success' && <CheckCircle2 className="h-4 w-4 shrink-0 text-pine" />}
             {toast.tone === 'error' && <XCircle className="h-4 w-4 shrink-0 text-wine" />}
@@ -81,12 +78,4 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       </div>
     </ToastContext.Provider>
   )
-}
-
-export function useToast(): ToastContextValue {
-  const ctx = useContext(ToastContext)
-  if (!ctx) {
-    throw new Error('useToast muss innerhalb eines ToastProvider verwendet werden')
-  }
-  return ctx
 }

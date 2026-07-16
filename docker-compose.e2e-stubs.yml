@@ -1,0 +1,11 @@
+services:
+  miniplan-e2e:
+    environment:
+      # Nur für die Playwright-Suite (siehe frontend/e2e/global-setup.ts) zusätzlich zu
+      # docker-compose.e2e.yml eingebunden - biegt die echte, mit anderen Nutzern geteilte
+      # ferien-api.maxleistner.de auf den in main.py nur hier aktivierten Stub um, damit deren
+      # Rate-Limit nicht zu einer nicht-deterministischen Fehlerquelle für die Tests wird.
+      # scripts/run-local.sh nutzt nur docker-compose.e2e.yml und bekommt damit bewusst echte
+      # Ferien-Daten.
+      MINIPLAN_ENABLE_TEST_STUBS: "1"
+      MINIPLAN_FERIEN_API_URL: "http://localhost:8000/api/_e2e-stubs/ferien-api/holidays/{bundesland}/{jahr}"

@@ -180,13 +180,14 @@ def test_429_wird_nicht_retried_und_setzt_cooldown(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(ferien_sync, "_RETRY_VERSUCHE", 3)
     client = httpx.Client(transport=httpx.MockTransport(handler))
 
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(ferien_sync.FerienSyncFehler) as exc_info:
         ferien_sync._get_mit_retry(client, "https://ferien-api.de/api/v1/holidays/BY/2026")
 
     # Kein Retry auf 429 (anders als bei 502/503/504) - ein Sekunden-Backoff hilft gegen ein
     # bereits erschöpftes Rate-Limit ohnehin nicht.
     assert len(aufrufe) == 1
     assert ferien_sync._rate_limited_until > time.monotonic()
+    assert exc_info.value.rate_limited is True
 
 
 def test_rate_limit_cooldown_verhindert_weitere_anfragen(monkeypatch: pytest.MonkeyPatch) -> None:

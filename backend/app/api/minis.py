@@ -67,6 +67,7 @@ def erstellen(
         gruppe_id=daten.gruppe_id,
         name=daten.name,
         filtertags=daten.filtertags,
+        max_einsaetze_pro_monat=daten.max_einsaetze_pro_monat,
     )
     db.add(mini)
     db.commit()
@@ -89,6 +90,7 @@ def bearbeiten(
     mini.name = daten.name
     mini.gruppe_id = daten.gruppe_id
     mini.filtertags = daten.filtertags
+    mini.max_einsaetze_pro_monat = daten.max_einsaetze_pro_monat
     db.commit()
     db.refresh(mini)
     return mini

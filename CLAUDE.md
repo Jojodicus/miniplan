@@ -51,8 +51,12 @@ frontend/
 Dockerfile              Multi-Stage-Build: Frontend-Build -> Backend-Image (inkl. Typst-Binary),
                         HEALTHCHECK gegen /api/health
 docker-compose.yml      Deployment: ein Service, SQLite + Secret-Key-Datei im Volume /data
-docker-compose.e2e.yml  isolierte Variante für Playwright-E2E-Tests (eigener Port 8100, tmpfs
-                        statt Volume, seedet Testdaten beim Start noch vor dem Öffnen des Ports)
+docker-compose.e2e.yml  isolierte Variante für manuelles Ausprobieren (scripts/run-local.sh) und
+                        Playwright-E2E-Tests (eigener Port 8100, tmpfs statt Volume, seedet
+                        Testdaten beim Start noch vor dem Öffnen des Ports)
+docker-compose.e2e-stubs.yml  Override nur für Playwright (siehe global-setup.ts): biegt die
+                        externe Ferien-Quelle auf einen lokalen Stub um, damit deren Rate-Limit
+                        die Tests nicht flaky macht; run-local.sh nutzt ihn bewusst nicht
 ```
 
 ## Datenmodell
@@ -71,11 +75,13 @@ docker-compose.e2e.yml  isolierte Variante für Playwright-E2E-Tests (eigener Po
   Feiertage (`Ferienzeitraum`, `FeiertagEinstellung`) setzen diese Sperre für den jeweiligen Tag
   außer Kraft (siehe `services/verfuegbarkeit.py`)
 - **Mini**: gehört zu einer Pfarrei + einer Gruppe, Name, Filtertags (JSON-Liste von
-  `Filtertag.key`-Werten dieser Pfarrei)
+  `Filtertag.key`-Werten dieser Pfarrei), optionales `max_einsaetze_pro_monat` (persönliche
+  Obergrenze für Einsätze je Miniplan, übersteuert `Miniplan.max_einsaetze_standard`, siehe unten)
 - **DienstTyp**: pro Pfarrei, Name, Standard-Anzahl, Gruppen-Mindestanzahl-Anforderungen
 - **Miniplan**: pro Pfarrei, Monat/Jahr (eindeutig je Pfarrei), Status (`in_bearbeitung` /
-  `abgeschlossen`), Freitextfelder `veranstaltungen`/`ankuendigungen`; enthält eine Liste von
-  `Gottesdienst`en
+  `abgeschlossen`), Freitextfelder `veranstaltungen`/`ankuendigungen`, optionales planweites
+  Standard-Limit `max_einsaetze_standard` (für Minis ohne eigenes `max_einsaetze_pro_monat`);
+  enthält eine Liste von `Gottesdienst`en
 - **Gottesdienst**: gehört zu einem Miniplan, Datum, Uhrzeit, Name; enthält eine Liste von
   `Dienstbedarf`-Einträgen
 - **Dienstbedarf**: gehört zu einem Gottesdienst, entweder von einem `DienstTyp` abgeleitet
@@ -148,6 +154,8 @@ passender Mini übrig, bleibt die Stelle unbesetzt:
 - Verfügbarkeit laut `services/verfuegbarkeit.ist_blockiert` für jeden Filtertag des Minis zu
   Datum/Uhrzeit des Gottesdienstes
 - kein Mini doppelt innerhalb desselben Gottesdienstes
+- Einsatz-Obergrenze je Mini (`Mini.max_einsaetze_pro_monat`, falls gesetzt, sonst
+  `Miniplan.max_einsaetze_standard`; ohne beides kein Limit)
 
 Darüber hinaus optimiert eine simulierte Abkühlung (Swap- und Ersatz-Züge zwischen freien Stellen,
 Badness-Funktion aus Varianz der Diensthäufigkeit + Strafe für zu dicht aufeinanderfolgende
@@ -175,10 +183,11 @@ Aus demselben Grund löscht auch `fuellen` die zu ersetzenden Zeilen zuerst und 
 neuen eingefügt werden (ein erneuter Lauf kann denselben Mini wieder derselben Stelle zuteilen).
 
 Frontend: Der "Füllen"-Button in `MiniplanEditorPage` löst den Endpoint aus und lädt den Miniplan
-neu. Da jede `GottesdienstKarte` ihren Dienstbedarf nur beim ersten Rendern aus den Props in
-eigenen State übernimmt, erzwingt ein Revisions-Zähler im `key`-Prop der Karten nach jeder
-Zuweisungs-Mutation (Füllen, Tauschen, Fixieren, Leeren) einen Remount, damit die neuen
-Zuweisungen sichtbar werden (Helper `refreshNachMutation`).
+neu (Helper `refreshNachMutation`, gemeinsam mit Tauschen/Fixieren/Leeren). Da jede
+`GottesdienstKarte` ihren Dienstbedarf nur beim ersten Rendern aus den Props in eigenen State
+übernimmt, hat sie einen eigenen Sync-Effekt, der `serverZuweisungenMap`/`dienstbedarfIdMap` bei
+jeder Änderung von `gottesdienst.dienstbedarf` mit den Props mergt (kein erzwungener Remount mehr -
+Karten, die eine Mutation gar nicht betrifft, rendern dadurch auch nicht unnötig neu).
 
 Der Editor zeigt jede `GottesdienstKarte` ohne Aufklappen: die Belegung jedes Dienstbedarfs
 (`DienstbedarfBelegung`) ist stets sichtbar und direkt bearbeitbar – fest zugewiesene Minis (pine,
@@ -232,7 +241,7 @@ pnpm exec playwright test     # E2E-Tests gegen echten Docker-Container (Port 81
 ```
 docker compose up --build                                        # Deployment
 docker exec <container> python -m app.cli create-user --email ... --role admin
-docker compose -p miniplan-e2e -f docker-compose.e2e.yml up -d --build   # manuell wie im E2E-Test
+./scripts/run-local.sh                                            # manuell ausprobieren, echte Ferien-Daten
 ```
 
 ## Konventionen
@@ -246,6 +255,10 @@ docker compose -p miniplan-e2e -f docker-compose.e2e.yml up -d --build   # manue
   selben Arbeitsschritt.
 - Vor jedem Commit: Backend mit `ruff check . --fix` und `ruff format .`, Frontend mit
   `pnpm run lint` und `npx prettier --write .` lint- und formatfrei halten (siehe Befehle oben).
+  Keine bereits bestehenden Lint-Warnungen oder fehlschlagenden Tests als "vorbestehend" akzeptieren
+  und unangetastet lassen, nur weil sie nicht von der eigenen Änderung stammen - `pnpm run lint`
+  und die Test-Suites (`pytest`, `pnpm exec playwright test`) müssen nach jeder Änderung
+  vollständig grün sein, nicht nur für die selbst berührten Dateien.
 - Tests hinterlassen keine temporären Dateien oder Container: Backend-Tests laufen gegen eine
   In-Memory-DB, die E2E-Docker-Umgebung wird über `globalSetup`/`globalTeardown` in
   `frontend/playwright.config.ts` auch bei Testfehlern zuverlässig wieder abgebaut.

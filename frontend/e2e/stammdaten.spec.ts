@@ -94,10 +94,14 @@ test('Nutzer kann Verfügbarkeits-Status anlegen und Zeitfenster hinzufügen', a
   // Zeile des neu angelegten Verfügbarkeits-Status geöffnet werden. Die ganze Zeile ist selbst
   // der Toggle (`role="button"`, kein separat beschrifteter "Sperrzeiten"-Button darin). Das
   // Wochenraster ist die Hauptansicht (Ziehen zum Anlegen) - für minutengenaue Eingaben bleibt
-  // das Text-Formular über einen zusätzlichen Link erreichbar.
-  await page.getByRole('button').filter({ hasText: 'Azubi' }).click()
+  // das Text-Formular über einen zusätzlichen Link erreichbar. Auf die Zeile scopen (statt global
+  // zu suchen): der eingeklappte Bereich bleibt dank `Collapse` (sanfte Höhen-Animation statt
+  // abruptem Verschwinden) im DOM gemountet, auch für andere, bereits wieder geschlossene
+  // Verfügbarkeits-Status auf derselben Seite - ein ungescopter Locator wäre sonst mehrdeutig.
+  const azubiZeile = page.getByTestId('filtertag-zeile').filter({ hasText: 'Azubi' })
+  await azubiZeile.getByRole('button').filter({ hasText: 'Azubi' }).click()
 
-  await page.getByRole('button', { name: 'Stattdessen per Text-Formular hinzufügen' }).click()
+  await azubiZeile.getByRole('button', { name: 'Stattdessen per Text-Formular hinzufügen' }).click()
   const zeitfensterForm = page.locator('form').filter({ hasText: 'Zeitfenster hinzufügen' }).last()
   await zeitfensterForm.getByLabel('Wochentag').selectOption('5')
   await zeitfensterForm.getByLabel('Startzeit').fill('09:00')

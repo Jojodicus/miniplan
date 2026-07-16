@@ -229,3 +229,74 @@ def test_zuteilung_mixing_reduziert_wiederholte_paare(db_session, pfarrei, grupp
 
     # Mit starkem Mixing-Gewicht findet die Zuteilung eine Lösung ganz ohne wiederholte Paare.
     assert mit_mixing == 0
+
+
+def test_zuteilung_respektiert_persoenliche_einsatz_obergrenze(db_session, pfarrei, gruppe) -> None:
+    begrenzt = _mini(db_session, pfarrei, gruppe, "Begrenzt")
+    begrenzt.max_einsaetze_pro_monat = 1
+    db_session.commit()
+    frei = _mini(db_session, pfarrei, gruppe, "Frei")
+
+    miniplan = _miniplan(db_session, pfarrei)
+    for woche in range(3):
+        bedarf = Dienstbedarf(name="Kreuz", anzahl=1)
+        _gottesdienst(db_session, miniplan, [bedarf], date(2026, 7, 5) + timedelta(days=7 * woche))
+    db_session.refresh(miniplan)
+
+    vorschlag = zuteilung_vorschlagen(db_session, pfarrei.id, miniplan, zufallsstart=1)
+
+    einsaetze_begrenzt = sum(1 for zugeteilte in vorschlag.values() if begrenzt.id in zugeteilte)
+    assert einsaetze_begrenzt <= 1
+    # Die übrigen Stellen gehen an den unbegrenzten Mini statt unbesetzt zu bleiben.
+    assert sum(len(z) for z in vorschlag.values()) == 3
+    assert frei.id in {mini_id for zugeteilte in vorschlag.values() for mini_id in zugeteilte}
+
+
+def test_zuteilung_planweiter_standard_gilt_ohne_persoenliches_limit(
+    db_session, pfarrei, gruppe
+) -> None:
+    minis = [_mini(db_session, pfarrei, gruppe, f"Mini {i}") for i in range(2)]
+
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=7, jahr=2026, max_einsaetze_standard=1)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+    for woche in range(3):
+        bedarf = Dienstbedarf(name="Kreuz", anzahl=1)
+        _gottesdienst(db_session, miniplan, [bedarf], date(2026, 7, 5) + timedelta(days=7 * woche))
+    db_session.refresh(miniplan)
+
+    vorschlag = zuteilung_vorschlagen(db_session, pfarrei.id, miniplan, zufallsstart=1)
+
+    einsatz_anzahl: dict[int, int] = {m.id: 0 for m in minis}
+    for zugeteilte in vorschlag.values():
+        for mini_id in zugeteilte:
+            einsatz_anzahl[mini_id] += 1
+
+    # Nur 2 Minis für 3 Stellen bei Limit 1 je Mini -> eine Stelle bleibt zwangsläufig unbesetzt.
+    assert max(einsatz_anzahl.values()) <= 1
+    assert sum(einsatz_anzahl.values()) == 2
+
+
+def test_zuteilung_persoenliches_limit_uebersteuert_planweiten_standard(
+    db_session, pfarrei, gruppe
+) -> None:
+    # Planweiter Standard erlaubt 2, das persönliche Limit des Minis ist strenger (1) und muss
+    # gewinnen.
+    begrenzt = _mini(db_session, pfarrei, gruppe, "Begrenzt")
+    begrenzt.max_einsaetze_pro_monat = 1
+    db_session.commit()
+
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=7, jahr=2026, max_einsaetze_standard=2)
+    db_session.add(miniplan)
+    db_session.commit()
+    db_session.refresh(miniplan)
+    for woche in range(2):
+        bedarf = Dienstbedarf(name="Kreuz", anzahl=1)
+        _gottesdienst(db_session, miniplan, [bedarf], date(2026, 7, 5) + timedelta(days=7 * woche))
+    db_session.refresh(miniplan)
+
+    vorschlag = zuteilung_vorschlagen(db_session, pfarrei.id, miniplan, zufallsstart=1)
+
+    einsaetze_begrenzt = sum(1 for zugeteilte in vorschlag.values() if begrenzt.id in zugeteilte)
+    assert einsaetze_begrenzt <= 1

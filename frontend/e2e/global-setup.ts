@@ -3,7 +3,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const compose = 'docker compose -p miniplan-e2e -f docker-compose.e2e.yml'
+const compose =
+  'docker compose -p miniplan-e2e -f docker-compose.e2e.yml -f docker-compose.e2e-stubs.yml'
 const baseUrl = 'http://localhost:8100'
 
 async function waitUntilReady(url: string, timeoutMs = 120_000): Promise<void> {

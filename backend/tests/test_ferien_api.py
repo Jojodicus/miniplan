@@ -98,6 +98,22 @@ def test_ferien_aktualisieren_gibt_502_bei_netzwerkfehler(
     assert response.status_code == 502
 
 
+def test_ferien_aktualisieren_gibt_429_bei_rate_limit(
+    client: TestClient,
+    verantwortlicher_user: Nutzer,
+    pfarrei: Pfarrei,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_sync(pfarrei_arg, db):
+        raise ferien_sync.FerienSyncFehler("rate-limitiert", rate_limited=True)
+
+    monkeypatch.setattr("app.api.pfarreien.sync_ferien", fake_sync)
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(f"/api/pfarreien/{pfarrei.id}/ferien/aktualisieren", headers=headers)
+    assert response.status_code == 429
+
+
 def test_ferien_liste_ohne_verantwortlichen_verweigert(
     client: TestClient, betrachter_user: Nutzer, pfarrei: Pfarrei
 ) -> None:

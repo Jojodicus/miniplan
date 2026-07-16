@@ -165,4 +165,7 @@ def ferien_aktualisieren(
     try:
         return sync_ferien(pfarrei, db)
     except FerienSyncFehler as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
+        status_code = (
+            status.HTTP_429_TOO_MANY_REQUESTS if exc.rate_limited else status.HTTP_502_BAD_GATEWAY
+        )
+        raise HTTPException(status_code=status_code, detail=str(exc)) from None

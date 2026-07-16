@@ -706,6 +706,7 @@ def test_zuteilung_einstellungen_defaults_und_setzen(
     assert body["mindestabstand_tage"] == 6
     assert body["mixing_gewicht"] == 0.0
     assert body["wiederholung_gewicht"] == 0.0
+    assert body["max_einsaetze_standard"] is None
 
     response = client.put(
         f"{base}/zuteilung-einstellungen",
@@ -714,6 +715,7 @@ def test_zuteilung_einstellungen_defaults_und_setzen(
             "mindestabstand_tage": 10,
             "mixing_gewicht": 4.0,
             "wiederholung_gewicht": 1.5,
+            "max_einsaetze_standard": 3,
         },
         headers=headers,
     )
@@ -723,6 +725,7 @@ def test_zuteilung_einstellungen_defaults_und_setzen(
     assert body["mindestabstand_tage"] == 10
     assert body["mixing_gewicht"] == 4.0
     assert body["wiederholung_gewicht"] == 1.5
+    assert body["max_einsaetze_standard"] == 3
 
     # Ungültige Werte werden abgelehnt.
     response = client.put(

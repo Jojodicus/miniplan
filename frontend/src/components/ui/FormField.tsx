@@ -45,11 +45,60 @@ export const Input = forwardRef<
         } ${className}`}
         {...props}
       />
-      {error && <p className="mt-1 text-xs text-wine">{error}</p>}
+      {error && <p className="animate-fade mt-1 text-xs text-wine">{error}</p>}
     </div>
   )
 })
 Input.displayName = 'Input'
+
+// Regler mit optionaler Kerbe an einem Referenzwert (z.B. dem Standardwert einer Einstellung),
+// damit dessen Position auf der Skala sichtbar bleibt, während der Nutzer den Regler bewegt.
+export function Slider({
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  markerValue,
+  id,
+}: {
+  value: number
+  onChange: (value: number) => void
+  min: number
+  max: number
+  step?: number
+  markerValue?: number
+  id?: string
+}) {
+  const zuProzent = (wert: number) => ((wert - min) / (max - min)) * 100
+  const gefuellt = zuProzent(value)
+  return (
+    <div className="relative flex h-10 items-center">
+      <div
+        className="pointer-events-none absolute inset-x-0 h-1.5 rounded-full bg-line"
+        style={{
+          background: `linear-gradient(to right, var(--color-pine) ${gefuellt}%, var(--color-line) ${gefuellt}%)`,
+        }}
+      />
+      {markerValue !== undefined && (
+        <div
+          className="pointer-events-none absolute h-2.5 w-0.5 -translate-x-1/2 rounded-full bg-ink-faint/70"
+          style={{ left: `${zuProzent(markerValue)}%` }}
+        />
+      )}
+      <input
+        id={id}
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="relative w-full cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:mt-[-7px] [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-pine [&::-webkit-slider-thumb]:bg-paper [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-pine [&::-moz-range-thumb]:bg-paper [&::-moz-range-track]:bg-transparent"
+      />
+    </div>
+  )
+}
 
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
   ({ className = '', children, ...props }, ref) => (

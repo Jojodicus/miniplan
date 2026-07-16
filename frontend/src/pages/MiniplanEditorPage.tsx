@@ -32,15 +32,7 @@ import {
   Wand2,
   X,
 } from 'lucide-react'
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type SubmitEvent,
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import type { GruppenAnforderung } from '../api/dienstTypen'
@@ -69,6 +61,7 @@ import {
   miniplanZuweisungFixieren,
   miniplanZuweisungenTauschen,
   miniplanZuteilungEinstellungenSetzen,
+  ZUTEILUNG_DEFAULTS,
   type Miniplan,
   type MiniplanVorschauEingabe,
   type VorschauDienstbedarf,
@@ -82,7 +75,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
 import { Collapse } from '../components/ui/Collapse'
 import { DateInput } from '../components/ui/DateInput'
-import { CheckboxChip, Input, Label, Select } from '../components/ui/FormField'
+import { CheckboxChip, Input, Label, Select, Slider } from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { MarkdownTextarea } from '../components/ui/MarkdownTextarea'
@@ -90,7 +83,7 @@ import { Modal } from '../components/ui/Modal'
 import { PdfViewer } from '../components/ui/PdfViewer'
 import { Popover } from '../components/ui/Popover'
 import { TimeInput } from '../components/ui/TimeInput'
-import { useToast } from '../components/ui/Toast'
+import { useToast } from '../components/ui/useToast'
 import { formatDatumMitWochentag, monatsName } from '../lib/datum'
 import { useDocumentTitle } from '../lib/useDocumentTitle'
 
@@ -140,7 +133,11 @@ function StatusAnzeige({
     ungespeichert: 'text-gold-dark',
     fehler: 'text-wine',
   }
-  return <span className={`${className} ${farbe[status]}`}>{text[status]}</span>
+  return (
+    <span className={`${className} transition-colors duration-300 ${farbe[status]}`}>
+      {text[status]}
+    </span>
+  )
 }
 
 // Für die Gesamt-Anzeige neben dem Titel: der "schlechteste" Status gewinnt.
@@ -1092,14 +1089,75 @@ function GottesdienstKarte({
   const [editorOffen, setEditorOffen] = useState(oeffneEditor)
   const { showToast } = useToast()
   const istErstesRendern = useRef(true)
+  // Rückwärts-Lookup echte dienstbedarfId -> lokaler Schlüssel, bei jedem Rendern frisch berechnet
+  // (wie `zoomFactorRef` in PdfViewer) - der Sync-Effekt unten braucht den aktuellen Stand, ohne
+  // dass `bedarfListe`/`dienstbedarfIdMap` in dessen Dependency-Array stehen müssten (das würde bei
+  // jeder Draft-Änderung, z.B. jedem Tastenanschlag im Namensfeld, unnötig neu laufen). Nötig, weil
+  // ein frisch hinzugefügter Bedarf dauerhaft seinen "neu-*"-Schlüssel behält (siehe
+  // `dienstbedarfIdMap`) - "bestehend-<id>" wäre für ihn also der falsche Schlüssel.
+  const schluesselByDienstbedarfId = useRef<Map<number, string>>(new Map())
+  schluesselByDienstbedarfId.current = new Map(
+    bedarfListe
+      .map((b) => [dienstbedarfIdMap[b.schluessel] ?? b.dienstbedarfId, b.schluessel] as const)
+      .filter((eintrag): eintrag is [number, string] => eintrag[0] !== null),
+  )
 
   // Frisch angelegte/duplizierte Gottesdienste öffnen den Editor automatisch. Den Auslöser danach
-  // sofort zurücksetzen, damit ein späterer Remount (z.B. nach Füllen/Leeren via
-  // `zuteilungsRevision`) den Editor nicht erneut aufreißt.
+  // sofort zurücksetzen, damit er nicht bei jedem weiteren Rendern erneut greift.
   useEffect(() => {
     if (oeffneEditor) onEditorGeoeffnet?.(gottesdienst.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Server-Zuweisungen laufen "Füllen"/"Leeren"/Tauschen/Fixieren aus einer anderen Karte oder
+  // demselben Gottesdienst nach - diese Aktionen ändern die Zuweisungen serverseitig, ohne dass die
+  // Karte (die ihren State nur beim ersten Rendern aus den Props übernimmt) das sonst bemerken
+  // würde. Bewusst gemergt statt ersetzt und über `schluesselByDienstbedarfId` aufgelöst (nicht
+  // einfach `bestehend-${b.id}` angenommen) - sonst ginge die Zuordnung für einen frisch
+  // hinzugefügten, inzwischen gespeicherten Bedarf verloren, der dauerhaft seinen "neu-*"-Schlüssel
+  // behält. Getrennt von `bedarfListe`/den übrigen Draft-Feldern, damit dieser Sync nie den
+  // Autosave-Effekt auslöst (kein Remount mehr nötig).
+  useEffect(() => {
+    const resolveSchluessel = (id: number) =>
+      schluesselByDienstbedarfId.current.get(id) ?? `bestehend-${id}`
+    setServerZuweisungenMap((karte) => ({
+      ...karte,
+      ...Object.fromEntries(
+        gottesdienst.dienstbedarf.map((b) => [resolveSchluessel(b.id), b.zuweisungen]),
+      ),
+    }))
+    // `fixierteMiniIds` lebt (anders als die Zuweisungen oben) in `bedarfListe` selbst, weil Pin
+    // (dieser Effekt) und das lokale Hinzufügen über den Mini-Adder (`toggleMini`) hier dieselbe
+    // Quelle brauchen - ein per Pin-Button fest übernommener Mini muss dauerhaft in den Draft
+    // einfließen, sonst würde ihn der nächste Autosave (der `fixierteMiniIds` unverändert
+    // mitschickt) wieder als nicht-fixiert speichern. Deshalb bewusst per Inhalts-Vergleich
+    // gebailoutet (gleiche Referenz zurückgeben, wenn sich nichts geändert hat) - andernfalls würde
+    // jeder Reload (auch durch Mutationen an anderen Karten) hier unnötig einen weiteren
+    // Autosave-Lauf auslösen.
+    const fixierteJeSchluessel = new Map(
+      gottesdienst.dienstbedarf.map((b) => [
+        resolveSchluessel(b.id),
+        b.zuweisungen.filter((z) => z.manuell_fixiert).map((z) => z.mini.id),
+      ]),
+    )
+    setBedarfListe((liste) => {
+      let geaendert = false
+      const aktualisiert = liste.map((b) => {
+        const frisch = fixierteJeSchluessel.get(b.schluessel)
+        if (
+          frisch === undefined ||
+          (frisch.length === b.fixierteMiniIds.length &&
+            frisch.every((id) => b.fixierteMiniIds.includes(id)))
+        ) {
+          return b
+        }
+        geaendert = true
+        return { ...b, fixierteMiniIds: frisch }
+      })
+      return geaendert ? aktualisiert : liste
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gottesdienst.dienstbedarf])
 
   function updateBedarf(schluessel: string, patch: Partial<WorkingBedarf>) {
     setBedarfListe((liste) =>
@@ -1648,6 +1706,7 @@ function ZuteilungEinstellungenPopover({
   const [mindestabstand, setMindestabstand] = useState(miniplan.mindestabstand_tage)
   const [mixing, setMixing] = useState(miniplan.mixing_gewicht)
   const [wiederholung, setWiederholung] = useState(miniplan.wiederholung_gewicht)
+  const [maxEinsaetze, setMaxEinsaetze] = useState(miniplan.max_einsaetze_standard)
 
   useEffect(() => {
     if (!open) return
@@ -1655,6 +1714,7 @@ function ZuteilungEinstellungenPopover({
     setMindestabstand(miniplan.mindestabstand_tage)
     setMixing(miniplan.mixing_gewicht)
     setWiederholung(miniplan.wiederholung_gewicht)
+    setMaxEinsaetze(miniplan.max_einsaetze_standard)
   }, [open, miniplan])
 
   return (
@@ -1673,6 +1733,7 @@ function ZuteilungEinstellungenPopover({
             mindestabstand_tage: mindestabstand,
             mixing_gewicht: mixing,
             wiederholung_gewicht: wiederholung,
+            max_einsaetze_standard: maxEinsaetze,
           })
         }}
         className="flex flex-col gap-4"
@@ -1681,41 +1742,42 @@ function ZuteilungEinstellungenPopover({
           <Label htmlFor="einstellung-fairness" hint="0 = aus">
             Fairness-Stärke
           </Label>
-          <Input
+          <Slider
             id="einstellung-fairness"
-            type="number"
             min={0}
-            max={100}
+            max={20}
             step={0.5}
             value={fairness}
-            onChange={(e) => setFairness(Number(e.target.value))}
+            markerValue={ZUTEILUNG_DEFAULTS.fairness_gewicht}
+            onChange={setFairness}
           />
         </div>
         <div>
           <Label htmlFor="einstellung-abstand" hint="Tage">
             Mindestabstand zwischen Diensten
           </Label>
-          <Input
+          <Slider
             id="einstellung-abstand"
-            type="number"
             min={0}
             max={31}
+            step={1}
             value={mindestabstand}
-            onChange={(e) => setMindestabstand(Number(e.target.value))}
+            markerValue={ZUTEILUNG_DEFAULTS.mindestabstand_tage}
+            onChange={setMindestabstand}
           />
         </div>
         <div>
           <Label htmlFor="einstellung-mixing" hint="0 = aus">
             Teams durchmischen
           </Label>
-          <Input
+          <Slider
             id="einstellung-mixing"
-            type="number"
             min={0}
-            max={100}
+            max={20}
             step={0.5}
             value={mixing}
-            onChange={(e) => setMixing(Number(e.target.value))}
+            markerValue={ZUTEILUNG_DEFAULTS.mixing_gewicht}
+            onChange={setMixing}
           />
           <p className="mt-1 text-xs text-ink-faint">
             Höher = seltener dieselben Minis gemeinsam einteilen.
@@ -1725,27 +1787,60 @@ function ZuteilungEinstellungenPopover({
           <Label htmlFor="einstellung-wiederholung" hint="0 = aus">
             Feste Zuteilung bevorzugen
           </Label>
-          <Input
+          <Slider
             id="einstellung-wiederholung"
-            type="number"
             min={0}
-            max={100}
+            max={20}
             step={0.5}
             value={wiederholung}
-            onChange={(e) => setWiederholung(Number(e.target.value))}
+            markerValue={ZUTEILUNG_DEFAULTS.wiederholung_gewicht}
+            onChange={setWiederholung}
           />
           <p className="mt-1 text-xs text-ink-faint">
             Höher = Minis bleiben eher bei demselben wiederkehrenden Dienst (Gegenteil von
             Durchmischen).
           </p>
         </div>
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" size="sm" onClick={onClose}>
-            Abbrechen
+        <div className="border-t border-line pt-4">
+          <Label htmlFor="einstellung-max-einsaetze" hint="leer = kein Limit">
+            Max. Einsätze pro Mini
+          </Label>
+          <Input
+            id="einstellung-max-einsaetze"
+            type="number"
+            min={0}
+            placeholder="kein Limit"
+            value={maxEinsaetze ?? ''}
+            onChange={(e) => setMaxEinsaetze(e.target.value === '' ? null : Number(e.target.value))}
+          />
+          <p className="mt-1 text-xs text-ink-faint">
+            Gilt für alle Minis ohne eigenes Limit (siehe Mini-Stammdaten) - harte Grenze, die das
+            Füllen nie überschreitet.
+          </p>
+        </div>
+        <div className="flex justify-between gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setFairness(ZUTEILUNG_DEFAULTS.fairness_gewicht)
+              setMindestabstand(ZUTEILUNG_DEFAULTS.mindestabstand_tage)
+              setMixing(ZUTEILUNG_DEFAULTS.mixing_gewicht)
+              setWiederholung(ZUTEILUNG_DEFAULTS.wiederholung_gewicht)
+              setMaxEinsaetze(ZUTEILUNG_DEFAULTS.max_einsaetze_standard)
+            }}
+          >
+            Zurücksetzen
           </Button>
-          <Button type="submit" size="sm">
-            Speichern
-          </Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+              Abbrechen
+            </Button>
+            <Button type="submit" size="sm">
+              Speichern
+            </Button>
+          </div>
         </div>
       </form>
     </Popover>
@@ -1781,11 +1876,6 @@ export function MiniplanEditorPage() {
   const [abschliessenBestaetigen, setAbschliessenBestaetigen] = useState(false)
   const [einstellungenOffen, setEinstellungenOffen] = useState(false)
   const einstellungenButtonRef = useRef<HTMLButtonElement>(null)
-  // Jede Gottesdienst-Karte hält ihre Zuweisungen in eigenem State (nur beim ersten Rendern aus den
-  // Props übernommen) - nach "Füllen"/"Leeren"/Tauschen/Fixieren ändert sich das serverseitig, ohne
-  // dass die Karten das von selbst bemerken. Ein Revisions-Zähler im Karten-`key` erzwingt daher
-  // einen Remount mit den frisch geladenen Zuweisungen.
-  const [zuteilungsRevision, setZuteilungsRevision] = useState(0)
   const { showToast } = useToast()
   const dndSensoren = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
@@ -1801,25 +1891,12 @@ export function MiniplanEditorPage() {
   }, [id, planId])
 
   // Von "Füllen", "Leeren" und den Drag-Aktionen (Tauschen/Fixieren) gemeinsam genutzt: alle ändern
-  // Zuweisungen serverseitig, ohne dass die betroffenen Karten das selbst bemerken.
-  // Der Remount über den Revisions-Zähler im Karten-`key` entfernt dabei kurzzeitig auch das
-  // fokussierte Element (z.B. den Pin-Button) aus dem DOM - der Browser springt dann von selbst an
-  // den Seitenanfang, weil der Fokus auf <body> zurückfällt. Scroll-Position daher merken und nach
-  // dem Remount (vor dem nächsten Paint) wiederherstellen.
-  const scrollRestoreRef = useRef<number | null>(null)
-
+  // Zuweisungen serverseitig. `GottesdienstKarte` übernimmt die aufgefrischten Zuweisungen über
+  // einen eigenen Sync-Effekt aus den Props (kein erzwungener Remount mehr nötig), reagiert also
+  // von selbst auf die neuen Props aus `setMiniplan`.
   function refreshNachMutation(aktualisiert: Miniplan) {
-    scrollRestoreRef.current = window.scrollY
     setMiniplan(aktualisiert)
-    setZuteilungsRevision((revision) => revision + 1)
   }
-
-  useLayoutEffect(() => {
-    if (scrollRestoreRef.current !== null) {
-      window.scrollTo(window.scrollX, scrollRestoreRef.current)
-      scrollRestoreRef.current = null
-    }
-  }, [zuteilungsRevision])
 
   async function handleFuellen() {
     setFuelltGerade(true)
@@ -2141,7 +2218,7 @@ export function MiniplanEditorPage() {
           <div className="flex min-w-0 flex-col gap-6">
             {miniplan.gottesdienste.map((gottesdienst) => (
               <GottesdienstKarte
-                key={`${gottesdienst.id}-${zuteilungsRevision}`}
+                key={gottesdienst.id}
                 gottesdienst={gottesdienst}
                 pfarreiId={id}
                 miniplanId={planId}

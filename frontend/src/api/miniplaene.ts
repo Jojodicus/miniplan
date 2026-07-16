@@ -9,6 +9,16 @@ export interface ZuteilungEinstellungen {
   mindestabstand_tage: number
   mixing_gewicht: number
   wiederholung_gewicht: number
+  max_einsaetze_standard: number | null
+}
+
+// Muss mit den Defaults von `ZuteilungConfig` in `backend/app/services/zuteilung.py` übereinstimmen.
+export const ZUTEILUNG_DEFAULTS: ZuteilungEinstellungen = {
+  fairness_gewicht: 1.0,
+  mindestabstand_tage: 6,
+  mixing_gewicht: 0.0,
+  wiederholung_gewicht: 0.0,
+  max_einsaetze_standard: null,
 }
 
 export interface Miniplan extends ZuteilungEinstellungen {

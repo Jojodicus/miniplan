@@ -38,6 +38,10 @@ _rate_limited_until = 0.0
 class FerienSyncFehler(Exception):
     """Wird geworfen, wenn die externe Ferien-Quelle nicht erreichbar ist."""
 
+    def __init__(self, message: str, *, rate_limited: bool = False) -> None:
+        super().__init__(message)
+        self.rate_limited = rate_limited
+
 
 def _schuljahr(datum: date) -> str:
     if datum.month >= 9:
@@ -59,7 +63,8 @@ def _get_mit_retry(client: httpx.Client, url: str) -> httpx.Response:
     global _rate_limited_until
     if time.monotonic() < _rate_limited_until:
         raise FerienSyncFehler(
-            "Externe Ferien-Quelle ist aktuell rate-limitiert, bitte später erneut versuchen"
+            "Externe Ferien-Quelle ist aktuell rate-limitiert, bitte später erneut versuchen",
+            rate_limited=True,
         )
     letzter_fehler: httpx.HTTPError | None = None
     for versuch in range(_RETRY_VERSUCHE):
@@ -71,7 +76,11 @@ def _get_mit_retry(client: httpx.Client, url: str) -> httpx.Response:
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 429:
                 _rate_limited_until = time.monotonic() + _RATE_LIMIT_COOLDOWN_SECONDS
-                raise
+                raise FerienSyncFehler(
+                    "Externe Ferien-Quelle ist aktuell rate-limitiert, bitte später erneut"
+                    " versuchen",
+                    rate_limited=True,
+                ) from exc
             letzter_fehler = exc
             if exc.response.status_code not in (502, 503, 504):
                 raise

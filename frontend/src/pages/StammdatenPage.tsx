@@ -77,6 +77,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
 import { Row } from '../components/ui/CardSections'
 import { EmptyState } from '../components/ui/EmptyState'
+import { Collapse } from '../components/ui/Collapse'
 import { CheckboxChip, Input, Label, Select } from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
@@ -84,7 +85,7 @@ import { Modal } from '../components/ui/Modal'
 import { Popover } from '../components/ui/Popover'
 import { ListSkeleton } from '../components/ui/Skeleton'
 import { TabBar } from '../components/ui/TabBar'
-import { useToast } from '../components/ui/Toast'
+import { useToast } from '../components/ui/useToast'
 import { formatDatum } from '../lib/datum'
 import { useDocumentTitle } from '../lib/useDocumentTitle'
 
@@ -470,6 +471,7 @@ function MinisSection({
   const [name, setName] = useState('')
   const [gruppeId, setGruppeId] = useState<number | ''>('')
   const [ausgewaehlterFiltertag, setAusgewaehlterFiltertag] = useState<Filtertag | null>(null)
+  const [maxEinsaetze, setMaxEinsaetze] = useState<number | null>(null)
   const { showToast } = useToast()
 
   const reload = useCallback(() => {
@@ -493,6 +495,7 @@ function MinisSection({
     setName('')
     setGruppeId(gruppen[0]?.id ?? '')
     setAusgewaehlterFiltertag(null)
+    setMaxEinsaetze(null)
     setError(null)
     setModalOffen(true)
   }
@@ -502,6 +505,7 @@ function MinisSection({
     setName(mini.name)
     setGruppeId(mini.gruppe_id)
     setAusgewaehlterFiltertag(mini.filtertags[0] ?? null)
+    setMaxEinsaetze(mini.max_einsaetze_pro_monat)
     setError(null)
     setModalOffen(true)
   }
@@ -514,6 +518,7 @@ function MinisSection({
       name,
       gruppe_id: gruppeId,
       filtertags: ausgewaehlterFiltertag ? [ausgewaehlterFiltertag] : [],
+      max_einsaetze_pro_monat: maxEinsaetze,
     }
     try {
       if (editId === null) {
@@ -596,6 +601,9 @@ function MinisSection({
                     {filtertagLabel(filtertags, tag)}
                   </Badge>
                 ))}
+                {mini.max_einsaetze_pro_monat !== null && (
+                  <Badge tone="neutral">max. {mini.max_einsaetze_pro_monat}× pro Miniplan</Badge>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 <IconButton label="Bearbeiten" onClick={() => oeffnenBearbeiten(mini)}>
@@ -640,6 +648,21 @@ function MinisSection({
             onChange={setAusgewaehlterFiltertag}
             idPrefix="mini"
           />
+          <div>
+            <Label htmlFor="mini-max-einsaetze" hint="leer = kein Limit">
+              Max. Einsätze pro Miniplan
+            </Label>
+            <Input
+              id="mini-max-einsaetze"
+              type="number"
+              min={0}
+              placeholder="kein Limit"
+              value={maxEinsaetze ?? ''}
+              onChange={(e) =>
+                setMaxEinsaetze(e.target.value === '' ? null : Number(e.target.value))
+              }
+            />
+          </div>
           <ModalAktionen
             onCancel={() => setModalOffen(false)}
             submitLabel={editId === null ? 'Anlegen' : 'Speichern'}
@@ -1465,7 +1488,11 @@ function FiltertagsSection({
       ) : (
         <div>
           {filtertags.map((filtertag) => (
-            <div key={filtertag.id} className="border-b border-line last:border-b-0">
+            <div
+              key={filtertag.id}
+              data-testid="filtertag-zeile"
+              className="border-b border-line last:border-b-0"
+            >
               {bearbeitenId === filtertag.id ? (
                 <div className="px-5 py-3">
                   <FiltertagFormFelder
@@ -1519,7 +1546,7 @@ function FiltertagsSection({
                   </div>
                 </div>
               )}
-              {offeneSperrzeiten.has(filtertag.id) && (
+              <Collapse open={offeneSperrzeiten.has(filtertag.id)}>
                 <div className="bg-pine-tint/20">
                   <WochenSperrzeiten
                     filtertagId={filtertag.id}
@@ -1543,7 +1570,7 @@ function FiltertagsSection({
                     <NeuerBlockerForm filtertagId={filtertag.id} onCreate={handleBlockerCreate} />
                   )}
                 </div>
-              )}
+              </Collapse>
             </div>
           ))}
         </div>
@@ -1591,6 +1618,7 @@ function FerienFeiertageSection({ pfarreiId, aktiv }: { pfarreiId: number; aktiv
   const [speichertGerade, setSpeichertGerade] = useState(false)
   const [gespeichert, setGespeichert] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [rateLimited, setRateLimited] = useState(false)
 
   const [feiertage, setFeiertage] = useState<Feiertag[]>([])
   const [feiertageGeladen, setFeiertageGeladen] = useState(false)
@@ -1623,6 +1651,7 @@ function FerienFeiertageSection({ pfarreiId, aktiv }: { pfarreiId: number; aktiv
 
   async function handleSpeichern() {
     setError(null)
+    setRateLimited(false)
     setGespeichert(false)
     setSpeichertGerade(true)
     try {
@@ -1637,7 +1666,11 @@ function FerienFeiertageSection({ pfarreiId, aktiv }: { pfarreiId: number; aktiv
       reloadFeiertage()
       setGespeichert(true)
     } catch (err) {
-      setError(fehlerText(err, 'Fehler beim Speichern des Bundeslands'))
+      if (err instanceof ApiError && err.status === 429) {
+        setRateLimited(true)
+      } else {
+        setError(fehlerText(err, 'Fehler beim Speichern des Bundeslands'))
+      }
     } finally {
       setSpeichertGerade(false)
     }
@@ -1681,6 +1714,14 @@ function FerienFeiertageSection({ pfarreiId, aktiv }: { pfarreiId: number; aktiv
         {error && (
           <div className="px-5 pt-4">
             <Alert>{error}</Alert>
+          </div>
+        )}
+        {rateLimited && (
+          <div className="px-5 pt-4">
+            <Alert tone="info">
+              Die externe Ferien-Quelle begrenzt aktuell die Anfragen. Bitte in ein paar Minuten
+              erneut versuchen.
+            </Alert>
           </div>
         )}
         <div className="flex flex-wrap items-end gap-4 p-5">

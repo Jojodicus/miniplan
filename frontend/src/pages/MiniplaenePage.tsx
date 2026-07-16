@@ -19,7 +19,7 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { Input, Label, Select } from '../components/ui/FormField'
 import { ListSkeleton } from '../components/ui/Skeleton'
-import { useToast } from '../components/ui/Toast'
+import { useToast } from '../components/ui/useToast'
 import { MONATE, monatsName } from '../lib/datum'
 import { useDocumentTitle } from '../lib/useDocumentTitle'
 

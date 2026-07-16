@@ -29,6 +29,33 @@ def test_mini_anlegen_und_auflisten(
     assert len(response.json()) == 1
 
 
+def test_mini_anlegen_mit_max_einsaetze_pro_monat(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe
+) -> None:
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    response = client.post(
+        f"/api/pfarreien/{pfarrei.id}/minis",
+        json={
+            "name": "Max Muster",
+            "gruppe_id": gruppe.id,
+            "filtertags": [],
+            "max_einsaetze_pro_monat": 2,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["max_einsaetze_pro_monat"] == 2
+
+    response = client.put(
+        f"/api/pfarreien/{pfarrei.id}/minis/{body['id']}",
+        json={"name": "Max Muster", "gruppe_id": gruppe.id, "filtertags": []},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["max_einsaetze_pro_monat"] is None
+
+
 def test_mini_anlegen_mit_fremder_gruppe_abgelehnt(
     client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, db_session
 ) -> None:

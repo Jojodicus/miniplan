@@ -49,6 +49,7 @@ export function PdfViewer({
   const [slotNumPages, setSlotNumPages] = useState<Record<SlotName, number>>({ a: 0, b: 0 })
   const [activeSlot, setActiveSlot] = useState<SlotName>('a')
   const geladeneDaten = useRef<Uint8Array | null>(null)
+  const hatDaten = Boolean(data)
 
   useEffect(() => {
     if (data === geladeneDaten.current) return
@@ -83,7 +84,7 @@ export function PdfViewer({
     })
     observer.observe(contentEl)
     return () => observer.disconnect()
-  }, [Boolean(data)])
+  }, [hatDaten])
 
   // Container-Breite laufend messen (Layout-Wechsel, Fenster-/Orientierungswechsel), damit der
   // Fit-Wert (= 100%) aktuell bleibt.
@@ -95,7 +96,7 @@ export function PdfViewer({
     })
     observer.observe(scrollEl)
     return () => observer.disconnect()
-  }, [Boolean(data)])
+  }, [hatDaten])
 
   function zoom(delta: number) {
     setZoomFactor(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoomFactor + delta)))
@@ -115,7 +116,7 @@ export function PdfViewer({
     }
     scrollEl.addEventListener('wheel', handleWheel, { passive: false })
     return () => scrollEl.removeEventListener('wheel', handleWheel)
-  }, [Boolean(data)])
+  }, [hatDaten])
 
   function slotGeladen(slot: SlotName, dieseDaten: Uint8Array, numPages: number) {
     setSlotNumPages((seiten) => ({ ...seiten, [slot]: numPages }))

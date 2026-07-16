@@ -27,6 +27,7 @@ class ZuteilungEinstellungen(BaseModel):
     mindestabstand_tage: int = Field(ge=0, le=31)
     mixing_gewicht: float = Field(ge=0, le=100)
     wiederholung_gewicht: float = Field(ge=0, le=100)
+    max_einsaetze_standard: int | None = Field(default=None, ge=0)
 
 
 class MiniplanOut(BaseModel):
@@ -43,6 +44,7 @@ class MiniplanOut(BaseModel):
     mindestabstand_tage: int
     mixing_gewicht: float
     wiederholung_gewicht: float
+    max_einsaetze_standard: int | None
     gottesdienste: list[GottesdienstOut]
 
 

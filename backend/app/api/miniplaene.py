@@ -235,6 +235,7 @@ def zuteilung_einstellungen_setzen(
     miniplan.mindestabstand_tage = daten.mindestabstand_tage
     miniplan.mixing_gewicht = daten.mixing_gewicht
     miniplan.wiederholung_gewicht = daten.wiederholung_gewicht
+    miniplan.max_einsaetze_standard = daten.max_einsaetze_standard
     db.commit()
     db.refresh(miniplan)
     return miniplan

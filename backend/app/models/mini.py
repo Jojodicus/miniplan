@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, ForeignKey, String
+from sqlalchemy import JSON, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -19,5 +19,11 @@ class Mini(Base):
     gruppe_id: Mapped[int] = mapped_column(ForeignKey("gruppen.id"))
     name: Mapped[str] = mapped_column(String(255))
     filtertags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Persönliche Obergrenze für Einsätze pro Miniplan (Monat) - übersteuert, falls gesetzt, den
+    # planweiten Standard `Miniplan.max_einsaetze_standard` (siehe services/zuteilung.py). None =
+    # kein persönliches Limit.
+    max_einsaetze_pro_monat: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None
+    )
 
     gruppe: Mapped["Gruppe"] = relationship()

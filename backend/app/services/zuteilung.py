@@ -54,6 +54,14 @@ class _Slot:
     mini_id: int | None = None
 
 
+def _effektives_maximum(mini: Mini, miniplan_standard: int | None) -> int | None:
+    """None = kein Limit. Ein pro Mini gesetztes `max_einsaetze_pro_monat` übersteuert den
+    planweiten Standard, nicht umgekehrt."""
+    if mini.max_einsaetze_pro_monat is not None:
+        return mini.max_einsaetze_pro_monat
+    return miniplan_standard
+
+
 def _mini_passt(
     mini: Mini,
     slot: _Slot,
@@ -67,6 +75,18 @@ def _mini_passt(
     if mini.id in belegte_minis:
         return False
     return not ist_mini_blockiert(mini, slot.datum, slot.zeit)
+
+
+def _unter_maximum(
+    mini: Mini,
+    einsatz_anzahl: dict[int, int],
+    max_pro_mini: dict[int, int | None],
+) -> bool:
+    """Nur relevant, wenn eine Zuteilung den Einsatz-Zähler des Minis tatsächlich erhöht (neue
+    Zuteilung, Ersatz-Zug) - bei einem reinen Tausch zweier bereits belegter Stellen bleibt der
+    Zähler pro Mini unverändert, dort greift diese Prüfung bewusst nicht."""
+    maximum = max_pro_mini[mini.id]
+    return maximum is None or einsatz_anzahl[mini.id] < maximum
 
 
 def _badness(
@@ -207,10 +227,16 @@ def _greedy_konstruktion(
     belegt_je_gottesdienst: dict[int, set[int]],
     ist_mini_blockiert,
     zufall: random.Random,
+    max_pro_mini: dict[int, int | None],
 ) -> None:
     for slot in slots:
         belegte = belegt_je_gottesdienst[slot.gottesdienst_id]
-        kandidaten = [m for m in minis if _mini_passt(m, slot, belegte, ist_mini_blockiert)]
+        kandidaten = [
+            m
+            for m in minis
+            if _mini_passt(m, slot, belegte, ist_mini_blockiert)
+            and _unter_maximum(m, einsatz_anzahl, max_pro_mini)
+        ]
         if not kandidaten:
             continue
         minimaler_einsatz = min(einsatz_anzahl[m.id] for m in kandidaten)
@@ -231,6 +257,7 @@ def _simulated_annealing(
     zufall: random.Random,
     config: ZuteilungConfig,
     fixierte_belegung: list[tuple[int, tuple[object, ...], int]],
+    max_pro_mini: dict[int, int | None],
 ) -> None:
     besetzte = [s for s in slots if s.mini_id is not None]
     if len(besetzte) < 2:
@@ -285,6 +312,7 @@ def _simulated_annealing(
                 for m in minis
                 if m.id != slot.mini_id
                 and _mini_passt(m, slot, belegte_ohne_eigene, ist_mini_blockiert)
+                and _unter_maximum(m, einsatz_anzahl, max_pro_mini)
             ]
             if not kandidaten:
                 continue
@@ -324,10 +352,11 @@ def zuteilung_vorschlagen(
     zurückgeliefert, fließen aber in die Fairness-/Belegungs-Berechnung ein. Harte Constraints
     (Gruppen-Mindestanzahl, erforderliche Filtertags, Verfügbarkeit laut
     `services/verfuegbarkeit.ist_blockiert`, keine Doppelbelegung eines Minis innerhalb eines
-    Gottesdienstes) werden nie verletzt - bleibt dafür kein passender Mini übrig, bleibt die
-    Stelle unbesetzt. Darüber hinaus optimiert eine simulierte Abkühlung (Swap-/Ersatz-Züge) auf
-    Fairness (möglichst gleichmäßige Diensthäufigkeit) und Abstand (kein Mini an zu dicht
-    aufeinanderfolgenden Terminen).
+    Gottesdienstes, Einsatz-Obergrenze aus `Mini.max_einsaetze_pro_monat`/
+    `Miniplan.max_einsaetze_standard`) werden nie verletzt - bleibt dafür kein passender Mini
+    übrig, bleibt die Stelle unbesetzt. Darüber hinaus optimiert eine simulierte Abkühlung
+    (Swap-/Ersatz-Züge) auf Fairness (möglichst gleichmäßige Diensthäufigkeit) und Abstand (kein
+    Mini an zu dicht aufeinanderfolgenden Terminen).
 
     Liefert `dienstbedarf_id -> [mini_id, ...]` nur für die neu zugeteilten (nicht fixierten)
     Plätze.
@@ -368,8 +397,16 @@ def zuteilung_vorschlagen(
                     einsatz_anzahl[zuweisung.mini_id] += 1
                     fixierte_belegung.append((gottesdienst.id, signatur, zuweisung.mini_id))
 
+    max_pro_mini = {m.id: _effektives_maximum(m, miniplan.max_einsaetze_standard) for m in minis}
+
     _greedy_konstruktion(
-        slots, minis, einsatz_anzahl, belegt_je_gottesdienst, _ist_mini_blockiert, zufall
+        slots,
+        minis,
+        einsatz_anzahl,
+        belegt_je_gottesdienst,
+        _ist_mini_blockiert,
+        zufall,
+        max_pro_mini,
     )
     _simulated_annealing(
         slots,
@@ -381,6 +418,7 @@ def zuteilung_vorschlagen(
         zufall,
         config,
         fixierte_belegung,
+        max_pro_mini,
     )
 
     ergebnis: dict[int, list[int]] = {}

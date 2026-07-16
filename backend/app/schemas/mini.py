@@ -5,6 +5,7 @@ class MiniCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     gruppe_id: int
     filtertags: list[str] = []
+    max_einsaetze_pro_monat: int | None = Field(default=None, ge=0)
 
 
 class MiniUpdate(MiniCreate):
@@ -19,3 +20,4 @@ class MiniOut(BaseModel):
     gruppe_id: int
     name: str
     filtertags: list[str]
+    max_einsaetze_pro_monat: int | None

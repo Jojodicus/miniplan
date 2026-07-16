@@ -5,12 +5,6 @@ services:
       - "8100:8000"
     tmpfs:
       - /data:uid=1000,gid=1000
-    environment:
-      # Zeigt auf den in main.py nur hier aktivierten Stub statt der echten, mit anderen
-      # Nutzern geteilten externen Quelle - deren Rate-Limit wäre sonst eine externe,
-      # nicht-deterministische Fehlerquelle für die Playwright-Suite.
-      MINIPLAN_ENABLE_TEST_STUBS: "1"
-      MINIPLAN_FERIEN_API_URL: "http://localhost:8000/api/_e2e-stubs/ferien-api/holidays/{bundesland}/{jahr}"
     entrypoint: ["sh", "-c"]
     command:
       - >

@@ -34,7 +34,7 @@ import {
   type Pfarrei,
 } from '../api/pfarreien'
 import { AppShell } from '../components/layout/AppShell'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -45,7 +45,7 @@ import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { ListSkeleton } from '../components/ui/Skeleton'
 import { Modal } from '../components/ui/Modal'
 import { Popover } from '../components/ui/Popover'
-import { useToast } from '../components/ui/Toast'
+import { useToast } from '../components/ui/useToast'
 import { useDocumentTitle } from '../lib/useDocumentTitle'
 
 const ROLLEN: { wert: PfarreiRolle; label: string }[] = [

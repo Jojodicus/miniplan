@@ -44,6 +44,9 @@ class Miniplan(Base):
     mindestabstand_tage: Mapped[int] = mapped_column(Integer, default=6, server_default="6")
     mixing_gewicht: Mapped[float] = mapped_column(Float, default=0.0, server_default="0.0")
     wiederholung_gewicht: Mapped[float] = mapped_column(Float, default=0.0, server_default="0.0")
+    # Planweite Standard-Obergrenze für Einsätze pro Mini, sofern der einzelne Mini kein eigenes
+    # `Mini.max_einsaetze_pro_monat` gesetzt hat. None = kein Limit.
+    max_einsaetze_standard: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
 
     gottesdienste: Mapped[list["Gottesdienst"]] = relationship(
         back_populates="miniplan",

@@ -3,7 +3,8 @@
 # reisst ihn beim Beenden (Ctrl+C) wieder ab.
 # Nutzt dieselbe docker-compose.e2e.yml wie die Playwright-Tests (Port 8100,
 # tmpfs statt Volume, seedet automatisch Pfarrei "St. Beispiel" +
-# admin@example.com / geheim123).
+# admin@example.com / geheim123), aber ohne den Ferien-Stub-Override der Playwright-Suite
+# (siehe docker-compose.e2e-stubs.yml) - hier gibt es also echte Ferien-Daten.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

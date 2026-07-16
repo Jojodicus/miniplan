@@ -11,12 +11,14 @@ export interface Mini {
   gruppe_id: number
   name: string
   filtertags: Filtertag[]
+  max_einsaetze_pro_monat: number | null
 }
 
 export interface MiniEingabe {
   name: string
   gruppe_id: number
   filtertags: Filtertag[]
+  max_einsaetze_pro_monat: number | null
 }
 
 export function minisListe(pfarreiId: number): Promise<Mini[]> {
