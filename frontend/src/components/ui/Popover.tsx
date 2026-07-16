@@ -8,6 +8,11 @@ const EXIT_DURATION_MS = 150
  * Am Auslöser (`anchorRef`) verankertes Popover (Portal auf `document.body`) für kompakte
  * "Neu anlegen"-Formulare - im Gegensatz zum zentrierten {@link Modal}, das für umfangreiche
  * Formulare gedacht ist. Schließt per ESC und Klick außerhalb von Popover und Auslöser.
+ *
+ * Gehört zum "kleines Dropdown"-Größen-Tier (siehe Kommentar in Modal.tsx), daher `rounded-lg` /
+ * `shadow-lg shadow-ink/10` statt der `rounded-xl` / `shadow-xl shadow-ink/20` des Modals - der
+ * (optionale) Titel bekommt trotzdem einen eigenen, vom Inhalt per `border-b` abgesetzten
+ * Header-Block wie `Modal`/`Card`, nur in dieser kleineren Größe (`px-3 py-2.5` statt `px-5 py-4`).
  */
 export function Popover({
   open,
@@ -26,8 +31,8 @@ export function Popover({
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<
-    | { left: number; maxHeight: number; top: number; bottom?: undefined }
-    | { left: number; maxHeight: number; bottom: number; top?: undefined }
+    | { left: number; maxHeight: number; width: number; top: number; bottom?: undefined }
+    | { left: number; maxHeight: number; width: number; bottom: number; top?: undefined }
     | null
   >(null)
 
@@ -38,8 +43,11 @@ export function Popover({
       if (!anchor) return
       const rect = anchor.getBoundingClientRect()
       const rand = 8
+      // Breite an den Viewport klemmen - sonst kann `left` auf schmalen (Mobil-)Viewports negativ
+      // werden und das Popover läuft über den Bildschirmrand hinaus.
+      const effectiveWidth = Math.min(width, window.innerWidth - 2 * rand)
       // Bevorzugt linksbündig unter dem Auslöser, aber am Viewport-Rand geklemmt.
-      const left = Math.min(Math.max(rand, rect.left), window.innerWidth - width - rand)
+      const left = Math.min(Math.max(rand, rect.left), window.innerWidth - effectiveWidth - rand)
       const platzUnten = window.innerHeight - rect.bottom - rand
       const platzOben = rect.top - rand
       // Unterhalb des Auslösers platzieren, außer dort ist zu wenig Platz und oben ist mehr -
@@ -47,9 +55,14 @@ export function Popover({
       // unterhalb des sichtbaren Bereichs landen. Bei "oben" über `bottom` statt `top` verankern,
       // damit es tatsächlich direkt am Auslöser wächst statt an der Viewport-Oberkante zu kleben.
       if (platzUnten < 200 && platzOben > platzUnten) {
-        setPosition({ bottom: window.innerHeight - rect.top + 6, left, maxHeight: platzOben })
+        setPosition({
+          bottom: window.innerHeight - rect.top + 6,
+          left,
+          maxHeight: platzOben,
+          width: effectiveWidth,
+        })
       } else {
-        setPosition({ top: rect.bottom + 6, left, maxHeight: platzUnten })
+        setPosition({ top: rect.bottom + 6, left, maxHeight: platzUnten, width: effectiveWidth })
       }
     }
     platzieren()
@@ -91,13 +104,19 @@ export function Popover({
         top: position.top,
         bottom: position.bottom,
         left: position.left,
-        width,
+        width: position.width,
         maxHeight: Math.max(position.maxHeight, 120),
       }}
-      className={`${closing ? 'animate-sink-out' : 'animate-rise'} fixed z-50 overflow-y-auto rounded-xl border border-line bg-paper p-4 shadow-xl shadow-ink/20`}
+      className={`${closing ? 'animate-sink-out' : 'animate-rise'} fixed z-50 flex flex-col overflow-hidden rounded-lg border border-line bg-paper shadow-lg shadow-ink/10`}
     >
-      {title && <h3 className="mb-3 font-display text-base font-semibold text-ink">{title}</h3>}
-      {children}
+      {title && (
+        <div className="shrink-0 border-b border-line px-3 py-2.5">
+          <h3 className="font-display text-sm font-semibold text-ink">{title}</h3>
+        </div>
+      )}
+      {/* Nur der Inhalt scrollt (analog Modal), damit ein langer Inhalt den Header nicht
+          wegschiebt. */}
+      <div className="overflow-y-auto p-3">{children}</div>
     </div>,
     document.body,
   )

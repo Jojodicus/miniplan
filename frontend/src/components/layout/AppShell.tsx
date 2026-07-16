@@ -56,48 +56,51 @@ export function AppShell({
     <div className="min-h-svh">
       <header className="border-b border-line bg-white/60 backdrop-blur-sm">
         <div
-          className={`mx-auto flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 ${containerWidth}`}
+          className={`mx-auto flex flex-wrap items-center justify-between gap-y-2 px-4 py-3 sm:px-6 sm:py-4 ${containerWidth}`}
         >
           <Link to="/" className="flex items-center gap-2.5">
             <AppIcon className="h-8 w-8" />
             <span className="font-display text-xl font-semibold text-ink">Miniplan</span>
           </Link>
           {user && (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 sm:gap-3">
               {user.ist_admin && (
                 <NavLink
                   to="/admin"
+                  title="Admin"
                   className={({ isActive }) =>
-                    `inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm transition-colors ${
+                    `inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-sm transition-colors sm:px-2.5 ${
                       isActive
                         ? 'bg-pine-tint text-pine-dark'
                         : 'text-ink-soft hover:bg-paper-dim hover:text-ink'
                     }`
                   }
                 >
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  Admin
+                  <ShieldCheck className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                  <span className="hidden sm:inline">Admin</span>
                 </NavLink>
               )}
               <NavLink
                 to="/profil"
+                title={user.email}
                 className={({ isActive }) =>
-                  `inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm transition-colors ${
+                  `inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-sm transition-colors sm:px-2.5 ${
                     isActive
                       ? 'bg-pine-tint text-pine-dark'
                       : 'text-ink-soft hover:bg-paper-dim hover:text-ink'
                   }`
                 }
               >
-                <UserCircle className="h-3.5 w-3.5" />
+                <UserCircle className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                 <span className="hidden sm:inline">{user.email}</span>
               </NavLink>
               <button
                 onClick={logout}
-                className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-sm text-ink-soft transition-colors hover:bg-paper-dim hover:text-ink"
+                title="Abmelden"
+                className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm text-ink-soft transition-colors hover:bg-paper-dim hover:text-ink sm:px-2.5"
               >
-                <LogOut className="h-3.5 w-3.5" />
-                Abmelden
+                <LogOut className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                <span className="hidden sm:inline">Abmelden</span>
               </button>
             </div>
           )}

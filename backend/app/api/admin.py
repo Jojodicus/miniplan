@@ -5,6 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api._helpers import get_or_404
 from app.database import get_db
 from app.deps import require_admin
 from app.models.nutzer import Nutzer, NutzerPfarreiRolle
@@ -25,17 +26,11 @@ router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(re
 
 
 def _get_nutzer_or_404(nutzer_id: int, db: Session) -> Nutzer:
-    nutzer = db.get(Nutzer, nutzer_id)
-    if nutzer is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nutzer nicht gefunden")
-    return nutzer
+    return get_or_404(db, Nutzer, nutzer_id)
 
 
 def _get_pfarrei_or_404(pfarrei_id: int, db: Session) -> Pfarrei:
-    pfarrei = db.get(Pfarrei, pfarrei_id)
-    if pfarrei is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pfarrei nicht gefunden")
-    return pfarrei
+    return get_or_404(db, Pfarrei, pfarrei_id, not_found_detail="Pfarrei nicht gefunden")
 
 
 def _anzahl_admins(db: Session, ausser_nutzer_id: int | None = None) -> int:

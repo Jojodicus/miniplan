@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api._helpers import get_or_404
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
 from app.models.filtertag import Filtertag
@@ -36,16 +37,7 @@ def _eindeutiger_key(pfarrei_id: int, label: str, db: Session) -> str:
 
 
 def _get_filtertag_or_404(pfarrei_id: int, filtertag_id: int, db: Session) -> Filtertag:
-    filtertag = (
-        db.query(Filtertag)
-        .filter(Filtertag.id == filtertag_id, Filtertag.pfarrei_id == pfarrei_id)
-        .first()
-    )
-    if filtertag is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Filtertag nicht gefunden"
-        )
-    return filtertag
+    return get_or_404(db, Filtertag, filtertag_id, pfarrei_id=pfarrei_id)
 
 
 @router.get("", response_model=list[FiltertagOut])

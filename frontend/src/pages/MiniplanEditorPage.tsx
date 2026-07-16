@@ -22,6 +22,7 @@ import {
   Copy,
   Download,
   Eraser,
+  Eye,
   GripVertical,
   Pencil,
   Pin,
@@ -34,16 +35,13 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
 import { useParams } from 'react-router-dom'
-import { ApiError } from '../api/client'
+import { fehlerText } from '../api/client'
 import type { GruppenAnforderung } from '../api/dienstTypen'
 import { dienstTypenListe, type DienstTyp } from '../api/dienstTypen'
 import { filtertagsListe, type Filtertag as FiltertagDef } from '../api/filtertags'
 import {
-  gottesdienstBearbeiten,
   gottesdienstErstellen,
   gottesdienstLoeschen,
-  type Dienstbedarf,
-  type DienstbedarfEingabe,
   type DienstbedarfZuweisung,
   type Gottesdienst,
 } from '../api/gottesdienste'
@@ -54,6 +52,8 @@ import {
   miniplanAktualisieren,
   miniplanDetail,
   miniplanFuellen,
+  miniplanMiniLimitEntfernen,
+  miniplanMiniLimitSetzen,
   miniplanPdfHerunterladen,
   miniplanStatusAendern,
   miniplanVorschau,
@@ -62,6 +62,7 @@ import {
   miniplanZuweisungenTauschen,
   miniplanZuteilungEinstellungenSetzen,
   ZUTEILUNG_DEFAULTS,
+  type MiniLimit,
   type Miniplan,
   type MiniplanVorschauEingabe,
   type VorschauDienstbedarf,
@@ -75,7 +76,13 @@ import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
 import { Collapse } from '../components/ui/Collapse'
 import { DateInput } from '../components/ui/DateInput'
-import { CheckboxChip, Input, Label, Select, Slider } from '../components/ui/FormField'
+import {
+  CheckboxChip,
+  Input,
+  Label,
+  Select,
+  SliderWithNumberInput,
+} from '../components/ui/FormField'
 import { IconButton } from '../components/ui/IconButton'
 import { InlineConfirmButton } from '../components/ui/InlineConfirmButton'
 import { MarkdownTextarea } from '../components/ui/MarkdownTextarea'
@@ -86,10 +93,17 @@ import { TimeInput } from '../components/ui/TimeInput'
 import { useToast } from '../components/ui/useToast'
 import { formatDatumMitWochentag, monatsName } from '../lib/datum'
 import { useDocumentTitle } from '../lib/useDocumentTitle'
-
-function fehlerText(err: unknown, fallback: string): string {
-  return err instanceof ApiError ? err.message : fallback
-}
+import {
+  AUTOSAVE_DEBOUNCE_MS,
+  bedarfAusDienstTyp,
+  bedarfFreitext,
+  gesamtStatus,
+  useGottesdienstAutosave,
+  zuEingabe,
+  type GottesdienstDraft,
+  type SpeicherStatus,
+  type WorkingBedarf,
+} from './useGottesdienstAutosave'
 
 // Zählt unbesetzte Stellen über den ganzen Plan - harte Constraints (Gruppen-Mindestanzahl,
 // Filtertags, Verfügbarkeit) können beim automatischen Füllen dazu führen, dass Stellen offen
@@ -106,13 +120,49 @@ function offeneStellenAnzahl(plan: Miniplan): number {
   )
 }
 
-let naechsterSchluessel = 0
-function neuerSchluessel(): string {
-  naechsterSchluessel += 1
-  return `neu-${naechsterSchluessel}`
+// Für den per-Gottesdienst-Revisions-Zähler Tauschen/Fixieren/Leeren eines einzelnen
+// Dienstbedarfs geben nur eine Zuweisungs- bzw. Dienstbedarf-ID mit, nicht die Gottesdienst-ID
+// selbst. Dienstbedarf-Zeilen behalten ihre ID über diese Mutationen hinweg (anders als beim
+// Autosave, das die komplette Liste ersetzt), daher kann hier sicher im *alten* Planstand gesucht
+// werden, bevor die Mutation angewendet wird.
+function gottesdienstIdFuerDienstbedarf(plan: Miniplan, dienstbedarfId: number): number | null {
+  for (const gd of plan.gottesdienste) {
+    if (gd.dienstbedarf.some((b) => b.id === dienstbedarfId)) return gd.id
+  }
+  return null
 }
 
-type SpeicherStatus = 'gespeichert' | 'speichert' | 'ungespeichert' | 'fehler'
+function gottesdienstIdFuerZuweisung(plan: Miniplan, zuweisungId: number): number | null {
+  for (const gd of plan.gottesdienste) {
+    if (gd.dienstbedarf.some((b) => b.zuweisungen.some((z) => z.id === zuweisungId))) return gd.id
+  }
+  return null
+}
+
+// Für die Fokus-Wiederherstellung nach einer per Tastatur ausgeführten Vertauschung: liefert die
+// Mini-ID der (noch alten, vor dem Tauschen gültigen) Zuweisungs-Zeile.
+function miniIdFuerZuweisung(plan: Miniplan, zuweisungId: number): number | null {
+  for (const gd of plan.gottesdienste) {
+    for (const bedarf of gd.dienstbedarf) {
+      const treffer = bedarf.zuweisungen.find((z) => z.id === zuweisungId)
+      if (treffer) return treffer.mini.id
+    }
+  }
+  return null
+}
+
+// Nach einem per Tastatur ausgeführten Tausch verliert der aktivierte Chip seinen DOM-Knoten (neue
+// Zuweisungs-ID, siehe Kommentar an `tauschDurchfuehren`) - der Fokus fiele sonst auf `document.body`
+// zurück. `requestAnimationFrame` statt eines synchronen Aufrufs, da `setMiniplan` (in
+// `refreshNachMutation`) den DOM-Update erst nach dem nächsten Commit/Paint fertigstellt.
+function focusChipFuerMini(dienstbedarfId: number, miniId: number) {
+  requestAnimationFrame(() => {
+    const ziel = document.querySelector<HTMLElement>(
+      `[data-dienstbedarf-id="${dienstbedarfId}"][data-mini-id="${miniId}"]`,
+    )
+    ziel?.focus()
+  })
+}
 
 function StatusAnzeige({
   status,
@@ -140,102 +190,6 @@ function StatusAnzeige({
   )
 }
 
-// Für die Gesamt-Anzeige neben dem Titel: der "schlechteste" Status gewinnt.
-function gesamtStatus(statusListe: SpeicherStatus[]): SpeicherStatus {
-  if (statusListe.includes('fehler')) return 'fehler'
-  if (statusListe.includes('ungespeichert')) return 'ungespeichert'
-  if (statusListe.includes('speichert')) return 'speichert'
-  return 'gespeichert'
-}
-
-interface WorkingBedarf {
-  schluessel: string
-  // null für noch nie gespeicherten Bedarf (frisch hinzugefügter Dienst-Typ/Freitext) - erst nach
-  // dem ersten Speichern existiert eine echte Dienstbedarf-Zeile, auf die sich Drag-Ziele/
-  // Zuweisungs-IDs beziehen können.
-  dienstbedarfId: number | null
-  dienst_typ_id: number | null
-  dienst_typ_name: string | null
-  name: string | null
-  anzahl: number
-  erforderliche_filtertags: Filtertag[]
-  gruppen_anforderungen: GruppenAnforderung[]
-  fixierteMiniIds: number[]
-  zeige_label: boolean
-}
-
-function bedarfAusOut(bedarf: Dienstbedarf): WorkingBedarf {
-  return {
-    schluessel: `bestehend-${bedarf.id}`,
-    dienstbedarfId: bedarf.id,
-    dienst_typ_id: bedarf.dienst_typ?.id ?? null,
-    dienst_typ_name: bedarf.dienst_typ?.name ?? null,
-    name: bedarf.name,
-    anzahl: bedarf.anzahl,
-    erforderliche_filtertags: bedarf.erforderliche_filtertags,
-    gruppen_anforderungen: bedarf.gruppen_anforderungen.map((a) => ({
-      gruppe_id: a.gruppe.id,
-      mindest_anzahl: a.mindest_anzahl,
-    })),
-    fixierteMiniIds: bedarf.zuweisungen.filter((z) => z.manuell_fixiert).map((z) => z.mini.id),
-    zeige_label: bedarf.zeige_label,
-  }
-}
-
-function bedarfAusDienstTyp(dienstTyp: DienstTyp): WorkingBedarf {
-  return {
-    schluessel: neuerSchluessel(),
-    dienstbedarfId: null,
-    dienst_typ_id: dienstTyp.id,
-    dienst_typ_name: dienstTyp.name,
-    name: null,
-    anzahl: dienstTyp.standard_anzahl,
-    erforderliche_filtertags: [],
-    gruppen_anforderungen: dienstTyp.gruppen_anforderungen.map((a) => ({
-      gruppe_id: a.gruppe.id,
-      mindest_anzahl: a.mindest_anzahl,
-    })),
-    fixierteMiniIds: [],
-    zeige_label: dienstTyp.zeige_label,
-  }
-}
-
-function bedarfFreitext(): WorkingBedarf {
-  return {
-    schluessel: neuerSchluessel(),
-    dienstbedarfId: null,
-    dienst_typ_id: null,
-    dienst_typ_name: null,
-    name: '',
-    anzahl: 0,
-    erforderliche_filtertags: [],
-    gruppen_anforderungen: [],
-    fixierteMiniIds: [],
-    zeige_label: true,
-  }
-}
-
-function zuEingabe(bedarf: WorkingBedarf, autoMiniIds: number[]): DienstbedarfEingabe {
-  // Automatische Zuweisungen werden unverändert vom Server-Stand durchgereicht (siehe Kommentar
-  // an `auto_mini_ids` im Schema) - senkt der Nutzer aber die `Anzahl` unter die Zahl bereits
-  // automatisch zugewiesener Minis (z. B. um einen zuvor gefüllten Dienst zu einer reinen
-  // Hinweiszeile mit Anzahl 0 zu machen), lehnt das Backend sonst jeden weiteren Autosave dieses
-  // Gottesdienstes mit 422 ab - inklusive aller anderen Dienste desselben Gottesdienstes, die im
-  // selben PUT mitgeschickt werden. Deshalb hier auf die noch freie Kapazität kürzen, statt die
-  // überzähligen Autos unverändert mitzuschicken.
-  const kapazitaet = Math.max(0, bedarf.anzahl - bedarf.fixierteMiniIds.length)
-  return {
-    dienst_typ_id: bedarf.dienst_typ_id,
-    name: bedarf.dienst_typ_id === null ? bedarf.name : null,
-    anzahl: bedarf.anzahl,
-    erforderliche_filtertags: bedarf.erforderliche_filtertags,
-    gruppen_anforderungen: bedarf.gruppen_anforderungen,
-    fixierte_mini_ids: bedarf.fixierteMiniIds,
-    auto_mini_ids: autoMiniIds.slice(0, kapazitaet),
-    zeige_label: bedarf.zeige_label,
-  }
-}
-
 function bedarfZuVorschau(
   bedarf: WorkingBedarf,
   gruppen: Gruppe[],
@@ -258,17 +212,6 @@ function bedarfZuVorschau(
     ],
     zeige_label: bedarf.zeige_label,
   }
-}
-
-interface GottesdienstDraft {
-  datum: string
-  uhrzeit: string
-  name: string
-  notiz: string
-  bedarfListe: WorkingBedarf[]
-  // Serverstand der Zuweisungen je Bedarf-Schlüssel (für automatisch zugewiesene Minis, die nicht
-  // Teil des editierbaren Drafts sind, aber trotzdem in der Vorschau auftauchen sollen).
-  serverZuweisungenBySchluessel: Record<string, DienstbedarfZuweisung[]>
 }
 
 function draftZuVorschau(
@@ -308,6 +251,9 @@ function ZuweisungsChip({
   readonly,
   onRemove,
   onPin,
+  istBeimTauschen = false,
+  keyboardSwapAktiv = false,
+  onKeyboardAktivieren,
 }: {
   name: string
   tone: 'fest' | 'auto'
@@ -316,6 +262,12 @@ function ZuweisungsChip({
   readonly?: boolean
   onRemove?: () => void
   onPin?: () => void
+  // der Tauschen-Request dieses Chips läuft gerade (siehe `tauschtGerade` in
+  // `MiniplanEditorPage`) - dimmt ihn und sperrt weitere Interaktion, solange die Antwort aussteht.
+  istBeimTauschen?: boolean
+  // dieser Chip ist gerade die per Space/Enter ausgewählte Tausch-Quelle.
+  keyboardSwapAktiv?: boolean
+  onKeyboardAktivieren?: (daten: ZuweisungDragData) => void
 }) {
   const dragData: ZuweisungDragData | undefined =
     !readonly && zuweisung && dienstbedarfId !== null
@@ -338,20 +290,45 @@ function ZuweisungsChip({
     disabled: !dragData,
   })
 
+  // dnd-kits eingebauter `KeyboardSensor` setzt eine sortierbare Liste voraus und passt
+  // nicht auf dieses Layout mit beliebigen Drop-Zielen (siehe Kommentar an `dndSensoren`) - Space/
+  // Enter deshalb hier manuell auf "Auswählen, dann Ziel aktivieren" umgelenkt, statt einen Drag zu
+  // simulieren. Tabindex/Rolle bewusst selbst gesetzt statt auf dnd-kits `attributes` verlassen, da
+  // die nur mit einem registrierten `KeyboardSensor` zuverlässig gesetzt werden.
+  function handleKeyDown(event: React.KeyboardEvent) {
+    if (!dragData || !onKeyboardAktivieren) return
+    if (event.key === ' ' || event.key === 'Enter') {
+      event.preventDefault()
+      onKeyboardAktivieren(dragData)
+    }
+  }
+
   return (
     <span
       data-testid={`chip-${tone}`}
+      // Stabile Identifikation für die Fokus-Wiederherstellung nach einem per Tastatur
+      // ausgeführten Tausch (`focusChipFuerMini`) - die Zuweisungs-ID selbst wechselt beim
+      // Tauschen (Zeilen werden neu angelegt), Dienstbedarf- und Mini-ID bleiben stabil.
+      data-dienstbedarf-id={dienstbedarfId ?? undefined}
+      data-mini-id={zuweisung?.mini.id}
       ref={(node) => {
         setDragRef(node)
         setDropRef(node)
       }}
       {...(dragData ? { ...listeners, ...attributes } : {})}
+      tabIndex={dragData ? 0 : undefined}
+      role={dragData ? 'button' : undefined}
+      aria-pressed={dragData ? keyboardSwapAktiv : undefined}
+      title={dragData ? 'Leertaste/Enter: zum Tauschen auswählen, Escape: abbrechen' : undefined}
+      onKeyDown={handleKeyDown}
       className={`inline-flex w-fit shrink-0 select-none items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
         tone === 'auto'
           ? 'border-dashed border-gold-dark/50 bg-gold-tint text-gold-dark'
           : 'border-pine bg-pine-tint text-pine-dark'
       } ${dragData ? 'cursor-grab touch-none active:cursor-grabbing' : ''} ${isDragging ? 'opacity-40' : ''} ${
         isOver ? 'ring-2 ring-pine' : ''
+      } ${keyboardSwapAktiv ? 'ring-2 ring-pine ring-offset-1' : ''} ${
+        istBeimTauschen ? 'pointer-events-none opacity-40' : ''
       }`}
     >
       {name}
@@ -489,6 +466,9 @@ function DienstbedarfBelegung({
   onChange,
   onClearAuto,
   onPinAuto,
+  tauschtGerade,
+  keyboardSwapQuelle,
+  onChipAktivieren,
 }: {
   bedarf: WorkingBedarf
   gruppen: Gruppe[]
@@ -503,6 +483,9 @@ function DienstbedarfBelegung({
   onChange: (patch: Partial<WorkingBedarf>) => void
   onClearAuto: () => void
   onPinAuto: (zuweisungId: number) => void
+  tauschtGerade: Set<number>
+  keyboardSwapQuelle: ZuweisungDragData | null
+  onChipAktivieren: (daten: ZuweisungDragData) => void
 }) {
   function toggleMini(miniId: number) {
     onChange({
@@ -515,7 +498,6 @@ function DienstbedarfBelegung({
   // Die Mini-Suche ist standardmäßig verborgen (weniger Unruhe, wenn mehrere Dienste
   // gleichzeitig sichtbar sind) - ein Klick auf einen "offen"-Platzhalter blendet sie ein.
   const [sucheOffen, setSucheOffen] = useState(false)
-  const [autoLeerenBestaetigen, setAutoLeerenBestaetigen] = useState(false)
 
   const autoZuweisungen = serverZuweisungen.filter((z) => !z.manuell_fixiert)
   const belegteMiniIds = new Set([
@@ -539,35 +521,22 @@ function DienstbedarfBelegung({
             <span className="text-xs text-ink-faint">· {einschraenkungen.join(', ')}</span>
           )}
         </div>
-        {!readonly &&
-          autoZuweisungen.length > 0 &&
-          (autoLeerenBestaetigen ? (
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-wine">Automatische Zuweisungen leeren?</span>
-              <IconButton
-                label="Leeren bestätigen"
-                tone="danger"
-                onClick={() => {
-                  setAutoLeerenBestaetigen(false)
-                  onClearAuto()
-                }}
+        {!readonly && autoZuweisungen.length > 0 && (
+          <InlineConfirmButton
+            onConfirm={onClearAuto}
+            confirmLabel="Automatische Zuweisungen leeren?"
+            trigger={(open) => (
+              <button
+                type="button"
+                onClick={open}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-ink-faint transition-colors hover:bg-wine-tint hover:text-wine"
               >
-                <Check className="h-3.5 w-3.5" />
-              </IconButton>
-              <IconButton label="Abbrechen" onClick={() => setAutoLeerenBestaetigen(false)}>
-                <X className="h-3.5 w-3.5" />
-              </IconButton>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setAutoLeerenBestaetigen(true)}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-ink-faint transition-colors hover:bg-wine-tint hover:text-wine"
-            >
-              <Eraser className="h-3.5 w-3.5" />
-              Auto leeren
-            </button>
-          ))}
+                <Eraser className="h-3.5 w-3.5" />
+                Auto leeren
+              </button>
+            )}
+          />
+        )}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {bedarf.fixierteMiniIds.map((miniId) => {
@@ -584,6 +553,11 @@ function DienstbedarfBelegung({
               zuweisung={zuweisung}
               readonly={readonly}
               onRemove={readonly ? undefined : () => toggleMini(miniId)}
+              istBeimTauschen={tauschtGerade.has(zuweisung?.id ?? -1)}
+              keyboardSwapAktiv={
+                zuweisung !== null && keyboardSwapQuelle?.zuweisungId === zuweisung.id
+              }
+              onKeyboardAktivieren={onChipAktivieren}
             />
           )
         })}
@@ -596,6 +570,9 @@ function DienstbedarfBelegung({
             zuweisung={zuweisung}
             readonly={readonly}
             onPin={readonly ? undefined : () => onPinAuto(zuweisung.id)}
+            istBeimTauschen={tauschtGerade.has(zuweisung.id)}
+            keyboardSwapAktiv={keyboardSwapQuelle?.zuweisungId === zuweisung.id}
+            onKeyboardAktivieren={onChipAktivieren}
           />
         ))}
         {/* "offen"-Platzhalter sind der einzige Einstiegspunkt zur Suche - als Button statt
@@ -639,21 +616,57 @@ function DienstbedarfBelegung({
   )
 }
 
+// Wie viele automatisch zugewiesene Minis eine Senkung der Anzahl auf `neu` beim nächsten Autosave
+// stillschweigend abschneiden würde (siehe `kapazitaet`-Kürzung von `auto_mini_ids` in
+// `useGottesdienstAutosave.zuEingabe`) - fixierte Minis werden dort nie gekürzt, nur die
+// automatischen füllen die verbleibende Kapazität nach Abzug der fixierten auf.
+function autoVerlustBeiAnzahl(neu: number, fixierteAnzahl: number, autoAnzahl: number): number {
+  return Math.max(0, autoAnzahl - Math.max(0, neu - fixierteAnzahl))
+}
+
 // Strukturelle Einstellungen eines Dienstes (Name/Anzahl/Einschränkungen) – im Bearbeiten-Modal,
 // getrennt von der stets sichtbaren Belegung.
 function DienstbedarfEinstellungen({
   bedarf,
   gruppen,
   filtertags,
+  autoAnzahl = 0,
   onChange,
   onRemove,
 }: {
   bedarf: WorkingBedarf
   gruppen: Gruppe[]
   filtertags: FiltertagDef[]
+  // Anzahl der aktuell automatisch zugewiesenen Minis dieses Bedarfs (siehe `autoVerlustBeiAnzahl`)
+  // - fehlt in `NeuerGottesdienstModal` (frischer Gottesdienst kann noch keine Auto-Zuweisungen
+  // haben), daher optional mit Default 0.
+  autoAnzahl?: number
   onChange: (patch: Partial<WorkingBedarf>) => void
   onRemove: () => void
 }) {
+  // eine Senkung der Anzahl, die automatische Zuweisungen abschneiden würde, wird nicht
+  // sofort übernommen, sondern erst nach Bestätigung - vorher passierte das stillschweigend erst
+  // beim nächsten Autosave (siehe `zuEingabe`), ohne dass der Nutzer je gesehen hätte, wie viele
+  // Minis dadurch verloren gehen.
+  const [pendingAnzahl, setPendingAnzahl] = useState<number | null>(null)
+
+  function handleAnzahlEingabe(rohWert: string) {
+    const neu = Number(rohWert)
+    const verlust = autoVerlustBeiAnzahl(neu, bedarf.fixierteMiniIds.length, autoAnzahl)
+    if (verlust > 0) {
+      setPendingAnzahl(neu)
+    } else {
+      setPendingAnzahl(null)
+      onChange({ anzahl: neu })
+    }
+  }
+
+  function bestaetigeAnzahl() {
+    if (pendingAnzahl === null) return
+    onChange({ anzahl: pendingAnzahl })
+    setPendingAnzahl(null)
+  }
+
   function addGruppenAnforderung() {
     const belegteIds = new Set(bedarf.gruppen_anforderungen.map((a) => a.gruppe_id))
     const naechsteGruppe = gruppen.find((g) => !belegteIds.has(g.id))
@@ -739,8 +752,8 @@ function DienstbedarfEinstellungen({
               id={`${bedarf.schluessel}-anzahl`}
               type="number"
               min={0}
-              value={bedarf.anzahl}
-              onChange={(e) => onChange({ anzahl: Number(e.target.value) })}
+              value={pendingAnzahl ?? bedarf.anzahl}
+              onChange={(e) => handleAnzahlEingabe(e.target.value)}
               className="!w-16"
             />
           </div>
@@ -752,9 +765,33 @@ function DienstbedarfEinstellungen({
           >
             Auf Plan
           </CheckboxChip>
-          <InlineConfirmButton onConfirm={onRemove} label="Dienst entfernen" size="sm" />
+          <IconButton label="Dienst entfernen" onClick={onRemove} className="h-7 w-7">
+            <Trash2 className="h-3.5 w-3.5" />
+          </IconButton>
         </div>
       </div>
+
+      {pendingAnzahl !== null && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md bg-wine-tint/40 px-2.5 py-1.5">
+          <span className="text-xs text-wine">
+            {autoVerlustBeiAnzahl(pendingAnzahl, bedarf.fixierteMiniIds.length, autoAnzahl)}{' '}
+            automatische Zuweisung
+            {autoVerlustBeiAnzahl(pendingAnzahl, bedarf.fixierteMiniIds.length, autoAnzahl) === 1
+              ? ''
+              : 'en'}{' '}
+            {autoVerlustBeiAnzahl(pendingAnzahl, bedarf.fixierteMiniIds.length, autoAnzahl) === 1
+              ? 'wird'
+              : 'werden'}{' '}
+            dadurch entfernt. Anzahl trotzdem auf {pendingAnzahl} senken?
+          </span>
+          <IconButton label="Bestätigen" tone="danger" onClick={bestaetigeAnzahl}>
+            <Check className="h-4 w-4" />
+          </IconButton>
+          <IconButton label="Abbrechen" onClick={() => setPendingAnzahl(null)}>
+            <X className="h-4 w-4" />
+          </IconButton>
+        </div>
+      )}
 
       {filtertags.length > 0 && (
         <div>
@@ -855,6 +892,7 @@ function GottesdienstDetailsForm({
   filtertags,
   dienstTypen,
   zeigeFehler,
+  autoAnzahlBySchluessel = {},
 }: {
   idPrefix: string
   pfarreiId: number
@@ -874,6 +912,10 @@ function GottesdienstDetailsForm({
   filtertags: FiltertagDef[]
   dienstTypen: DienstTyp[]
   zeigeFehler: boolean
+  // Anzahl automatischer Zuweisungen je Bedarf-Schlüssel, damit `DienstbedarfEinstellungen`
+  // vor einer Anzahl-Senkung warnen kann, die welche abschneiden würde - in `NeuerGottesdienstModal`
+  // (frischer Gottesdienst, noch keine Zuweisungen möglich) bewusst weggelassen (Default {}).
+  autoAnzahlBySchluessel?: Record<string, number>
 }) {
   const dndSensoren = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
@@ -983,6 +1025,7 @@ function GottesdienstDetailsForm({
                 bedarf={bedarf}
                 gruppen={gruppen}
                 filtertags={filtertags}
+                autoAnzahl={autoAnzahlBySchluessel[bedarf.schluessel] ?? 0}
                 onChange={(patch) => updateBedarf(bedarf.schluessel, patch)}
                 onRemove={() => removeBedarf(bedarf.schluessel)}
               />
@@ -1016,8 +1059,6 @@ function GottesdienstDetailsForm({
   )
 }
 
-const AUTOSAVE_DEBOUNCE_MS = 800
-
 // Datum um ganze Tage verschieben (für "Duplizieren": gleicher Gottesdienst eine Woche später).
 function datumPlusTage(iso: string, tage: number): string {
   const datum = new Date(`${iso}T00:00:00`)
@@ -1038,6 +1079,7 @@ function GottesdienstKarte({
   dienstTypen,
   filtertags,
   readonly,
+  revision,
   onReload,
   onDraftChange,
   onStatusChange,
@@ -1046,6 +1088,10 @@ function GottesdienstKarte({
   onPinAuto,
   oeffneEditor = false,
   onEditorGeoeffnet,
+  onBearbeitungChange,
+  tauschtGerade,
+  keyboardSwapQuelle,
+  onChipAktivieren,
 }: {
   gottesdienst: Gottesdienst
   pfarreiId: number
@@ -1057,6 +1103,10 @@ function GottesdienstKarte({
   dienstTypen: DienstTyp[]
   filtertags: FiltertagDef[]
   readonly: boolean
+  // Von der Elternseite nur für tatsächlich betroffene Gottesdienst-IDs erhöhter Zähler (siehe
+  // `bumpKartenRevision` in `MiniplanEditorPage`) - steuert, wann `useGottesdienstAutosave` seinen
+  // Server-Zuweisungen-Sync-Effekt erneut laufen lässt (siehe Kommentar dort).
+  revision: number
   onReload: () => void
   onDraftChange: (gottesdienstId: number, draft: GottesdienstDraft) => void
   onStatusChange: (gottesdienstId: number, status: SpeicherStatus) => void
@@ -1065,105 +1115,64 @@ function GottesdienstKarte({
   onPinAuto: (zuweisungId: number) => void
   oeffneEditor?: boolean
   onEditorGeoeffnet?: (gottesdienstId: number) => void
+  // Informiert die Elternseite, solange das Bearbeiten-Modal dieser Karte offen ist -
+  // die Elternseite friert die angezeigte Kartenreihenfolge ein, während irgendeine Karte bearbeitet
+  // wird, damit ein Datums-Wechsel den Plan nicht schon während der Bearbeitung umsortiert.
+  onBearbeitungChange: (gottesdienstId: number, bearbeitungOffen: boolean) => void
+  // Zuweisungs-IDs mit gerade laufendem Tauschen-Request (Dimmen der Chips).
+  tauschtGerade: Set<number>
+  // Tastatur-Tauschen - die aktuell per Space/Enter ausgewählte Quelle (planweit, nicht
+  // pro Karte, weil ein Tausch auch über Karten hinweg funktioniert - genau wie beim Maus-DnD über
+  // den gemeinsamen `DndContext`) sowie der Aktivierungs-Handler für einen Chip.
+  keyboardSwapQuelle: ZuweisungDragData | null
+  onChipAktivieren: (daten: ZuweisungDragData) => void
 }) {
-  const [datum, setDatum] = useState(gottesdienst.datum)
-  const [uhrzeit, setUhrzeit] = useState(gottesdienst.uhrzeit.slice(0, 5))
-  const [name, setName] = useState(gottesdienst.name ?? '')
-  const [notiz, setNotiz] = useState(gottesdienst.notiz ?? '')
-  const [bedarfListe, setBedarfListe] = useState<WorkingBedarf[]>(
-    gottesdienst.dienstbedarf.map(bedarfAusOut),
-  )
-  // Serverstand der Zuweisungen je Bedarf-Schlüssel - getrennt von `bedarfListe`, damit
-  // Auffrischen nach einem Speichern nicht den Autosave-Effekt erneut auslöst.
-  const [serverZuweisungenMap, setServerZuweisungenMap] = useState<
-    Record<string, DienstbedarfZuweisung[]>
-  >(() =>
-    Object.fromEntries(gottesdienst.dienstbedarf.map((b) => [`bestehend-${b.id}`, b.zuweisungen])),
-  )
-  // Echte dienstbedarfId je Schlüssel (frisch hinzugefügter Bedarf startet mit `null`, bekommt sie
-  // nach dem ersten Speichern) - getrennt von `bedarfListe`, damit kein Autosave ausgelöst wird.
-  const [dienstbedarfIdMap, setDienstbedarfIdMap] = useState<Record<string, number>>(() =>
-    Object.fromEntries(gottesdienst.dienstbedarf.map((b) => [`bestehend-${b.id}`, b.id])),
-  )
-  const [status, setStatus] = useState<SpeicherStatus>('gespeichert')
   const [editorOffen, setEditorOffen] = useState(oeffneEditor)
   const { showToast } = useToast()
-  const istErstesRendern = useRef(true)
-  // Rückwärts-Lookup echte dienstbedarfId -> lokaler Schlüssel, bei jedem Rendern frisch berechnet
-  // (wie `zoomFactorRef` in PdfViewer) - der Sync-Effekt unten braucht den aktuellen Stand, ohne
-  // dass `bedarfListe`/`dienstbedarfIdMap` in dessen Dependency-Array stehen müssten (das würde bei
-  // jeder Draft-Änderung, z.B. jedem Tastenanschlag im Namensfeld, unnötig neu laufen). Nötig, weil
-  // ein frisch hinzugefügter Bedarf dauerhaft seinen "neu-*"-Schlüssel behält (siehe
-  // `dienstbedarfIdMap`) - "bestehend-<id>" wäre für ihn also der falsche Schlüssel.
-  const schluesselByDienstbedarfId = useRef<Map<number, string>>(new Map())
-  schluesselByDienstbedarfId.current = new Map(
-    bedarfListe
-      .map((b) => [dienstbedarfIdMap[b.schluessel] ?? b.dienstbedarfId, b.schluessel] as const)
-      .filter((eintrag): eintrag is [number, string] => eintrag[0] !== null),
-  )
+
+  const {
+    datum,
+    setDatum,
+    uhrzeit,
+    setUhrzeit,
+    name,
+    setName,
+    notiz,
+    setNotiz,
+    bedarfListe,
+    setBedarfListe,
+    updateBedarf,
+    serverZuweisungenMap,
+    dienstbedarfIdMap,
+    status,
+  } = useGottesdienstAutosave({
+    gottesdienst,
+    pfarreiId,
+    miniplanId,
+    readonly,
+    revision,
+    onReload,
+    onDraftChange,
+    onStatusChange,
+  })
 
   // Frisch angelegte/duplizierte Gottesdienste öffnen den Editor automatisch. Den Auslöser danach
-  // sofort zurücksetzen, damit er nicht bei jedem weiteren Rendern erneut greift.
+  // sofort zurücksetzen, damit er nicht bei jedem weiteren Rendern erneut greift. Bewusst als
+  // Mount-once-Effekt (leeres Dependency-Array): `onEditorGeoeffnet`/`gottesdienst.id` sollen genau
+  // einmal beim ersten Rendern geprüft werden, nicht bei jeder späteren Änderung.
   useEffect(() => {
     if (oeffneEditor) onEditorGeoeffnet?.(gottesdienst.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Server-Zuweisungen laufen "Füllen"/"Leeren"/Tauschen/Fixieren aus einer anderen Karte oder
-  // demselben Gottesdienst nach - diese Aktionen ändern die Zuweisungen serverseitig, ohne dass die
-  // Karte (die ihren State nur beim ersten Rendern aus den Props übernimmt) das sonst bemerken
-  // würde. Bewusst gemergt statt ersetzt und über `schluesselByDienstbedarfId` aufgelöst (nicht
-  // einfach `bestehend-${b.id}` angenommen) - sonst ginge die Zuordnung für einen frisch
-  // hinzugefügten, inzwischen gespeicherten Bedarf verloren, der dauerhaft seinen "neu-*"-Schlüssel
-  // behält. Getrennt von `bedarfListe`/den übrigen Draft-Feldern, damit dieser Sync nie den
-  // Autosave-Effekt auslöst (kein Remount mehr nötig).
+  // Meldet der Elternseite, solange das Bearbeiten-Modal offen ist (siehe `onBearbeitungChange`-
+  // Kommentar an den Props). Cleanup meldet "geschlossen" auch bei einem Unmount mit noch offenem
+  // Modal (z.B. Löschen während der Bearbeitung), damit die Elternseite keinen dauerhaft "in
+  // Bearbeitung" hängen gebliebenen Eintrag behält.
   useEffect(() => {
-    const resolveSchluessel = (id: number) =>
-      schluesselByDienstbedarfId.current.get(id) ?? `bestehend-${id}`
-    setServerZuweisungenMap((karte) => ({
-      ...karte,
-      ...Object.fromEntries(
-        gottesdienst.dienstbedarf.map((b) => [resolveSchluessel(b.id), b.zuweisungen]),
-      ),
-    }))
-    // `fixierteMiniIds` lebt (anders als die Zuweisungen oben) in `bedarfListe` selbst, weil Pin
-    // (dieser Effekt) und das lokale Hinzufügen über den Mini-Adder (`toggleMini`) hier dieselbe
-    // Quelle brauchen - ein per Pin-Button fest übernommener Mini muss dauerhaft in den Draft
-    // einfließen, sonst würde ihn der nächste Autosave (der `fixierteMiniIds` unverändert
-    // mitschickt) wieder als nicht-fixiert speichern. Deshalb bewusst per Inhalts-Vergleich
-    // gebailoutet (gleiche Referenz zurückgeben, wenn sich nichts geändert hat) - andernfalls würde
-    // jeder Reload (auch durch Mutationen an anderen Karten) hier unnötig einen weiteren
-    // Autosave-Lauf auslösen.
-    const fixierteJeSchluessel = new Map(
-      gottesdienst.dienstbedarf.map((b) => [
-        resolveSchluessel(b.id),
-        b.zuweisungen.filter((z) => z.manuell_fixiert).map((z) => z.mini.id),
-      ]),
-    )
-    setBedarfListe((liste) => {
-      let geaendert = false
-      const aktualisiert = liste.map((b) => {
-        const frisch = fixierteJeSchluessel.get(b.schluessel)
-        if (
-          frisch === undefined ||
-          (frisch.length === b.fixierteMiniIds.length &&
-            frisch.every((id) => b.fixierteMiniIds.includes(id)))
-        ) {
-          return b
-        }
-        geaendert = true
-        return { ...b, fixierteMiniIds: frisch }
-      })
-      return geaendert ? aktualisiert : liste
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gottesdienst.dienstbedarf])
-
-  function updateBedarf(schluessel: string, patch: Partial<WorkingBedarf>) {
-    setBedarfListe((liste) =>
-      liste.map((b) => (b.schluessel === schluessel ? { ...b, ...patch } : b)),
-    )
-  }
+    onBearbeitungChange(gottesdienst.id, editorOffen)
+    return () => onBearbeitungChange(gottesdienst.id, false)
+  }, [editorOffen, gottesdienst.id, onBearbeitungChange])
 
   // Minis, die irgendeinem Dienst dieses Gottesdienstes bereits zugewiesen sind - über alle
   // Dienstbedarf-Einträge hinweg, damit der Adder denselben Mini nicht für einen zweiten Dienst
@@ -1179,83 +1188,14 @@ function GottesdienstKarte({
     return ids
   }, [bedarfListe, serverZuweisungenMap])
 
-  useEffect(() => {
-    onDraftChange(gottesdienst.id, {
-      datum,
-      uhrzeit,
-      name,
-      notiz,
-      bedarfListe,
-      serverZuweisungenBySchluessel: serverZuweisungenMap,
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datum, uhrzeit, name, notiz, bedarfListe, serverZuweisungenMap])
-
-  useEffect(() => {
-    onStatusChange(gottesdienst.id, status)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status])
-
-  useEffect(() => {
-    if (istErstesRendern.current) {
-      istErstesRendern.current = false
-      return
+  // für die Anzahl-Senkungs-Warnung in `DienstbedarfEinstellungen`.
+  const autoAnzahlBySchluessel = useMemo(() => {
+    const eintrag: Record<string, number> = {}
+    for (const [schluessel, zuweisungen] of Object.entries(serverZuweisungenMap)) {
+      eintrag[schluessel] = zuweisungen.filter((z) => !z.manuell_fixiert).length
     }
-    // Ein abgeschlossener Plan ist schreibgeschützt (Backend lehnt Mutationen mit 409 ab) - die
-    // UI verhindert Änderungen bereits, aber sicherheitshalber auch hier keinen Autosave auslösen.
-    if (readonly) return
-    const bedarfOhneName = bedarfListe.some(
-      (b) => b.dienst_typ_id === null && !(b.name ?? '').trim(),
-    )
-    if (!datum || !uhrzeit || bedarfOhneName) {
-      setStatus('ungespeichert')
-      return
-    }
-    setStatus('speichert')
-    const timer = setTimeout(async () => {
-      try {
-        const gespeichert = await gottesdienstBearbeiten(pfarreiId, miniplanId, gottesdienst.id, {
-          datum,
-          uhrzeit,
-          name,
-          notiz: notiz.trim() ? notiz : null,
-          dienstbedarf: bedarfListe.map((bedarf) =>
-            zuEingabe(
-              bedarf,
-              (serverZuweisungenMap[bedarf.schluessel] ?? [])
-                .filter((z) => !z.manuell_fixiert)
-                .map((z) => z.mini.id),
-            ),
-          ),
-        })
-        setStatus('gespeichert')
-        // Server-Zuweisungen (v.a. neu vergebene IDs für gerade fixierte Minis) und dienstbedarfIds
-        // anhand der Positions-Reihenfolge auffrischen - separat von `bedarfListe`, damit das hier
-        // keinen erneuten Autosave-Lauf auslöst.
-        setServerZuweisungenMap((karte) => {
-          const aktualisiert = { ...karte }
-          bedarfListe.forEach((bedarf, index) => {
-            aktualisiert[bedarf.schluessel] = gespeichert.dienstbedarf[index]?.zuweisungen ?? []
-          })
-          return aktualisiert
-        })
-        setDienstbedarfIdMap((karte) => {
-          const aktualisiert = { ...karte }
-          bedarfListe.forEach((bedarf, index) => {
-            const id = gespeichert.dienstbedarf[index]?.id
-            if (id !== undefined) aktualisiert[bedarf.schluessel] = id
-          })
-          return aktualisiert
-        })
-        onReload()
-      } catch (err) {
-        setStatus('fehler')
-        showToast(fehlerText(err, 'Fehler beim Speichern des Gottesdienstes'), 'error')
-      }
-    }, AUTOSAVE_DEBOUNCE_MS)
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datum, uhrzeit, name, notiz, bedarfListe])
+    return eintrag
+  }, [serverZuweisungenMap])
 
   async function handleDelete() {
     try {
@@ -1366,6 +1306,9 @@ function GottesdienstKarte({
                 if (id !== null) onClearAutoBereich({ dienstbedarfId: id })
               }}
               onPinAuto={onPinAuto}
+              tauschtGerade={tauschtGerade}
+              keyboardSwapQuelle={keyboardSwapQuelle}
+              onChipAktivieren={onChipAktivieren}
             />
           ))
         )}
@@ -1397,6 +1340,7 @@ function GottesdienstKarte({
             filtertags={filtertags}
             dienstTypen={dienstTypen}
             zeigeFehler
+            autoAnzahlBySchluessel={autoAnzahlBySchluessel}
           />
 
           <div className="flex justify-end border-t border-line pt-4">
@@ -1578,7 +1522,14 @@ function FreitextSection({
         setStatus('gespeichert')
       } catch (err) {
         setStatus('fehler')
-        showToast(fehlerText(err, 'Fehler beim Speichern der Freitextfelder'), 'error')
+        // `fehlerText` gibt bei einem `ApiError` dessen Server-Nachricht zurück, nicht
+        // den Fallback - ohne diesen Präfix wäre ein Speicherfehler der Freitextfelder von einem
+        // Gottesdienst-Speicherfehler (gleiche Server-Nachricht möglich, z.B. eine generische
+        // Validierungsmeldung) nicht zu unterscheiden.
+        showToast(
+          `Veranstaltungen/Ankündigungen: ${fehlerText(err, 'Fehler beim Speichern')}`,
+          'error',
+        )
       }
     }, AUTOSAVE_DEBOUNCE_MS)
     return () => clearTimeout(timer)
@@ -1622,10 +1573,17 @@ function VorschauPanel({
   pfarreiId,
   miniplanId,
   eingabe,
+  variant = 'sidebar',
+  onClose,
 }: {
   pfarreiId: number
   miniplanId: number
   eingabe: MiniplanVorschauEingabe
+  // unterhalb von `lg` lebt dieselbe Komponente statt in der sticky Seitenspalte in einem
+  // Bottom-Sheet-Overlay (siehe `MiniplanEditorPage`) - dort füllt sie die volle Overlay-Höhe
+  // (`h-full` statt eigener `svh`-Höhe) und bekommt einen eigenen Schließen-Button im Header.
+  variant?: 'sidebar' | 'sheet'
+  onClose?: () => void
 }) {
   const [pdfDaten, setPdfDaten] = useState<Uint8Array | null>(null)
   const [fehler, setFehler] = useState<string[] | null>(null)
@@ -1664,10 +1622,25 @@ function VorschauPanel({
   }, [pfarreiId, miniplanId, eingabe])
 
   return (
-    <Card className="animate-rise flex h-[80svh] flex-col lg:sticky lg:top-6 lg:h-[calc(100svh-3rem)]">
+    <Card
+      className={
+        variant === 'sheet'
+          ? 'flex h-full flex-col rounded-b-none border-b-0 shadow-none'
+          : 'animate-rise flex h-[80svh] flex-col lg:sticky lg:top-6 lg:h-[calc(100svh-3rem)]'
+      }
+    >
       <CardHeader
         title="PDF-Vorschau"
-        action={ladend && <span className="text-xs text-ink-faint">Aktualisiert…</span>}
+        action={
+          <div className="flex items-center gap-2">
+            {ladend && <span className="text-xs text-ink-faint">Aktualisiert…</span>}
+            {variant === 'sheet' && onClose && (
+              <IconButton label="Vorschau schließen" onClick={onClose}>
+                <X className="h-4 w-4" />
+              </IconButton>
+            )}
+          </div>
+        }
       />
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-5">
         {fehler && (
@@ -1689,24 +1662,70 @@ function VorschauPanel({
 
 // Konfiguration der automatischen Zuteilung ("Füllen") als Popover am Füllen-Button - eigener
 // Endpunkt statt Teil des Freitext-Autosaves, damit sich beide unabhängig ändern lassen.
+// Ausnahme-Zeile für einen einzelnen Mini: eigenes Zahlen-Limit (oder explizit "kein Limit"), das
+// nur für diesen Miniplan gilt und alles andere übersteuert (siehe MiniMiniplanLimit im Backend).
+// Speichert sofort pro Zeile statt über den "Speichern"-Button der Gewichte - passt zum
+// bestehenden granularen Endpunkt-Stil dieser Funktion.
+function MiniLimitZeile({
+  limit,
+  onChange,
+  onRemove,
+}: {
+  limit: MiniLimit
+  onChange: (maxEinsaetze: number | null) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="min-w-0 flex-1 truncate text-sm text-ink">{limit.mini_name}</span>
+      <Input
+        type="number"
+        min={0}
+        placeholder="kein Limit"
+        value={limit.max_einsaetze ?? ''}
+        onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        className="h-8 !w-24 px-2"
+      />
+      <IconButton label="Ausnahme entfernen" onClick={onRemove} className="h-7 w-7">
+        <Trash2 className="h-3.5 w-3.5" />
+      </IconButton>
+    </div>
+  )
+}
+
 function ZuteilungEinstellungenPopover({
   open,
   onClose,
   anchorRef,
   miniplan,
+  minis,
+  pfarreiId,
   onSave,
+  onMiniLimitsChange,
 }: {
   open: boolean
   onClose: () => void
   anchorRef: React.RefObject<HTMLElement | null>
   miniplan: Miniplan
+  minis: Mini[]
+  pfarreiId: number
   onSave: (einstellungen: ZuteilungEinstellungen) => void | Promise<void>
+  onMiniLimitsChange: (aktualisiert: Miniplan) => void
 }) {
   const [fairness, setFairness] = useState(miniplan.fairness_gewicht)
   const [mindestabstand, setMindestabstand] = useState(miniplan.mindestabstand_tage)
   const [mixing, setMixing] = useState(miniplan.mixing_gewicht)
   const [wiederholung, setWiederholung] = useState(miniplan.wiederholung_gewicht)
   const [maxEinsaetze, setMaxEinsaetze] = useState(miniplan.max_einsaetze_standard)
+  const [ignoriereMaxEinsaetze, setIgnoriereMaxEinsaetze] = useState(
+    miniplan.ignoriere_max_einsaetze,
+  )
+  const [ignoriereGruppenMindestanzahl, setIgnoriereGruppenMindestanzahl] = useState(
+    miniplan.ignoriere_gruppen_mindestanzahl,
+  )
+  const [ignoriereVerfuegbarkeit, setIgnoriereVerfuegbarkeit] = useState(
+    miniplan.ignoriere_verfuegbarkeit,
+  )
 
   useEffect(() => {
     if (!open) return
@@ -1715,7 +1734,18 @@ function ZuteilungEinstellungenPopover({
     setMixing(miniplan.mixing_gewicht)
     setWiederholung(miniplan.wiederholung_gewicht)
     setMaxEinsaetze(miniplan.max_einsaetze_standard)
+    setIgnoriereMaxEinsaetze(miniplan.ignoriere_max_einsaetze)
+    setIgnoriereGruppenMindestanzahl(miniplan.ignoriere_gruppen_mindestanzahl)
+    setIgnoriereVerfuegbarkeit(miniplan.ignoriere_verfuegbarkeit)
   }, [open, miniplan])
+
+  const miniplanId = miniplan.id
+  async function limitSetzen(miniId: number, wert: number | null) {
+    onMiniLimitsChange(await miniplanMiniLimitSetzen(pfarreiId, miniplanId, miniId, wert))
+  }
+  async function limitEntfernen(miniId: number) {
+    onMiniLimitsChange(await miniplanMiniLimitEntfernen(pfarreiId, miniplanId, miniId))
+  }
 
   return (
     <Popover
@@ -1723,7 +1753,7 @@ function ZuteilungEinstellungenPopover({
       onClose={onClose}
       anchorRef={anchorRef}
       title="Auto-Fill-Einstellungen"
-      width={340}
+      width={360}
     >
       <form
         onSubmit={(e) => {
@@ -1734,6 +1764,9 @@ function ZuteilungEinstellungenPopover({
             mixing_gewicht: mixing,
             wiederholung_gewicht: wiederholung,
             max_einsaetze_standard: maxEinsaetze,
+            ignoriere_max_einsaetze: ignoriereMaxEinsaetze,
+            ignoriere_gruppen_mindestanzahl: ignoriereGruppenMindestanzahl,
+            ignoriere_verfuegbarkeit: ignoriereVerfuegbarkeit,
           })
         }}
         className="flex flex-col gap-4"
@@ -1742,7 +1775,7 @@ function ZuteilungEinstellungenPopover({
           <Label htmlFor="einstellung-fairness" hint="0 = aus">
             Fairness-Stärke
           </Label>
-          <Slider
+          <SliderWithNumberInput
             id="einstellung-fairness"
             min={0}
             max={20}
@@ -1756,7 +1789,7 @@ function ZuteilungEinstellungenPopover({
           <Label htmlFor="einstellung-abstand" hint="Tage">
             Mindestabstand zwischen Diensten
           </Label>
-          <Slider
+          <SliderWithNumberInput
             id="einstellung-abstand"
             min={0}
             max={31}
@@ -1770,7 +1803,7 @@ function ZuteilungEinstellungenPopover({
           <Label htmlFor="einstellung-mixing" hint="0 = aus">
             Teams durchmischen
           </Label>
-          <Slider
+          <SliderWithNumberInput
             id="einstellung-mixing"
             min={0}
             max={20}
@@ -1787,7 +1820,7 @@ function ZuteilungEinstellungenPopover({
           <Label htmlFor="einstellung-wiederholung" hint="0 = aus">
             Feste Zuteilung bevorzugen
           </Label>
-          <Slider
+          <SliderWithNumberInput
             id="einstellung-wiederholung"
             min={0}
             max={20}
@@ -1818,6 +1851,67 @@ function ZuteilungEinstellungenPopover({
             Füllen nie überschreitet.
           </p>
         </div>
+
+        <div className="border-t border-line pt-4">
+          <Label
+            hint={miniplan.mini_limits.length === 0 ? undefined : `${miniplan.mini_limits.length}`}
+          >
+            Ausnahmen pro Mini
+          </Label>
+          <p className="mb-2 text-xs text-ink-faint">
+            Überschreibt für einzelne Minis das Limit nur in diesem Plan - auch als "kein Limit",
+            selbst wenn der Mini sonst persönlich begrenzt ist.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {miniplan.mini_limits.map((limit) => (
+              <MiniLimitZeile
+                key={limit.mini_id}
+                limit={limit}
+                onChange={(wert) => void limitSetzen(limit.mini_id, wert)}
+                onRemove={() => void limitEntfernen(limit.mini_id)}
+              />
+            ))}
+          </div>
+          <div className="mt-2">
+            <MiniAdder
+              minis={minis}
+              belegteMiniIds={new Set(miniplan.mini_limits.map((l) => l.mini_id))}
+              disabled={false}
+              onAdd={(miniId) => void limitSetzen(miniId, 0)}
+            />
+          </div>
+        </div>
+
+        <div className="border-t border-line pt-4">
+          <Label>Harte Grenzen ignorieren</Label>
+          <p className="mb-2 text-xs text-ink-faint">
+            Nutzt die jeweilige harte Regel beim Füllen nicht mehr - nur für Ausnahmefälle.
+          </p>
+          <div className="flex flex-col gap-2">
+            <CheckboxChip
+              id="einstellung-ignoriere-max-einsaetze"
+              checked={ignoriereMaxEinsaetze}
+              onChange={() => setIgnoriereMaxEinsaetze((v) => !v)}
+            >
+              Max. Einsätze pro Mini
+            </CheckboxChip>
+            <CheckboxChip
+              id="einstellung-ignoriere-gruppen"
+              checked={ignoriereGruppenMindestanzahl}
+              onChange={() => setIgnoriereGruppenMindestanzahl((v) => !v)}
+            >
+              Gruppen-Mindestanzahl
+            </CheckboxChip>
+            <CheckboxChip
+              id="einstellung-ignoriere-verfuegbarkeit"
+              checked={ignoriereVerfuegbarkeit}
+              onChange={() => setIgnoriereVerfuegbarkeit((v) => !v)}
+            >
+              Verfügbarkeiten
+            </CheckboxChip>
+          </div>
+        </div>
+
         <div className="flex justify-between gap-2">
           <Button
             type="button"
@@ -1829,6 +1923,9 @@ function ZuteilungEinstellungenPopover({
               setMixing(ZUTEILUNG_DEFAULTS.mixing_gewicht)
               setWiederholung(ZUTEILUNG_DEFAULTS.wiederholung_gewicht)
               setMaxEinsaetze(ZUTEILUNG_DEFAULTS.max_einsaetze_standard)
+              setIgnoriereMaxEinsaetze(ZUTEILUNG_DEFAULTS.ignoriere_max_einsaetze)
+              setIgnoriereGruppenMindestanzahl(ZUTEILUNG_DEFAULTS.ignoriere_gruppen_mindestanzahl)
+              setIgnoriereVerfuegbarkeit(ZUTEILUNG_DEFAULTS.ignoriere_verfuegbarkeit)
             }}
           >
             Zurücksetzen
@@ -1851,6 +1948,15 @@ export function MiniplanEditorPage() {
   const { pfarreiId, miniplanId } = useParams<{ pfarreiId: string; miniplanId: string }>()
   const id = Number(pfarreiId)
   const planId = Number(miniplanId)
+  // `MiniplanEditorPage` bleibt über Routenwechsel hinweg gemountet (React Router verwendet dieselbe
+  // Instanz weiter) - eine spät eintreffende Antwort einer Mutation, die noch für den *vorherigen*
+  // Plan lief, darf den inzwischen für den neuen Plan geladenen Stand nicht überschreiben. Ref statt
+  // nur `planId` direkt, da der Vergleich beim Auflösen des Requests den zum *Start* des Requests
+  // aktiven Plan braucht, nicht den zum jetzigen Render-Zeitpunkt (deshalb zusätzlich pro Aufruf
+  // lokal in einer Konstante festgehalten, siehe `tauschDurchfuehren`/`handleFuellen`/
+  // `handleClearAuto`/`handlePinAuto`).
+  const planIdRef = useRef(planId)
+  planIdRef.current = planId
 
   const [miniplan, setMiniplan] = useState<Miniplan | null>(null)
   useDocumentTitle(miniplan ? `${monatsName(miniplan.monat)} ${miniplan.jahr}` : 'Miniplan')
@@ -1872,11 +1978,64 @@ export function MiniplanEditorPage() {
   const [statusWirdGeaendert, setStatusWirdGeaendert] = useState(false)
   const [downloadFehler, setDownloadFehler] = useState<string | null>(null)
   const [fuelltGerade, setFuelltGerade] = useState(false)
-  const [autoLeerenBestaetigen, setAutoLeerenBestaetigen] = useState(false)
-  const [abschliessenBestaetigen, setAbschliessenBestaetigen] = useState(false)
   const [einstellungenOffen, setEinstellungenOffen] = useState(false)
   const einstellungenButtonRef = useRef<HTMLButtonElement>(null)
   const { showToast } = useToast()
+  // pro Gottesdienst erhöhter Zähler statt eines planweiten - jede Karte reagiert (über
+  // `useGottesdienstAutosave`) nur auf ihre eigene Revision, nicht auf jede (nach jedem Reload
+  // ohnehin neue) Objekt-Referenz. Füllen betrifft potenziell den ganzen Plan (bump alle IDs),
+  // Tauschen/Fixieren/gezieltes Leeren nur die tatsächlich betroffene(n) Karte(n).
+  const [kartenRevision, setKartenRevision] = useState<Record<number, number>>({})
+  // Solange mindestens eine Karte ihr Bearbeiten-Modal offen hat, friert
+  // `angezeigteReihenfolge` unten die Sortierung ein - ein Datums-Wechsel im offenen Modal soll den
+  // Plan nicht schon während der Bearbeitung umsortieren (die bearbeitete Karte "springt" sonst
+  // unter dem Nutzer weg, sobald der Autosave nach dem Reload die neue, servergesorteten Reihenfolge
+  // übernimmt).
+  const [bearbeitungOffenIds, setBearbeitungOffenIds] = useState<Set<number>>(new Set())
+  const [angezeigteReihenfolge, setAngezeigteReihenfolge] = useState<number[]>([])
+  // unterhalb von `lg` liegt die PDF-Vorschau nicht mehr sticky neben den Karten, sondern
+  // in einem Bottom-Sheet-Overlay, das über diesen Button geöffnet wird - die `lg`+-Seite-an-Seite-
+  // Anordnung bleibt unverändert (siehe Grid weiter unten).
+  const [mobileVorschauOffen, setMobileVorschauOffen] = useState(false)
+
+  useEffect(() => {
+    if (!mobileVorschauOffen) return
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMobileVorschauOffen(false)
+    }
+    document.addEventListener('keydown', handleKey)
+    const vorherigesOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', handleKey)
+      document.body.style.overflow = vorherigesOverflow
+    }
+  }, [mobileVorschauOffen])
+  // Zuweisungs-IDs, deren Tauschen-Request gerade läuft - dimmt die beiden betroffenen
+  // Chips währenddessen (siehe `ZuweisungsChip`/`tauschDurchfuehren`).
+  const [tauschtGerade, setTauschtGerade] = useState<Set<number>>(new Set())
+  // Tastatur-Alternative zum Drag-and-Drop-Tauschen ("Auswählen, dann Ziel aktivieren") -
+  // hält die per Space/Enter ausgewählte Quelle, bis ein zweiter Chip aktiviert wird (führt den
+  // Tausch aus) oder Escape sie verwirft (siehe Effekt unten und `handleChipAktivieren`).
+  const [keyboardSwapQuelle, setKeyboardSwapQuelle] = useState<ZuweisungDragData | null>(null)
+
+  useEffect(() => {
+    if (!keyboardSwapQuelle) return
+    // Capture-Phase, damit ein tatsächlich vorhandener Abbruch hier zuverlässig vor einem
+    // eventuell offenen Modal (Bubble-Phase-Listener auf `document`, siehe Modal.tsx) feuert -
+    // sonst hinge die Reihenfolge zweier Bubble-Listener auf demselben Ziel vom Mount-Zeitpunkt ab.
+    // `stopPropagation` nur, wenn tatsächlich eine Quelle verworfen wurde, damit Escape ein
+    // offenes Modal weiterhin normal schließt, solange kein Tausch aussteht.
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        setKeyboardSwapQuelle(null)
+      }
+    }
+    document.addEventListener('keydown', handleKey, true)
+    return () => document.removeEventListener('keydown', handleKey, true)
+  }, [keyboardSwapQuelle])
+
   const dndSensoren = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
     // Separater TouchSensor statt PointerSensor: eine reine Distance-Constraint würde auf
@@ -1890,29 +2049,56 @@ export function MiniplanEditorPage() {
     miniplanDetail(id, planId).then(setMiniplan)
   }, [id, planId])
 
+  // Erhöht den Revisions-Zähler nur für die übergebenen Gottesdienst-IDs - der
+  // Sync-Effekt in `useGottesdienstAutosave` reagiert ausschließlich darauf, nicht auf jede (nach
+  // jedem Reload ohnehin neue) `gottesdienst.dienstbedarf`-Referenz.
+  function bumpKartenRevision(ids: Iterable<number>) {
+    setKartenRevision((karte) => {
+      const aktualisiert = { ...karte }
+      for (const gottesdienstId of ids) {
+        aktualisiert[gottesdienstId] = (aktualisiert[gottesdienstId] ?? 0) + 1
+      }
+      return aktualisiert
+    })
+  }
+
   // Von "Füllen", "Leeren" und den Drag-Aktionen (Tauschen/Fixieren) gemeinsam genutzt: alle ändern
   // Zuweisungen serverseitig. `GottesdienstKarte` übernimmt die aufgefrischten Zuweisungen über
   // einen eigenen Sync-Effekt aus den Props (kein erzwungener Remount mehr nötig), reagiert also
-  // von selbst auf die neuen Props aus `setMiniplan`.
-  function refreshNachMutation(aktualisiert: Miniplan) {
+  // von selbst auf die neuen Props aus `setMiniplan` - aber nur, wenn ihre eigene
+  // Revision erhöht wurde. `betroffeneGottesdienstIds` weggelassen (`undefined`) bumpt alle
+  // Karten (z.B. Füllen, das potenziell den ganzen Plan betrifft); eine leere Liste bumpt bewusst
+  // keine (z.B. reine Einstellungsänderungen ohne Zuweisungs-Auswirkung).
+  function refreshNachMutation(aktualisiert: Miniplan, betroffeneGottesdienstIds?: number[]) {
     setMiniplan(aktualisiert)
+    if (betroffeneGottesdienstIds === undefined) {
+      bumpKartenRevision(aktualisiert.gottesdienste.map((gd) => gd.id))
+    } else if (betroffeneGottesdienstIds.length > 0) {
+      bumpKartenRevision(betroffeneGottesdienstIds)
+    }
   }
 
   async function handleFuellen() {
+    // Schnappschuss der zum Start des Requests aktiven Plan-ID (siehe Kommentar an `planIdRef`
+    // oben) - navigiert der Nutzer währenddessen zu einem anderen Miniplan, darf die spät
+    // eintreffende Antwort dessen inzwischen geladenen Stand nicht überschreiben.
+    const angefordertePlanId = planId
     setFuelltGerade(true)
     try {
       const aktualisiert = await miniplanFuellen(id, planId)
+      if (planIdRef.current !== angefordertePlanId) return
       refreshNachMutation(aktualisiert)
       const offen = offeneStellenAnzahl(aktualisiert)
       showToast(
         offen > 0
-          ? `Miniplan automatisch befüllt – ${offen} Stelle${offen === 1 ? '' : 'n'} konnte${offen === 1 ? '' : 'n'} nicht besetzt werden`
+          ? `Miniplan automatisch befüllt – ${offen} Stelle${offen === 1 ? '' : 'n'} konnte${offen === 1 ? '' : 'n'} nicht besetzt werden. Prüfe Gruppen-Mindestanzahl, Verfügbarkeit und Filtertags der offenen Stellen.`
           : 'Miniplan automatisch befüllt',
       )
     } catch (err) {
+      if (planIdRef.current !== angefordertePlanId) return
       showToast(fehlerText(err, 'Fehler beim automatischen Befüllen'), 'error')
     } finally {
-      setFuelltGerade(false)
+      if (planIdRef.current === angefordertePlanId) setFuelltGerade(false)
     }
   }
 
@@ -1930,36 +2116,128 @@ export function MiniplanEditorPage() {
   async function handleClearAuto(
     bereich: { gottesdienstId?: number; dienstbedarfId?: number } = {},
   ) {
+    // Für die Typ-Verengung unten (`miniplan` ist während des tatsächlichen Aufrufs immer geladen -
+    // alle Aufrufer hängen an JSX, das erst nach dem Ladezustand gerendert wird).
+    if (!miniplan) return
+    const angefordertePlanId = planId
     try {
       const aktualisiert = await miniplanZuweisungenLeeren(id, planId, bereich)
-      refreshNachMutation(aktualisiert)
+      if (planIdRef.current !== angefordertePlanId) return
+      // Betroffenheit anhand des *alten* `miniplan`-Standes auflösen (Dienstbedarf-IDs bleiben
+      // beim Leeren stabil) - planweites Leeren (kein `gottesdienstId`/`dienstbedarfId`) bumpt
+      // dagegen alle Karten.
+      const betroffen =
+        bereich.gottesdienstId !== undefined
+          ? [bereich.gottesdienstId]
+          : bereich.dienstbedarfId !== undefined
+            ? (() => {
+                const gid = gottesdienstIdFuerDienstbedarf(miniplan, bereich.dienstbedarfId!)
+                return gid !== null ? [gid] : []
+              })()
+            : undefined
+      refreshNachMutation(aktualisiert, betroffen)
       showToast('Automatische Zuweisungen geleert')
     } catch (err) {
+      if (planIdRef.current !== angefordertePlanId) return
       showToast(fehlerText(err, 'Fehler beim Leeren'), 'error')
     }
   }
 
   async function handlePinAuto(zuweisungId: number) {
+    if (!miniplan) return
+    const angefordertePlanId = planId
     try {
       const aktualisiert = await miniplanZuweisungFixieren(id, planId, zuweisungId, true)
-      refreshNachMutation(aktualisiert)
+      if (planIdRef.current !== angefordertePlanId) return
+      // Fixieren ändert nur das Flag einer einzelnen Zeile (ihre ID bleibt erhalten) - anhand des
+      // *alten* Standes auflösen, welcher Gottesdienst betroffen ist.
+      const gid = gottesdienstIdFuerZuweisung(miniplan, zuweisungId)
+      refreshNachMutation(aktualisiert, gid !== null ? [gid] : [])
       showToast('Zuweisung fest übernommen')
     } catch (err) {
+      if (planIdRef.current !== angefordertePlanId) return
       showToast(fehlerText(err, 'Fehler beim Fixieren'), 'error')
     }
+  }
+
+  // Gemeinsam von Maus/Touch-DnD (`handleDragEnd`) und der Tastatur-Alternative
+  // (`handleChipAktivieren`) genutzt - beide führen letztlich denselben Tausch-Request aus. Dimmt
+  // beide betroffenen Chips für die Dauer des Requests. `keyboardInitiiert` steuert nur die
+  // Fokus-Wiederherstellung danach (nur beim Tastatur-Pfad relevant, siehe `focusChipFuerMini`) -
+  // ein Maus-Drag hat keinen sinnvollen "Fokus zurückgeben"-Fall, da dort ohnehin kein Element
+  // fokussiert war.
+  function tauschDurchfuehren(
+    quelle: ZuweisungDragData,
+    ziel: ZuweisungDragData,
+    keyboardInitiiert = false,
+  ) {
+    if (!miniplan) return
+    if (quelle.zuweisungId === ziel.zuweisungId) return
+    const angefordertePlanId = planId
+    // Tauschen legt beide Zuweisungs-Zeilen mit neuen IDs neu an (siehe Backend-Kommentar) - eine
+    // per Tastatur ausgewählte Quelle, die auf eine der beiden betroffenen IDs zeigt, würde sonst
+    // stehen bleiben und beim nächsten Aktivieren einen Tausch mit einer nicht mehr existierenden
+    // ID anstoßen (vom Backend abgelehnt). Vorsorglich löschen, bevor die neuen IDs überhaupt
+    // bekannt sind - die alten werden so oder so ungültig.
+    setKeyboardSwapQuelle((aktuell) =>
+      aktuell &&
+      (aktuell.zuweisungId === quelle.zuweisungId || aktuell.zuweisungId === ziel.zuweisungId)
+        ? null
+        : aktuell,
+    )
+    // Tauschen legt die beiden Zuweisungs-Zeilen neu an (siehe Backend-Kommentar), die
+    // Dienstbedarf-IDs selbst bleiben aber stabil - über die Drag-Daten direkt bekannt, kein Suchen
+    // im alten Stand nötig. Nur die betroffenen ein bis zwei Gottesdienste bumpen.
+    const betroffeneDienstbedarfIds = new Set([quelle.dienstbedarfId, ziel.dienstbedarfId])
+    const betroffeneGottesdienstIds = [...betroffeneDienstbedarfIds]
+      .map((dbId) => gottesdienstIdFuerDienstbedarf(miniplan, dbId))
+      .filter((gid): gid is number => gid !== null)
+    // Für die Fokus-Wiederherstellung: die Zeile an `ziel`s Stelle trägt nach dem Tausch die
+    // ursprüngliche Mini von `quelle` - im *alten* Stand nachschlagen, bevor die Zeilen ersetzt
+    // werden.
+    const quellMiniId = keyboardInitiiert ? miniIdFuerZuweisung(miniplan, quelle.zuweisungId) : null
+    setTauschtGerade((ids) => new Set([...ids, quelle.zuweisungId, ziel.zuweisungId]))
+    miniplanZuweisungenTauschen(id, planId, quelle.zuweisungId, ziel.zuweisungId)
+      .then((aktualisiert) => {
+        if (planIdRef.current !== angefordertePlanId) return
+        refreshNachMutation(aktualisiert, betroffeneGottesdienstIds)
+        showToast('Zuweisungen getauscht')
+        if (keyboardInitiiert && quellMiniId !== null) {
+          focusChipFuerMini(ziel.dienstbedarfId, quellMiniId)
+        }
+      })
+      .catch((err) => {
+        if (planIdRef.current !== angefordertePlanId) return
+        showToast(fehlerText(err, 'Fehler beim Tauschen'), 'error')
+      })
+      .finally(() => {
+        setTauschtGerade((ids) => {
+          const kopie = new Set(ids)
+          kopie.delete(quelle.zuweisungId)
+          kopie.delete(ziel.zuweisungId)
+          return kopie
+        })
+      })
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const aktivDaten = event.active.data.current as ZuweisungDragData | undefined
     const zielDaten = event.over?.data.current as ZuweisungDragData | undefined
     if (!aktivDaten || !zielDaten) return
-    if (zielDaten.zuweisungId === aktivDaten.zuweisungId) return
-    miniplanZuweisungenTauschen(id, planId, aktivDaten.zuweisungId, zielDaten.zuweisungId)
-      .then((aktualisiert) => {
-        refreshNachMutation(aktualisiert)
-        showToast('Zuweisungen getauscht')
-      })
-      .catch((err) => showToast(fehlerText(err, 'Fehler beim Tauschen'), 'error'))
+    tauschDurchfuehren(aktivDaten, zielDaten)
+  }
+
+  // Erster Aktivierungs-Klick (Space/Enter) merkt sich den Chip als Tausch-Quelle, der zweite auf
+  // einem anderen Chip führt den Tausch aus; Aktivieren derselben Quelle hebt die Auswahl wieder auf
+  // (Toggle statt eines separaten Abbrechen-Elements pro Chip - Escape deckt den globalen
+  // Abbruch-Fall ab, siehe Effekt oben).
+  function handleChipAktivieren(daten: ZuweisungDragData) {
+    setKeyboardSwapQuelle((quelle) => {
+      if (!quelle) return daten
+      if (quelle.zuweisungId === daten.zuweisungId) return null
+      tauschDurchfuehren(quelle, daten, true)
+      return null
+    })
   }
 
   async function handleStatusWechsel(neuerStatus: 'abgeschlossen' | 'in_bearbeitung') {
@@ -2018,6 +2296,45 @@ export function MiniplanEditorPage() {
     setKartenStatus((aktuell) => ({ ...aktuell, [gottesdienstId]: status }))
   }, [])
 
+  // hält fest, welche Karten gerade ihr Bearbeiten-Modal offen haben (siehe
+  // `onBearbeitungChange`-Kommentar an `GottesdienstKarte`).
+  const handleBearbeitungChange = useCallback(
+    (gottesdienstId: number, bearbeitungOffen: boolean) => {
+      setBearbeitungOffenIds((aktuell) => {
+        if (aktuell.has(gottesdienstId) === bearbeitungOffen) return aktuell
+        const kopie = new Set(aktuell)
+        if (bearbeitungOffen) kopie.add(gottesdienstId)
+        else kopie.delete(gottesdienstId)
+        return kopie
+      })
+    },
+    [],
+  )
+
+  // die vom Server gelieferte (nach Datum sortierte) Reihenfolge wird nur übernommen,
+  // solange gerade keine Karte bearbeitet wird - ein Datums-Wechsel im offenen Bearbeiten-Modal
+  // soll die sichtbare Kartenreihenfolge nicht schon während der Bearbeitung ändern. Sobald das
+  // letzte offene Modal schließt, holt dieser Effekt (durch den Wechsel von `bearbeitungOffenIds`)
+  // die inzwischen aktuelle Serverreihenfolge nach.
+  useEffect(() => {
+    if (bearbeitungOffenIds.size > 0) return
+    setAngezeigteReihenfolge(miniplan?.gottesdienste.map((gd) => gd.id) ?? [])
+  }, [miniplan, bearbeitungOffenIds])
+
+  // Gerenderte Reihenfolge: die eingefrorene `angezeigteReihenfolge`, aufgelöst gegen den
+  // aktuellen `miniplan`-Stand (für frisch geladene Inhalte/Zuweisungen), ergänzt um Gottesdienste,
+  // die dort noch fehlen (z.B. gerade erst angelegt/dupliziert, während anderswo ein Modal offen
+  // ist) - gelöschte Gottesdienste fallen über die `find`-Prüfung automatisch heraus.
+  const sortierteGottesdienste = useMemo(() => {
+    if (!miniplan) return []
+    const bekannteIds = new Set(angezeigteReihenfolge)
+    const bekannt = angezeigteReihenfolge
+      .map((gdId) => miniplan.gottesdienste.find((gd) => gd.id === gdId))
+      .filter((gd): gd is Gottesdienst => gd !== undefined)
+    const neue = miniplan.gottesdienste.filter((gd) => !bekannteIds.has(gd.id))
+    return [...bekannt, ...neue]
+  }, [miniplan, angezeigteReihenfolge])
+
   // Nur Statusmeldungen noch existierender Gottesdienste zählen (gelöschte Karten hinterlassen
   // sonst veraltete Einträge in der Map).
   const speicherStatus = useMemo(() => {
@@ -2066,7 +2383,21 @@ export function MiniplanEditorPage() {
   if (!miniplan || !vorschauEingabe) {
     return (
       <AppShell wide pfarreiId={id}>
-        <p className="text-ink-soft">Lade Miniplan…</p>
+        {/* Layout-Skelett statt reinem Text - vorher blieb die rechte Spalte (PDF-
+            Vorschau) beim ersten Laden komplett leer, weil dieser frühe Return das ganze restliche
+            Grid übersprang. Nur `lg`+ zeigt die Vorschau-Karte überhaupt an (siehe finales Grid
+            unten), daher hier ebenfalls hinter `hidden lg:block` verborgen. */}
+        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+          <p className="text-ink-soft">Lade Miniplan…</p>
+          <div className="hidden min-w-0 lg:block">
+            <Card className="flex h-[80svh] flex-col lg:sticky lg:top-6 lg:h-[calc(100svh-3rem)]">
+              <CardHeader title="PDF-Vorschau" />
+              <div className="flex min-h-0 flex-1 items-center justify-center p-5">
+                <div aria-hidden className="h-full w-full animate-pulse rounded-lg bg-paper-dim" />
+              </div>
+            </Card>
+          </div>
+        </div>
       </AppShell>
     )
   }
@@ -2092,106 +2423,79 @@ export function MiniplanEditorPage() {
           )}
           <StatusAnzeige status={speicherStatus} className="text-sm" />
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {!readonly && (
-            <IconButton
-              ref={einstellungenButtonRef}
-              label="Auto-Fill-Einstellungen"
-              onClick={() => setEinstellungenOffen((o) => !o)}
-            >
-              <Settings2 className="h-4 w-4" />
-            </IconButton>
-          )}
-          {!readonly && (
-            <Button
-              variant="secondary"
-              size="sm"
-              title={fuelltGerade ? 'Befüllt…' : 'Füllen'}
-              disabled={fuelltGerade || miniplan.gottesdienste.length === 0}
-              onClick={handleFuellen}
-            >
-              <Wand2 className="h-4 w-4" />
-              <span className="hidden sm:inline">{fuelltGerade ? 'Befüllt…' : 'Füllen'}</span>
-            </Button>
-          )}
-          {!readonly &&
-            hatAutoZuweisungen &&
-            (autoLeerenBestaetigen ? (
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-wine">Alle automatischen Zuweisungen leeren?</span>
-                <IconButton
-                  label="Leeren bestätigen"
-                  tone="danger"
-                  onClick={() => {
-                    setAutoLeerenBestaetigen(false)
-                    handleClearAuto()
-                  }}
-                >
-                  <Check className="h-4 w-4" />
-                </IconButton>
-                <IconButton label="Abbrechen" onClick={() => setAutoLeerenBestaetigen(false)}>
-                  <X className="h-4 w-4" />
-                </IconButton>
-              </div>
-            ) : (
-              <Button
-                variant="secondary"
-                size="sm"
-                title="Auto leeren"
-                onClick={() => setAutoLeerenBestaetigen(true)}
-              >
-                <Eraser className="h-4 w-4" />
-                <span className="hidden sm:inline">Auto leeren</span>
-              </Button>
-            ))}
-          {miniplan.status === 'abgeschlossen' ? (
-            <>
-              <Button
-                variant="secondary"
-                size="sm"
-                title="PDF herunterladen"
-                onClick={handleDownload}
-              >
-                <Download className="h-4 w-4" />
-                <span className="hidden sm:inline">PDF herunterladen</span>
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={statusWirdGeaendert}
-                onClick={() => handleStatusWechsel('in_bearbeitung')}
-              >
-                Wieder öffnen
-              </Button>
-            </>
-          ) : abschliessenBestaetigen ? (
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-ink-soft">Plan wirklich abschließen?</span>
+        {/* zwei getrennte Wrap-Gruppen (Füllen-Werkzeuge / Status-Aktionen) statt einer
+            einzigen `flex-wrap`-Reihe - vorher landete auf schmalen Handy-Breiten oft ein einzelner
+            Button (z.B. "Plan abschließen") isoliert in einer eigenen dritten Zeile. Als zwei
+            Gruppen umbrechen sie zu je einer eigenen, optisch balancierten Zeile. */}
+        <div className="flex flex-col items-end gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          <div className="flex flex-wrap items-center gap-2">
+            {!readonly && (
               <IconButton
-                label="Abschließen bestätigen"
-                tone="danger"
-                disabled={statusWirdGeaendert}
-                onClick={() => {
-                  setAbschliessenBestaetigen(false)
-                  void handleStatusWechsel('abgeschlossen')
-                }}
+                ref={einstellungenButtonRef}
+                label="Auto-Fill-Einstellungen"
+                onClick={() => setEinstellungenOffen((o) => !o)}
               >
-                <Check className="h-4 w-4" />
+                <Settings2 className="h-4 w-4" />
               </IconButton>
-              <IconButton label="Abbrechen" onClick={() => setAbschliessenBestaetigen(false)}>
-                <X className="h-4 w-4" />
-              </IconButton>
-            </div>
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={statusWirdGeaendert}
-              onClick={() => setAbschliessenBestaetigen(true)}
-            >
-              Plan abschließen
-            </Button>
-          )}
+            )}
+            {!readonly && (
+              <Button
+                variant="secondary"
+                size="sm"
+                title={fuelltGerade ? 'Befüllt…' : 'Füllen'}
+                disabled={fuelltGerade || miniplan.gottesdienste.length === 0}
+                onClick={handleFuellen}
+              >
+                <Wand2 className="h-4 w-4" />
+                <span className="hidden sm:inline">{fuelltGerade ? 'Befüllt…' : 'Füllen'}</span>
+              </Button>
+            )}
+            {!readonly && hatAutoZuweisungen && (
+              <InlineConfirmButton
+                onConfirm={() => handleClearAuto()}
+                confirmLabel="Alle automatischen Zuweisungen leeren?"
+                trigger={(open) => (
+                  <Button variant="secondary" size="sm" title="Auto leeren" onClick={open}>
+                    <Eraser className="h-4 w-4" />
+                    <span className="hidden sm:inline">Auto leeren</span>
+                  </Button>
+                )}
+              />
+            )}
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {miniplan.status === 'abgeschlossen' ? (
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  title="PDF herunterladen"
+                  onClick={handleDownload}
+                >
+                  <Download className="h-4 w-4" />
+                  <span className="hidden sm:inline">PDF herunterladen</span>
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={statusWirdGeaendert}
+                  onClick={() => handleStatusWechsel('in_bearbeitung')}
+                >
+                  Wieder öffnen
+                </Button>
+              </>
+            ) : (
+              <InlineConfirmButton
+                onConfirm={() => handleStatusWechsel('abgeschlossen')}
+                confirmLabel="Plan wirklich abschließen?"
+                trigger={(open) => (
+                  <Button variant="primary" size="sm" disabled={statusWirdGeaendert} onClick={open}>
+                    Plan abschließen
+                  </Button>
+                )}
+              />
+            )}
+          </div>
         </div>
       </div>
       <ZuteilungEinstellungenPopover
@@ -2199,6 +2503,9 @@ export function MiniplanEditorPage() {
         onClose={() => setEinstellungenOffen(false)}
         anchorRef={einstellungenButtonRef}
         miniplan={miniplan}
+        minis={minis}
+        pfarreiId={id}
+        onMiniLimitsChange={(aktualisiert) => refreshNachMutation(aktualisiert, [])}
         onSave={handleEinstellungenSpeichern}
       />
       {downloadFehler && (
@@ -2216,7 +2523,7 @@ export function MiniplanEditorPage() {
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
         <DndContext sensors={dndSensoren} onDragEnd={handleDragEnd}>
           <div className="flex min-w-0 flex-col gap-6">
-            {miniplan.gottesdienste.map((gottesdienst) => (
+            {sortierteGottesdienste.map((gottesdienst) => (
               <GottesdienstKarte
                 key={gottesdienst.id}
                 gottesdienst={gottesdienst}
@@ -2225,6 +2532,7 @@ export function MiniplanEditorPage() {
                 jahr={miniplan.jahr}
                 monat={miniplan.monat}
                 readonly={readonly}
+                revision={kartenRevision[gottesdienst.id] ?? 0}
                 gruppen={gruppen}
                 minis={minis}
                 dienstTypen={dienstTypen}
@@ -2234,6 +2542,10 @@ export function MiniplanEditorPage() {
                 onStatusChange={handleKartenStatusChange}
                 onClearAutoBereich={handleClearAuto}
                 onPinAuto={handlePinAuto}
+                onBearbeitungChange={handleBearbeitungChange}
+                tauschtGerade={tauschtGerade}
+                keyboardSwapQuelle={keyboardSwapQuelle}
+                onChipAktivieren={handleChipAktivieren}
                 onDuplicated={(gottesdienstId) => {
                   setNeuesterGottesdienstId(gottesdienstId)
                   reload()
@@ -2281,10 +2593,41 @@ export function MiniplanEditorPage() {
           </div>
         </DndContext>
 
-        <div className="min-w-0">
+        {/* unterhalb von `lg` verschwindet die Seitenspalte komplett (statt darunter zu
+            rutschen und schweres Scrollen zu erzwingen) - der schwebende Button daneben öffnet
+            dieselbe Vorschau stattdessen in einem Bottom-Sheet-Overlay. */}
+        <div className="hidden min-w-0 lg:block">
           <VorschauPanel pfarreiId={id} miniplanId={planId} eingabe={vorschauEingabe} />
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => setMobileVorschauOffen(true)}
+        className="fixed right-4 bottom-4 z-30 flex items-center gap-2 rounded-full border border-line bg-paper px-4 py-3 text-sm font-medium text-ink shadow-lg shadow-ink/20 transition-colors hover:bg-pine-tint hover:text-pine-dark lg:hidden"
+      >
+        <Eye className="h-4 w-4" />
+        Vorschau
+      </button>
+
+      {mobileVorschauOffen && (
+        <div
+          className="animate-fade fixed inset-0 z-40 flex flex-col justify-end bg-ink/40 backdrop-blur-sm lg:hidden"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setMobileVorschauOffen(false)
+          }}
+        >
+          <div className="animate-rise h-[85svh] shadow-xl shadow-ink/20">
+            <VorschauPanel
+              pfarreiId={id}
+              miniplanId={planId}
+              eingabe={vorschauEingabe}
+              variant="sheet"
+              onClose={() => setMobileVorschauOffen(false)}
+            />
+          </div>
+        </div>
+      )}
 
       <NeuerGottesdienstModal
         pfarreiId={id}

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api._helpers import get_or_404
 from app.api.miniplaene import schreibschutz_pruefen
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
@@ -28,27 +29,19 @@ require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICH
 
 
 def _get_miniplan_or_404(pfarrei_id: int, miniplan_id: int, db: Session) -> Miniplan:
-    miniplan = (
-        db.query(Miniplan)
-        .filter(Miniplan.id == miniplan_id, Miniplan.pfarrei_id == pfarrei_id)
-        .first()
+    return get_or_404(
+        db, Miniplan, miniplan_id, pfarrei_id=pfarrei_id, not_found_detail="Miniplan nicht gefunden"
     )
-    if miniplan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Miniplan nicht gefunden")
-    return miniplan
 
 
 def _get_gottesdienst_or_404(miniplan_id: int, gottesdienst_id: int, db: Session) -> Gottesdienst:
-    gottesdienst = (
-        db.query(Gottesdienst)
-        .filter(Gottesdienst.id == gottesdienst_id, Gottesdienst.miniplan_id == miniplan_id)
-        .first()
+    return get_or_404(
+        db,
+        Gottesdienst,
+        gottesdienst_id,
+        filters=[Gottesdienst.miniplan_id == miniplan_id],
+        not_found_detail="Gottesdienst nicht gefunden",
     )
-    if gottesdienst is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Gottesdienst nicht gefunden"
-        )
-    return gottesdienst
 
 
 def _dienstbedarf_bauen(

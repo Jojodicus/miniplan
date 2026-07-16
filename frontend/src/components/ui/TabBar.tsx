@@ -41,15 +41,13 @@ export function TabBar<K extends string>({
   }
 
   return (
-    <div
-      role="tablist"
-      className={`-mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0 ${className}`}
-    >
+    <div role="tablist" className={`flex flex-wrap gap-1 border-b border-line ${className}`}>
       {tabs.map(({ key, label, icon: Icon }) => (
         <button
           key={key}
           role="tab"
           aria-selected={active === key}
+          title={label}
           onClick={() => onChange(key)}
           className={`flex shrink-0 cursor-pointer items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
             active === key
@@ -58,7 +56,7 @@ export function TabBar<K extends string>({
           }`}
         >
           <Icon className="h-4 w-4" />
-          {label}
+          <span className="hidden sm:inline">{label}</span>
         </button>
       ))}
     </div>

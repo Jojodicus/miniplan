@@ -3,7 +3,6 @@ from datetime import date, time
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api import miniplaene as miniplaene_api
 from app.models.dienstbedarf import (
     Dienstbedarf,
     DienstbedarfGruppenAnforderung,
@@ -15,6 +14,7 @@ from app.models.mini import Mini
 from app.models.miniplan import Miniplan
 from app.models.nutzer import Nutzer
 from app.models.pfarrei import Pfarrei
+from app.services import miniplan_operations
 from tests.conftest import auth_headers
 
 
@@ -300,7 +300,7 @@ def test_miniplan_fuellen_synchronisiert_ferien_fuer_planjahr(
         aufrufe.append(jahre)
         return []
 
-    monkeypatch.setattr(miniplaene_api, "sync_ferien_falls_fehlend", fake_sync_ferien)
+    monkeypatch.setattr(miniplan_operations, "sync_ferien_falls_fehlend", fake_sync_ferien)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     response = client.post(
@@ -323,9 +323,9 @@ def test_miniplan_fuellen_ignoriert_ferien_sync_fehler(
     db_session.refresh(miniplan)
 
     def failing_sync_ferien(pfarrei_arg, db, jahre=None):
-        raise miniplaene_api.FerienSyncFehler("keine Verbindung")
+        raise miniplan_operations.FerienSyncFehler("keine Verbindung")
 
-    monkeypatch.setattr(miniplaene_api, "sync_ferien_falls_fehlend", failing_sync_ferien)
+    monkeypatch.setattr(miniplan_operations, "sync_ferien_falls_fehlend", failing_sync_ferien)
 
     headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
     response = client.post(
@@ -707,6 +707,10 @@ def test_zuteilung_einstellungen_defaults_und_setzen(
     assert body["mixing_gewicht"] == 0.0
     assert body["wiederholung_gewicht"] == 0.0
     assert body["max_einsaetze_standard"] is None
+    assert body["ignoriere_max_einsaetze"] is False
+    assert body["ignoriere_gruppen_mindestanzahl"] is False
+    assert body["ignoriere_verfuegbarkeit"] is False
+    assert body["mini_limits"] == []
 
     response = client.put(
         f"{base}/zuteilung-einstellungen",
@@ -716,6 +720,9 @@ def test_zuteilung_einstellungen_defaults_und_setzen(
             "mixing_gewicht": 4.0,
             "wiederholung_gewicht": 1.5,
             "max_einsaetze_standard": 3,
+            "ignoriere_max_einsaetze": True,
+            "ignoriere_gruppen_mindestanzahl": True,
+            "ignoriere_verfuegbarkeit": True,
         },
         headers=headers,
     )
@@ -726,6 +733,9 @@ def test_zuteilung_einstellungen_defaults_und_setzen(
     assert body["mixing_gewicht"] == 4.0
     assert body["wiederholung_gewicht"] == 1.5
     assert body["max_einsaetze_standard"] == 3
+    assert body["ignoriere_max_einsaetze"] is True
+    assert body["ignoriere_gruppen_mindestanzahl"] is True
+    assert body["ignoriere_verfuegbarkeit"] is True
 
     # Ungültige Werte werden abgelehnt.
     response = client.put(
@@ -739,6 +749,48 @@ def test_zuteilung_einstellungen_defaults_und_setzen(
         headers=headers,
     )
     assert response.status_code == 422
+
+
+def test_mini_limit_setzen_und_entfernen(
+    client: TestClient, verantwortlicher_user: Nutzer, pfarrei: Pfarrei, gruppe: Gruppe, db_session
+) -> None:
+    miniplan = Miniplan(pfarrei_id=pfarrei.id, monat=3, jahr=2028)
+    mini = Mini(pfarrei_id=pfarrei.id, gruppe_id=gruppe.id, name="Karl", max_einsaetze_pro_monat=2)
+    db_session.add_all([miniplan, mini])
+    db_session.commit()
+    db_session.refresh(miniplan)
+    db_session.refresh(mini)
+
+    headers = auth_headers(client, "verantwortlich@example.com", "geheim123")
+    base = f"/api/pfarreien/{pfarrei.id}/miniplaene/{miniplan.id}"
+
+    # Ausnahme setzen: eigenes Zahlen-Limit, das den globalen Mini-Wert für diesen Plan
+    # übersteuert.
+    response = client.put(
+        f"{base}/minis/{mini.id}/limit", json={"max_einsaetze": 5}, headers=headers
+    )
+    assert response.status_code == 200
+    limits = response.json()["mini_limits"]
+    assert len(limits) == 1
+    assert limits[0] == {"mini_id": mini.id, "mini_name": "Karl", "max_einsaetze": 5}
+
+    # Erneutes Setzen überschreibt statt eine zweite Zeile anzulegen (explizit "kein Limit").
+    response = client.put(
+        f"{base}/minis/{mini.id}/limit", json={"max_einsaetze": None}, headers=headers
+    )
+    assert response.status_code == 200
+    limits = response.json()["mini_limits"]
+    assert len(limits) == 1
+    assert limits[0]["max_einsaetze"] is None
+
+    # Entfernen der Ausnahme - der Mini fällt zurück auf sein globales Limit.
+    response = client.delete(f"{base}/minis/{mini.id}/limit", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["mini_limits"] == []
+
+    # Ein fremder Mini (falsche Pfarrei) wird abgelehnt.
+    response = client.put(f"{base}/minis/999999/limit", json={"max_einsaetze": 1}, headers=headers)
+    assert response.status_code == 404
 
 
 def test_abgeschlossener_miniplan_ist_schreibgeschuetzt(

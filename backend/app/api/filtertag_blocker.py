@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api._helpers import get_or_404
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
 from app.models.filtertag import Filtertag
@@ -20,14 +21,13 @@ require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICH
 
 
 def _get_blocker_or_404(pfarrei_id: int, blocker_id: int, db: Session) -> FiltertagBlocker:
-    blocker = (
-        db.query(FiltertagBlocker)
-        .filter(FiltertagBlocker.id == blocker_id, FiltertagBlocker.pfarrei_id == pfarrei_id)
-        .first()
+    return get_or_404(
+        db,
+        FiltertagBlocker,
+        blocker_id,
+        pfarrei_id=pfarrei_id,
+        not_found_detail="Blocker nicht gefunden",
     )
-    if blocker is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blocker nicht gefunden")
-    return blocker
 
 
 def _filtertag_pruefen(pfarrei_id: int, filtertag_id: int, db: Session) -> None:

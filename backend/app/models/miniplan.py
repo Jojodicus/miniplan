@@ -1,13 +1,14 @@
 import enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, Float, ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy import Boolean, Enum, Float, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.gottesdienst import Gottesdienst
+    from app.models.mini_miniplan_limit import MiniMiniplanLimit
 
 
 class MiniplanStatus(enum.StrEnum):
@@ -47,9 +48,21 @@ class Miniplan(Base):
     # Planweite Standard-Obergrenze für Einsätze pro Mini, sofern der einzelne Mini kein eigenes
     # `Mini.max_einsaetze_pro_monat` gesetzt hat. None = kein Limit.
     max_einsaetze_standard: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    # Schalter, um einzelne harte Regeln des automatischen Füllens für Ausnahmefälle komplett
+    # abzuschalten (siehe services/zuteilung.py) - normalerweise False, harte Regeln gelten.
+    ignoriere_max_einsaetze: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
+    ignoriere_gruppen_mindestanzahl: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
+    ignoriere_verfuegbarkeit: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
 
     gottesdienste: Mapped[list["Gottesdienst"]] = relationship(
         back_populates="miniplan",
         cascade="all, delete-orphan",
         order_by="(Gottesdienst.datum, Gottesdienst.uhrzeit)",
     )
+    mini_limits: Mapped[list["MiniMiniplanLimit"]] = relationship(cascade="all, delete-orphan")

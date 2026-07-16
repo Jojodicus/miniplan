@@ -1,10 +1,9 @@
-import contextlib
-
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.api._helpers import get_or_404
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
 from app.models.dienstbedarf import (
@@ -13,6 +12,8 @@ from app.models.dienstbedarf import (
     DienstbedarfZuweisung,
 )
 from app.models.gottesdienst import Gottesdienst
+from app.models.mini import Mini
+from app.models.mini_miniplan_limit import MiniMiniplanLimit
 from app.models.miniplan import Miniplan, MiniplanStatus
 from app.models.nutzer import PfarreiRolle
 from app.models.pfarrei import Pfarrei
@@ -21,6 +22,7 @@ from app.schemas.dienstbedarf import (
     ZuweisungFixierungIn,
     ZuweisungTauschenIn,
 )
+from app.schemas.mini_miniplan_limit import MiniLimitIn
 from app.schemas.miniplan import (
     MiniplanCreate,
     MiniplanListeOut,
@@ -30,21 +32,20 @@ from app.schemas.miniplan import (
     ZuteilungEinstellungen,
 )
 from app.schemas.miniplan_vorschau import MiniplanVorschauIn, miniplan_zu_vorschau
-from app.services.ferien_sync import FerienSyncFehler, sync_ferien_falls_fehlend
+from app.services import miniplan_operations
 from app.services.typst_render import TypstCompileError, render_miniplan_pdf
-from app.services.zuteilung import zuteilung_vorschlagen
 
 router = APIRouter(prefix="/api/pfarreien/{pfarrei_id}/miniplaene", tags=["miniplaene"])
 require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER)
 require_lesend = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICHER, PfarreiRolle.BETRACHTER)
 
 
-def _mit_geladenem_planstand(query):
+def _planstand_optionen() -> list:
     """Lädt die komplette Gottesdienst/Dienstbedarf/Zuweisungs-Kette per selectinload statt der
     SQLAlchemy-Default-Lazy-Loads - sonst löst die Ausgabe der verschachtelten Response-Schemas
     (MiniplanOut) für jede Zeile eine eigene Query aus (N+1), was v.a. die alle 500ms aufgerufene
     Live-Vorschau spürbar verlangsamt."""
-    return query.options(
+    return [
         selectinload(Miniplan.gottesdienste).options(
             selectinload(Gottesdienst.dienstbedarf).options(
                 selectinload(Dienstbedarf.dienst_typ),
@@ -53,19 +54,20 @@ def _mit_geladenem_planstand(query):
                 ),
                 selectinload(Dienstbedarf.zuweisungen).selectinload(DienstbedarfZuweisung.mini),
             )
-        )
-    )
+        ),
+        selectinload(Miniplan.mini_limits).selectinload(MiniMiniplanLimit.mini),
+    ]
 
 
 def _get_miniplan_or_404(pfarrei_id: int, miniplan_id: int, db: Session) -> Miniplan:
-    miniplan = (
-        _mit_geladenem_planstand(db.query(Miniplan))
-        .filter(Miniplan.id == miniplan_id, Miniplan.pfarrei_id == pfarrei_id)
-        .first()
+    return get_or_404(
+        db,
+        Miniplan,
+        miniplan_id,
+        pfarrei_id=pfarrei_id,
+        options=_planstand_optionen(),
+        not_found_detail="Miniplan nicht gefunden",
     )
-    if miniplan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Miniplan nicht gefunden")
-    return miniplan
 
 
 def schreibschutz_pruefen(miniplan: Miniplan) -> None:
@@ -82,18 +84,17 @@ def schreibschutz_pruefen(miniplan: Miniplan) -> None:
 def _get_zuweisung_or_404(
     miniplan_id: int, zuweisung_id: int, db: Session
 ) -> DienstbedarfZuweisung:
-    zuweisung = (
-        db.query(DienstbedarfZuweisung)
-        .join(Dienstbedarf, DienstbedarfZuweisung.dienstbedarf_id == Dienstbedarf.id)
-        .join(Gottesdienst, Dienstbedarf.gottesdienst_id == Gottesdienst.id)
-        .filter(DienstbedarfZuweisung.id == zuweisung_id, Gottesdienst.miniplan_id == miniplan_id)
-        .first()
+    return get_or_404(
+        db,
+        DienstbedarfZuweisung,
+        zuweisung_id,
+        joins=[
+            (Dienstbedarf, DienstbedarfZuweisung.dienstbedarf_id == Dienstbedarf.id),
+            (Gottesdienst, Dienstbedarf.gottesdienst_id == Gottesdienst.id),
+        ],
+        filters=[Gottesdienst.miniplan_id == miniplan_id],
+        not_found_detail="Zuweisung nicht gefunden",
     )
-    if zuweisung is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Zuweisung nicht gefunden"
-        )
-    return zuweisung
 
 
 def _render_pdf_oder_422(pfarrei_name: str, planstand: MiniplanVorschauIn) -> bytes:
@@ -106,22 +107,6 @@ def _render_pdf_oder_422(pfarrei_name: str, planstand: MiniplanVorschauIn) -> by
         ) from exc
 
 
-def _mini_bereits_im_gottesdienst(
-    db: Session, gottesdienst_id: int, mini_id: int, ausser_zuweisung_ids: set[int]
-) -> bool:
-    return (
-        db.query(DienstbedarfZuweisung)
-        .join(Dienstbedarf, DienstbedarfZuweisung.dienstbedarf_id == Dienstbedarf.id)
-        .filter(
-            Dienstbedarf.gottesdienst_id == gottesdienst_id,
-            DienstbedarfZuweisung.mini_id == mini_id,
-            DienstbedarfZuweisung.id.notin_(ausser_zuweisung_ids),
-        )
-        .first()
-        is not None
-    )
-
-
 @router.get("", response_model=list[MiniplanListeOut])
 def liste(
     pfarrei_id: int,
@@ -130,8 +115,8 @@ def liste(
     _=Depends(require_verantwortlich),
 ) -> list[MiniplanListeOut]:
     # Übersichtsliste braucht nur Eckdaten + Gottesdienst-Anzahl, nicht den kompletten
-    # verschachtelten Planstand - ein gezählter Join statt `_mit_geladenem_planstand` erspart die
-    # teuren selectinload-Ketten für jeden je angelegten Miniplan der Pfarrei.
+    # verschachtelten Planstand - ein gezählter Join statt `_get_miniplan_or_404`s Eager-Loading
+    # erspart die teuren selectinload-Ketten für jeden je angelegten Miniplan der Pfarrei.
     zeilen = (
         db.query(Miniplan, func.count(Gottesdienst.id))
         .outerjoin(Gottesdienst, Gottesdienst.miniplan_id == Miniplan.id)
@@ -236,8 +221,71 @@ def zuteilung_einstellungen_setzen(
     miniplan.mixing_gewicht = daten.mixing_gewicht
     miniplan.wiederholung_gewicht = daten.wiederholung_gewicht
     miniplan.max_einsaetze_standard = daten.max_einsaetze_standard
+    miniplan.ignoriere_max_einsaetze = daten.ignoriere_max_einsaetze
+    miniplan.ignoriere_gruppen_mindestanzahl = daten.ignoriere_gruppen_mindestanzahl
+    miniplan.ignoriere_verfuegbarkeit = daten.ignoriere_verfuegbarkeit
     db.commit()
     db.refresh(miniplan)
+    return miniplan
+
+
+@router.put("/{miniplan_id}/minis/{mini_id}/limit", response_model=MiniplanOut)
+def mini_limit_setzen(
+    pfarrei_id: int,
+    miniplan_id: int,
+    mini_id: int,
+    daten: MiniLimitIn,
+    db: Session = Depends(get_db),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Miniplan:
+    """Überschreibt für diesen einen Mini das Einsatz-Limit nur innerhalb dieses Miniplans -
+    `max_einsaetze=None` hebt jedes Limit für ihn explizit auf, unabhängig von
+    `Mini.max_einsaetze_pro_monat`/`Miniplan.max_einsaetze_standard` (siehe
+    services/zuteilung.py)."""
+    miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(miniplan)
+    get_or_404(db, Mini, mini_id, pfarrei_id=pfarrei_id)
+    limit = (
+        db.query(MiniMiniplanLimit)
+        .filter(MiniMiniplanLimit.miniplan_id == miniplan_id, MiniMiniplanLimit.mini_id == mini_id)
+        .first()
+    )
+    if limit is None:
+        db.add(
+            MiniMiniplanLimit(
+                miniplan_id=miniplan_id, mini_id=mini_id, max_einsaetze=daten.max_einsaetze
+            )
+        )
+    else:
+        limit.max_einsaetze = daten.max_einsaetze
+    db.commit()
+    db.refresh(miniplan)
+    return miniplan
+
+
+@router.delete("/{miniplan_id}/minis/{mini_id}/limit", response_model=MiniplanOut)
+def mini_limit_entfernen(
+    pfarrei_id: int,
+    miniplan_id: int,
+    mini_id: int,
+    db: Session = Depends(get_db),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
+    _=Depends(require_verantwortlich),
+) -> Miniplan:
+    """Entfernt die Ausnahme wieder - der Mini fällt für diesen Plan zurück auf
+    `Mini.max_einsaetze_pro_monat`/`Miniplan.max_einsaetze_standard`."""
+    miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
+    schreibschutz_pruefen(miniplan)
+    limit = (
+        db.query(MiniMiniplanLimit)
+        .filter(MiniMiniplanLimit.miniplan_id == miniplan_id, MiniMiniplanLimit.mini_id == mini_id)
+        .first()
+    )
+    if limit is not None:
+        db.delete(limit)
+        db.commit()
+        db.refresh(miniplan)
     return miniplan
 
 
@@ -246,42 +294,12 @@ def fuellen(
     pfarrei_id: int,
     miniplan_id: int,
     db: Session = Depends(get_db),
-    pfarrei: Pfarrei = Depends(get_pfarrei),
+    _pfarrei: Pfarrei = Depends(get_pfarrei),
     _=Depends(require_verantwortlich),
 ) -> Miniplan:
     miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
     schreibschutz_pruefen(miniplan)
-    # Best-effort, nur additiv für tatsächlich fehlende Jahre (statt eines vollen Neuabgleichs bei
-    # jedem einzelnen Füllen-Lauf): schlägt die externe Ferien-Quelle fehl, bleiben bestehende
-    # Ferienzeiten erhalten, das Füllen soll dadurch nicht scheitern. Ein voller `sync_ferien` bei
-    # jedem Füllen hätte sonst unnötig oft die externe Quelle angefragt - je nach Nutzungsmuster
-    # oft genug, um deren Rate-Limit zu erschöpfen (siehe `ferien_sync._rate_limited_until`) und
-    # sogar den manuellen "Aktualisieren"-Button mitzublockieren. Jahre aus dem Miniplan
-    # selbst statt dem heutigen Datum, damit auch mit Vorlauf geplante Monate (z.B. kurz vor
-    # Schuljahresbeginn) aktuelle Ferienzeiten für ihr eigenes Jahr bekommen.
-    with contextlib.suppress(FerienSyncFehler):
-        sync_ferien_falls_fehlend(pfarrei, db, jahre={miniplan.jahr, miniplan.jahr + 1})
-    vorschlag = zuteilung_vorschlagen(db, pfarrei_id, miniplan)
-    # Erst alle nicht fixierten Zuweisungen löschen und flushen, bevor die neu vorgeschlagenen
-    # eingefügt werden: bei einem erneuten Füllen-Lauf kann derselbe Mini wieder demselben
-    # Dienstbedarf zugewiesen werden (z.B. weil er der einzige passende Kandidat bleibt) - ohne
-    # den Flush dazwischen könnte SQLAlchemy die neue Zeile einfügen, bevor die alte (gleiche
-    # `dienstbedarf_id`+`mini_id`) gelöscht ist, und den Unique-Constraint verletzen.
-    for gottesdienst in miniplan.gottesdienste:
-        for bedarf in gottesdienst.dienstbedarf:
-            for zuweisung in bedarf.zuweisungen:
-                if not zuweisung.manuell_fixiert:
-                    db.delete(zuweisung)
-    db.flush()
-    for gottesdienst in miniplan.gottesdienste:
-        for bedarf in gottesdienst.dienstbedarf:
-            for mini_id in vorschlag.get(bedarf.id, []):
-                db.add(
-                    DienstbedarfZuweisung(
-                        dienstbedarf_id=bedarf.id, mini_id=mini_id, manuell_fixiert=False
-                    )
-                )
-    db.commit()
+    miniplan_operations.fuellen_miniplan(db, pfarrei_id, miniplan)
     db.refresh(miniplan)
     return miniplan
 
@@ -305,53 +323,13 @@ def zuweisungen_tauschen(
     zuweisung_a = _get_zuweisung_or_404(miniplan_id, daten.zuweisung_id_a, db)
     zuweisung_b = _get_zuweisung_or_404(miniplan_id, daten.zuweisung_id_b, db)
 
-    gottesdienst_a_id = zuweisung_a.dienstbedarf.gottesdienst_id
-    gottesdienst_b_id = zuweisung_b.dienstbedarf.gottesdienst_id
-    # Beide beteiligten Zuweisungen ausschließen, nicht nur die jeweils eigene: gehören beide zum
-    # selben Gottesdienst (Tausch über zwei Dienst-Typen desselben Termins hinweg), wäre sonst die
-    # andere Zuweisung selbst - die ja gerade den gesuchten Mini noch trägt, aber gleich den
-    # anderen bekommt - ein fälschlicher "bereits eingeteilt"-Treffer.
-    ausgeschlossen = {zuweisung_a.id, zuweisung_b.id}
-    if _mini_bereits_im_gottesdienst(db, gottesdienst_a_id, zuweisung_b.mini_id, ausgeschlossen):
+    try:
+        miniplan_operations.zuweisungen_tauschen(db, zuweisung_a, zuweisung_b)
+    except miniplan_operations.MiniBereitsEingeteiltFehler:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Der Mini ist in diesem Gottesdienst bereits eingeteilt",
-        )
-    if _mini_bereits_im_gottesdienst(db, gottesdienst_b_id, zuweisung_a.mini_id, ausgeschlossen):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Der Mini ist in diesem Gottesdienst bereits eingeteilt",
-        )
-
-    # Nicht per In-Place-Update tauschen: der Unique-Constraint (dienstbedarf_id, mini_id) kann
-    # dabei transient verletzt werden, wenn beide Zuweisungen zum selben Dienstbedarf gehören.
-    # Löschen + Neuanlegen in einem Flush umgeht das zuverlässig. Die Fixierung bleibt an der
-    # Stelle (Zeile) hängen, nicht am Mini - wer wohin gehört, tauscht, wer davon fixiert war
-    # bleibt es an der jeweiligen Stelle.
-    dienstbedarf_a_id, mini_b_id, fixiert_a = (
-        zuweisung_a.dienstbedarf_id,
-        zuweisung_b.mini_id,
-        zuweisung_a.manuell_fixiert,
-    )
-    dienstbedarf_b_id, mini_a_id, fixiert_b = (
-        zuweisung_b.dienstbedarf_id,
-        zuweisung_a.mini_id,
-        zuweisung_b.manuell_fixiert,
-    )
-    db.delete(zuweisung_a)
-    db.delete(zuweisung_b)
-    db.flush()
-    db.add(
-        DienstbedarfZuweisung(
-            dienstbedarf_id=dienstbedarf_a_id, mini_id=mini_b_id, manuell_fixiert=fixiert_a
-        )
-    )
-    db.add(
-        DienstbedarfZuweisung(
-            dienstbedarf_id=dienstbedarf_b_id, mini_id=mini_a_id, manuell_fixiert=fixiert_b
-        )
-    )
-    db.commit()
+        ) from None
     db.refresh(miniplan)
     return miniplan
 
@@ -369,16 +347,9 @@ def zuweisungen_leeren(
     einen Gottesdienst oder einen einzelnen Dienstbedarf. Manuell fixierte Zuweisungen bleiben."""
     miniplan = _get_miniplan_or_404(pfarrei_id, miniplan_id, db)
     schreibschutz_pruefen(miniplan)
-    for gottesdienst in miniplan.gottesdienste:
-        if daten.gottesdienst_id is not None and gottesdienst.id != daten.gottesdienst_id:
-            continue
-        for bedarf in gottesdienst.dienstbedarf:
-            if daten.dienstbedarf_id is not None and bedarf.id != daten.dienstbedarf_id:
-                continue
-            for zuweisung in bedarf.zuweisungen:
-                if not zuweisung.manuell_fixiert:
-                    db.delete(zuweisung)
-    db.commit()
+    miniplan_operations.zuweisungen_leeren(
+        db, miniplan, daten.gottesdienst_id, daten.dienstbedarf_id
+    )
     db.refresh(miniplan)
     return miniplan
 

@@ -10,6 +10,9 @@ export interface ZuteilungEinstellungen {
   mixing_gewicht: number
   wiederholung_gewicht: number
   max_einsaetze_standard: number | null
+  ignoriere_max_einsaetze: boolean
+  ignoriere_gruppen_mindestanzahl: boolean
+  ignoriere_verfuegbarkeit: boolean
 }
 
 // Muss mit den Defaults von `ZuteilungConfig` in `backend/app/services/zuteilung.py` übereinstimmen.
@@ -19,6 +22,17 @@ export const ZUTEILUNG_DEFAULTS: ZuteilungEinstellungen = {
   mixing_gewicht: 0.0,
   wiederholung_gewicht: 0.0,
   max_einsaetze_standard: null,
+  ignoriere_max_einsaetze: false,
+  ignoriere_gruppen_mindestanzahl: false,
+  ignoriere_verfuegbarkeit: false,
+}
+
+// Planbezogene Ausnahme vom Einsatz-Limit für einen einzelnen Mini (siehe MiniMiniplanLimit im
+// Backend) - `max_einsaetze: null` hebt jedes Limit für diesen Mini in diesem Plan explizit auf.
+export interface MiniLimit {
+  mini_id: number
+  mini_name: string
+  max_einsaetze: number | null
 }
 
 export interface Miniplan extends ZuteilungEinstellungen {
@@ -29,6 +43,7 @@ export interface Miniplan extends ZuteilungEinstellungen {
   status: MiniplanStatus
   veranstaltungen: string | null
   ankuendigungen: string | null
+  mini_limits: MiniLimit[]
   gottesdienste: Gottesdienst[]
 }
 
@@ -89,6 +104,28 @@ export function miniplanZuteilungEinstellungenSetzen(
   return api.put<Miniplan>(
     `/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}/zuteilung-einstellungen`,
     einstellungen,
+  )
+}
+
+export function miniplanMiniLimitSetzen(
+  pfarreiId: number,
+  miniplanId: number,
+  miniId: number,
+  maxEinsaetze: number | null,
+): Promise<Miniplan> {
+  return api.put<Miniplan>(
+    `/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}/minis/${miniId}/limit`,
+    { max_einsaetze: maxEinsaetze },
+  )
+}
+
+export function miniplanMiniLimitEntfernen(
+  pfarreiId: number,
+  miniplanId: number,
+  miniId: number,
+): Promise<Miniplan> {
+  return api.delete<Miniplan>(
+    `/api/pfarreien/${pfarreiId}/miniplaene/${miniplanId}/minis/${miniId}/limit`,
   )
 }
 

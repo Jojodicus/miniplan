@@ -40,13 +40,28 @@ class Settings(BaseSettings):
     # Registriert zusätzliche, ausschließlich für die E2E-Suite gedachte Endpunkte (siehe
     # app/api/ferien_stub.py) - in einem echten Deployment nie setzen.
     enable_test_stubs: bool = False
+    # Ausdrückliches Opt-in, um trotz fehlendem MINIPLAN_SECRET_KEY_FILE/MINIPLAN_SECRET_KEY mit
+    # dem öffentlich bekannten Dev-Secret-Key zu starten (siehe model_post_init unten) - nur für
+    # lokale Entwicklung/Tests gedacht, siehe tests/conftest.py. Ohne dieses Flag bricht der Start
+    # ansonsten hart ab, statt (wie früher) nur zu warnen: ein vergessenes MINIPLAN_SECRET_KEY_FILE
+    # in einer erreichbaren Umgebung würde sonst JWT-Fälschungen für beliebige Nutzer erlauben.
+    allow_dev_secret: bool = False
 
     def model_post_init(self, __context: object) -> None:
         if self.secret_key:
             return
         if not self.secret_key_file:
+            if not self.allow_dev_secret:
+                raise RuntimeError(
+                    "Weder MINIPLAN_SECRET_KEY noch MINIPLAN_SECRET_KEY_FILE ist gesetzt. Ohne "
+                    "einen echten Secret-Key ließen sich JWTs für beliebige Nutzer fälschen - "
+                    "daher bricht der Start hier ab, statt (wie früher) nur zu warnen. Für lokale "
+                    "Entwicklung/Tests ausdrücklich MINIPLAN_ALLOW_DEV_SECRET=1 setzen, um "
+                    "stattdessen mit dem öffentlich bekannten Dev-Secret-Key zu starten."
+                )
             logger.warning(
-                "MINIPLAN_SECRET_KEY_FILE ist nicht gesetzt, verwende einen öffentlich bekannten "
+                "MINIPLAN_SECRET_KEY_FILE ist nicht gesetzt, verwende (via "
+                "MINIPLAN_ALLOW_DEV_SECRET=1 ausdrücklich erlaubt) einen öffentlich bekannten "
                 "Entwicklungs-Secret-Key. Damit lassen sich JWTs für beliebige Nutzer fälschen – "
                 "niemals so in einer erreichbaren Umgebung betreiben."
             )

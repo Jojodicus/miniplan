@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.api._helpers import get_or_404
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_current_user, get_pfarrei, require_admin
 from app.models.ferienzeitraum import Ferienzeitraum
@@ -52,10 +53,7 @@ def detail(
     db: Session = Depends(get_db),
     _=Depends(require_pfarrei_zugriff),
 ) -> Pfarrei:
-    pfarrei = db.get(Pfarrei, pfarrei_id)
-    if pfarrei is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pfarrei nicht gefunden")
-    return pfarrei
+    return get_or_404(db, Pfarrei, pfarrei_id, not_found_detail="Pfarrei nicht gefunden")
 
 
 @router.get("/{pfarrei_id}/bild")

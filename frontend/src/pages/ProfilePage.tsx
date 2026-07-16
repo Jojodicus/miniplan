@@ -1,7 +1,7 @@
 import { KeyRound, Mail, UserCircle } from 'lucide-react'
 import { useState } from 'react'
 import { eigeneEmailAendern, eigenesPasswortAendern } from '../api/auth'
-import { ApiError } from '../api/client'
+import { fehlerText } from '../api/client'
 import { useAuth } from '../auth/useAuth'
 import { AppShell } from '../components/layout/AppShell'
 import { Alert } from '../components/ui/Alert'
@@ -10,10 +10,6 @@ import { Card, CardHeader } from '../components/ui/Card'
 import { Input, Label } from '../components/ui/FormField'
 import { useToast } from '../components/ui/useToast'
 import { useDocumentTitle } from '../lib/useDocumentTitle'
-
-function fehlerText(err: unknown): string {
-  return err instanceof ApiError ? err.message : 'Ein Fehler ist aufgetreten'
-}
 
 function EmailKarte({ aktuelleEmail }: { aktuelleEmail: string }) {
   const { refreshUser } = useAuth()

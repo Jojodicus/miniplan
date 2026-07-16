@@ -1,9 +1,11 @@
+import { RotateCcw } from 'lucide-react'
 import {
   forwardRef,
   type InputHTMLAttributes,
   type ReactNode,
   type SelectHTMLAttributes,
 } from 'react'
+import { IconButton } from './IconButton'
 
 const fieldChrome =
   'w-full rounded-md border border-line bg-paper px-3 h-10 text-sm text-ink placeholder:text-ink-faint outline-none transition-shadow focus:border-pine focus:ring-2 focus:ring-pine/15'
@@ -82,7 +84,8 @@ export function Slider({
       />
       {markerValue !== undefined && (
         <div
-          className="pointer-events-none absolute h-2.5 w-0.5 -translate-x-1/2 rounded-full bg-ink-faint/70"
+          title={`Standard: ${markerValue}`}
+          className="pointer-events-none absolute h-4 w-1 -translate-x-1/2 rounded-full bg-gold"
           style={{ left: `${zuProzent(markerValue)}%` }}
         />
       )}
@@ -96,6 +99,61 @@ export function Slider({
         onChange={(e) => onChange(Number(e.target.value))}
         className="relative w-full cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:mt-[-7px] [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-pine [&::-webkit-slider-thumb]:bg-paper [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-pine [&::-moz-range-thumb]:bg-paper [&::-moz-range-track]:bg-transparent"
       />
+    </div>
+  )
+}
+
+// Slider + Zahlenfeld für denselben Wert (Tippen ist auf einem Regler allein ungenau, v.a. bei
+// Nachkommastellen wie den Zuteilungs-Gewichten) plus ein Reset-Button für dieses einzelne Feld,
+// der nur erscheint, wenn der Wert vom Standard abweicht - der bestehende "Zurücksetzen"-Button
+// setzt weiterhin alle Felder auf einmal zurück, das ist additiv dazu.
+export function SliderWithNumberInput({
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  markerValue,
+  id,
+}: {
+  value: number
+  onChange: (value: number) => void
+  min: number
+  max: number
+  step?: number
+  markerValue: number
+  id?: string
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="min-w-0 flex-1">
+        <Slider
+          id={id}
+          value={value}
+          onChange={onChange}
+          min={min}
+          max={max}
+          step={step}
+          markerValue={markerValue}
+        />
+      </div>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => {
+          const naechster = Number(e.target.value)
+          if (!Number.isNaN(naechster)) onChange(naechster)
+        }}
+        className={`${fieldChrome} h-9 !w-20 px-2 text-right`}
+      />
+      {value !== markerValue && (
+        <IconButton label="Auf Standard zurücksetzen" onClick={() => onChange(markerValue)}>
+          <RotateCcw className="h-3.5 w-3.5" />
+        </IconButton>
+      )}
     </div>
   )
 }

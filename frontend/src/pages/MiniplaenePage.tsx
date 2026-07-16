@@ -1,7 +1,7 @@
 import { CalendarRange, Download, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type SubmitEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ApiError } from '../api/client'
+import { fehlerText } from '../api/client'
 import {
   miniplaeneListe,
   miniplanErstellen,
@@ -22,10 +22,6 @@ import { ListSkeleton } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/useToast'
 import { MONATE, monatsName } from '../lib/datum'
 import { useDocumentTitle } from '../lib/useDocumentTitle'
-
-function fehlerText(err: unknown, fallback: string): string {
-  return err instanceof ApiError ? err.message : fallback
-}
 
 // Geplant wird immer ein zukünftiger Monat: Vorschlag ist der Monat nach dem neuesten
 // vorhandenen Plan, ohne Pläne der nächste Kalendermonat.
@@ -109,8 +105,11 @@ export function MiniplaenePage() {
       <h1 className="font-display text-3xl font-semibold text-ink">Minipläne</h1>
 
       <Card className="mt-6 animate-rise">
+        {/* Margin statt Padding für den Abstand zur Card-Kante - Alert bringt mit `px-3 py-2`
+            bereits eigenen Innenabstand mit, ein zusätzlicher `px-5 pt-4`-Padding-Wrapper hätte
+            beide Abstände aufsummiert statt sie zu ersetzen. */}
         {error && (
-          <div className="px-5 pt-4">
+          <div className="mx-5 mt-4">
             <Alert>{error}</Alert>
           </div>
         )}

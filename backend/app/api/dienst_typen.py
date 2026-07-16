@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api._helpers import get_or_404
 from app.database import get_db
 from app.deps import RequirePfarreiRolle, get_pfarrei
 from app.models.dienst_typ import DienstTyp, DienstTypGruppenAnforderung
@@ -20,16 +21,13 @@ require_verantwortlich = RequirePfarreiRolle(PfarreiRolle.PFARREI_VERANTWORTLICH
 
 
 def _get_dienst_typ_or_404(pfarrei_id: int, dienst_typ_id: int, db: Session) -> DienstTyp:
-    dienst_typ = (
-        db.query(DienstTyp)
-        .filter(DienstTyp.id == dienst_typ_id, DienstTyp.pfarrei_id == pfarrei_id)
-        .first()
+    return get_or_404(
+        db,
+        DienstTyp,
+        dienst_typ_id,
+        pfarrei_id=pfarrei_id,
+        not_found_detail="Dienst-Typ nicht gefunden",
     )
-    if dienst_typ is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Dienst-Typ nicht gefunden"
-        )
-    return dienst_typ
 
 
 def _gruppen_anforderungen_bauen(

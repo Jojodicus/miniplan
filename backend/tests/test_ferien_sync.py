@@ -91,10 +91,15 @@ def test_sync_ferien_ersetzt_bestehende_eintraege(
 
 
 def test_ferien_fuer_jahr_wird_fuer_ttl_gecached(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regressionstest für die eigentliche Implementierung (nicht den autouse-Stub) - eine frisch
+    angelegte `FerienSyncCache`-Instanz statt eines globalen Resets, siehe Issue #18."""
     from tests.conftest import echte_ferien_fuer_jahr
 
+    # Der autouse-Stub aus conftest.py ersetzt `_ferien_fuer_jahr` für jeden Test - hier soll aber
+    # genau diese (echte) Funktion selbst geprüft werden, also die echte Implementierung wieder
+    # einsetzen.
     monkeypatch.setattr(ferien_sync, "_ferien_fuer_jahr", echte_ferien_fuer_jahr)
-    ferien_sync._cache.clear()
+    cache = ferien_sync.FerienSyncCache()
     aufrufe = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -103,12 +108,55 @@ def test_ferien_fuer_jahr_wird_fuer_ttl_gecached(monkeypatch: pytest.MonkeyPatch
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
 
-    ferien_sync._ferien_fuer_jahr("BY", 2026, client)
-    ferien_sync._ferien_fuer_jahr("BY", 2026, client)
-    ferien_sync._ferien_fuer_jahr("NW", 2026, client)
+    ferien_sync._ferien_fuer_jahr("BY", 2026, client, cache=cache)
+    ferien_sync._ferien_fuer_jahr("BY", 2026, client, cache=cache)
+    ferien_sync._ferien_fuer_jahr("NW", 2026, client, cache=cache)
 
     assert len(aufrufe) == 2
-    ferien_sync._cache.clear()
+
+
+def test_frische_cache_instanz_ist_leer() -> None:
+    cache = ferien_sync.FerienSyncCache()
+
+    assert cache.get("BY", 2026) is None
+    assert cache.ist_rate_limitiert() is False
+
+
+def test_cache_hit_vermeidet_erneuten_abruf(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.conftest import echte_ferien_fuer_jahr
+
+    # Siehe Kommentar in test_ferien_fuer_jahr_wird_fuer_ttl_gecached - auch hier wird die echte
+    # Implementierung statt des autouse-Stubs benötigt.
+    monkeypatch.setattr(ferien_sync, "_ferien_fuer_jahr", echte_ferien_fuer_jahr)
+    cache = ferien_sync.FerienSyncCache()
+    daten = [{"start": "2026-08-01", "end": "2026-08-14", "name": "sommerferien"}]
+    aufrufe = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        aufrufe.append(request.url)
+        return httpx.Response(200, json=daten)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    erste_antwort = ferien_sync._ferien_fuer_jahr("BY", 2026, client, cache=cache)
+    zweite_antwort = ferien_sync._ferien_fuer_jahr("BY", 2026, client, cache=cache)
+
+    assert len(aufrufe) == 1
+    assert erste_antwort == daten
+    assert zweite_antwort == daten
+    assert cache.get("BY", 2026) == daten
+
+
+def test_zwei_cache_instanzen_sind_isoliert() -> None:
+    cache_a = ferien_sync.FerienSyncCache()
+    cache_b = ferien_sync.FerienSyncCache()
+
+    cache_a.set("BY", 2026, [{"name": "nur in a"}])
+    cache_a.rate_limit_setzen()
+
+    assert cache_b.get("BY", 2026) is None
+    assert cache_b.ist_rate_limitiert() is False
+    assert cache_a.ist_rate_limitiert() is True
 
 
 def test_sync_ferien_falls_fehlend_ergaenzt_ohne_bestehendes_jahr_zu_loeschen(
@@ -170,7 +218,7 @@ def test_sync_ferien_falls_fehlend_ohne_fehlende_jahre_ruft_extern_nicht_auf(
 
 
 def test_429_wird_nicht_retried_und_setzt_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
-    ferien_sync._rate_limited_until = 0.0
+    cache = ferien_sync.FerienSyncCache()
     aufrufe = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -181,17 +229,20 @@ def test_429_wird_nicht_retried_und_setzt_cooldown(monkeypatch: pytest.MonkeyPat
     client = httpx.Client(transport=httpx.MockTransport(handler))
 
     with pytest.raises(ferien_sync.FerienSyncFehler) as exc_info:
-        ferien_sync._get_mit_retry(client, "https://ferien-api.de/api/v1/holidays/BY/2026")
+        ferien_sync._get_mit_retry(
+            client, "https://ferien-api.de/api/v1/holidays/BY/2026", cache=cache
+        )
 
     # Kein Retry auf 429 (anders als bei 502/503/504) - ein Sekunden-Backoff hilft gegen ein
     # bereits erschöpftes Rate-Limit ohnehin nicht.
     assert len(aufrufe) == 1
-    assert ferien_sync._rate_limited_until > time.monotonic()
+    assert cache.ist_rate_limitiert() is True
     assert exc_info.value.rate_limited is True
 
 
-def test_rate_limit_cooldown_verhindert_weitere_anfragen(monkeypatch: pytest.MonkeyPatch) -> None:
-    ferien_sync._rate_limited_until = time.monotonic() + 60
+def test_rate_limit_cooldown_verhindert_weitere_anfragen() -> None:
+    cache = ferien_sync.FerienSyncCache()
+    cache.rate_limit_setzen()
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError("sollte während des Cooldowns nicht angefragt werden")
@@ -199,9 +250,32 @@ def test_rate_limit_cooldown_verhindert_weitere_anfragen(monkeypatch: pytest.Mon
     client = httpx.Client(transport=httpx.MockTransport(handler))
 
     with pytest.raises(ferien_sync.FerienSyncFehler):
-        ferien_sync._get_mit_retry(client, "https://ferien-api.de/api/v1/holidays/BY/2026")
+        ferien_sync._get_mit_retry(
+            client, "https://ferien-api.de/api/v1/holidays/BY/2026", cache=cache
+        )
 
-    ferien_sync._rate_limited_until = 0.0
+
+def test_rate_limit_fenster_laeuft_ab_und_erlaubt_dann_wieder_anfragen() -> None:
+    """Nach Ablauf des Cooldown-Fensters (hier künstlich auf 0 gesetzt) wird wieder angefragt -
+    die Instanz muss den alten Zustand nicht manuell zurücksetzen, das Fenster läuft von selbst
+    ab."""
+    cache = ferien_sync.FerienSyncCache(rate_limit_cooldown_seconds=0)
+    cache.rate_limit_setzen()
+    time.sleep(0.01)
+
+    assert cache.ist_rate_limitiert() is False
+
+    aufrufe = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        aufrufe.append(request.url)
+        return httpx.Response(200, json=[])
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    ferien_sync._get_mit_retry(client, "https://ferien-api.de/api/v1/holidays/BY/2026", cache=cache)
+
+    assert len(aufrufe) == 1
 
 
 def test_sync_ferien_netzwerkfehler_behaelt_alte_daten(

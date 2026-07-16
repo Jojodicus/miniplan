@@ -8,6 +8,7 @@ from app.api import (
     admin,
     auth,
     dienst_typen,
+    einladungen,
     feiertage,
     filtertag_blocker,
     filtertags,
@@ -57,6 +58,8 @@ app.include_router(filtertag_blocker.router)
 app.include_router(feiertage.router)
 app.include_router(miniplaene.router)
 app.include_router(gottesdienste.router)
+app.include_router(einladungen.router)
+app.include_router(einladungen.oeffentlicher_router)
 
 if settings.enable_test_stubs:
     from app.api import ferien_stub

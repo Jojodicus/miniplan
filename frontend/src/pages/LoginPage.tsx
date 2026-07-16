@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/useAuth'
 import { AppIcon } from '../components/AppIcon'
+import { InstallHint } from '../components/InstallHint'
 import { Alert } from '../components/ui/Alert'
 import { Button } from '../components/ui/Button'
 import { Input, Label } from '../components/ui/FormField'
@@ -89,6 +90,9 @@ export function LoginPage() {
             </Button>
           </div>
         </form>
+        <div className="sm:hidden">
+          <InstallHint />
+        </div>
       </div>
     </div>
   )
